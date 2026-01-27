@@ -8,28 +8,28 @@ Internal Claude Code plugins, agents, and tools for WS Agency team members.
 
 ```bash
 # Add WS marketplace (one-time setup)
-/plugin marketplace add git@git.wsagency.io:ws-public/WS-Claude-marketplace.git
+claude plugin marketplace add git@git.wsagency.io:ws-public/WS-Claude-marketplace.git
 ```
 
 ### Install Plugins
 
 ```bash
 # Install individual plugins
-/plugin install docs-agent@ws-marketplace
-/plugin install ws-commit-commands@ws-marketplace
+claude plugin install docs-agent@ws-marketplace
+claude plugin install ws-commit-commands@ws-marketplace
 ```
 
 ### Other Useful Commands
 
 ```bash
 # List available plugins in the marketplace
-/plugin marketplace list
+claude plugin marketplace list
 
 # Update the marketplace to get latest plugins
-/plugin marketplace update ws-marketplace
+claude plugin marketplace update ws-marketplace
 
 # Uninstall a plugin
-/plugin uninstall docs-agent@ws-marketplace
+claude plugin uninstall docs-agent@ws-marketplace
 ```
 
 ## Available Plugins
