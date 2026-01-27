@@ -1,0 +1,33 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "ws-marketplace",
+  "description": "WS Agency internal plugins, agents, and tools for Claude Code",
+  "owner": {
+    "name": "WS Agency",
+    "email": "dev@ws.agency"
+  },
+  "plugins": [
+    {
+      "name": "docs-agent",
+      "description": "Documentation generation using Diataxis framework",
+      "version": "1.0.0",
+      "source": "./plugins/docs-agent",
+      "category": "development",
+      "author": {
+        "name": "WS Agency"
+      },
+      "tags": ["documentation", "changelog", "api-docs"]
+    },
+    {
+      "name": "ws-commit-commands",
+      "description": "WS git commit and PR workflows",
+      "version": "1.0.0",
+      "source": "./plugins/ws-commit-commands",
+      "category": "development",
+      "author": {
+        "name": "WS Agency"
+      },
+      "tags": ["git", "commit", "pr"]
+    }
+  ]
+}

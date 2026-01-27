@@ -1,0 +1,7 @@
+{
+  "name": "ws-commit-commands",
+  "description": "Git workflow commands for Gitea using tea CLI - commit, push, and create pull requests",
+  "author": {
+    "name": "WS Agency"
+  }
+}

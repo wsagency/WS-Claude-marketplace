@@ -1,0 +1,7 @@
+{
+  "name": "docs-agent",
+  "description": "Generate changelogs and documentation following Keep a Changelog and Diátaxis standards",
+  "author": {
+    "name": "docs-agent"
+  }
+}
