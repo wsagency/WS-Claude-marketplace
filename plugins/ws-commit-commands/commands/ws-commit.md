@@ -16,5 +16,5 @@ Based on the above changes, create a single git commit with an appropriate messa
 
 1. Stage the relevant files (prefer specific files over `git add -A`)
 2. Create a commit with a clear, conventional commit message
-3. Include `Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>` in the commit message
+3. Include `Co-Authored-By: WS Agency AI suite <ai@ws.agency>` in the commit message
 4. You MUST do all of the above in a single message. Do not use any other tools or do anything else. Do not send any other text or messages besides these tool calls.

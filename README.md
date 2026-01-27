@@ -2,6 +2,14 @@
 
 Internal Claude Code plugins, agents, and tools for WS Agency team members.
 
+**[Full Documentation](./docs/index.md)** | [Getting Started Tutorial](./docs/tutorials/getting-started.md) | [Command Reference](./docs/reference/commands.md)
+
+## Prerequisites
+
+- **Claude Code CLI** - [Installation guide](https://docs.anthropic.com/en/docs/claude-code)
+- **Git** with SSH access to `git.wsagency.io`
+- **tea CLI** (required for ws-commit-commands) - Install via `brew install tea`
+
 ## Installation
 
 ### Add the Marketplace
@@ -63,6 +71,8 @@ Generate changelogs and documentation following Keep a Changelog and Diataxis st
 
 Git workflow commands for Gitea using tea CLI - commit, push, and create pull requests.
 
+**Requires:** [tea CLI](https://gitea.com/gitea/tea) - Install with `brew install tea` and configure with `tea login add`
+
 **Commands:**
 - `/ws-commit` - Create a git commit with conventional commit format
 - `/ws-commit-push-pr` - Commit, push, and create a pull request
@@ -74,6 +84,11 @@ Git workflow commands for Gitea using tea CLI - commit, push, and create pull re
 ws-claude-marketplace/
 ├── .claude-plugin/
 │   └── marketplace.json    # Marketplace registry
+├── docs/                   # Documentation (Diátaxis)
+│   ├── tutorials/
+│   ├── how-to/
+│   ├── reference/
+│   └── explanation/
 ├── plugins/                # Claude Code plugins
 │   ├── docs-agent/
 │   └── ws-commit-commands/
@@ -91,6 +106,8 @@ To add a new plugin or update an existing one:
 2. Add/modify content in the appropriate directory
 3. Update `.claude-plugin/marketplace.json` if adding a new plugin
 4. Submit a pull request
+
+See [How to Create a Plugin](./docs/how-to/create-plugin.md) for detailed instructions.
 
 ## Support
 
