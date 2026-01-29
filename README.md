@@ -25,6 +25,7 @@ claude plugin marketplace add git@git.wsagency.io:ws-public/WS-Claude-marketplac
 # Install individual plugins
 claude plugin install docs-agent@ws-marketplace
 claude plugin install ws-commit-commands@ws-marketplace
+claude plugin install ws-jira-enhancer@ws-marketplace
 ```
 
 ### Other Useful Commands
@@ -46,6 +47,7 @@ claude plugin uninstall docs-agent@ws-marketplace
 |--------|-------------|----------|
 | [docs-agent](./plugins/docs-agent) | Documentation generation using Diataxis framework | `/docs-tutorial`, `/docs-howto`, `/docs-explanation`, `/docs-reference`, `/changelog`, `/changelog-entry` |
 | [ws-commit-commands](./plugins/ws-commit-commands) | Git workflows for Gitea using tea CLI | `/ws-commit`, `/ws-commit-push-pr`, `/ws-clean-gone` |
+| [ws-jira-enhancer](./plugins/ws-jira-enhancer) | Transform task descriptions into Jira tickets | `/ws-jira-enhancer` |
 
 ## Plugin Details
 
@@ -78,6 +80,13 @@ Git workflow commands for Gitea using tea CLI - commit, push, and create pull re
 - `/ws-commit-push-pr` - Commit, push, and create a pull request
 - `/ws-clean-gone` - Clean up git branches marked as [gone]
 
+### ws-jira-enhancer
+
+Transform brief task descriptions into well-structured Jira tickets with user stories and acceptance criteria.
+
+**Commands:**
+- `/ws-jira-enhancer <task>` - Generate a complete Jira ticket from a brief description
+
 ## Directory Structure
 
 ```
@@ -91,7 +100,8 @@ ws-claude-marketplace/
 │   └── explanation/
 ├── plugins/                # Claude Code plugins
 │   ├── docs-agent/
-│   └── ws-commit-commands/
+│   ├── ws-commit-commands/
+│   └── ws-jira-enhancer/
 ├── agents/                 # Standalone agents (future)
 ├── prompts/                # Reusable prompts (future)
 ├── mcp-servers/            # MCP server configs (future)

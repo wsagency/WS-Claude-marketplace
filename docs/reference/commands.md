@@ -171,6 +171,57 @@ Clean up git branches marked as [gone] (deleted on remote but exist locally).
 
 ---
 
+## ws-jira-enhancer
+
+Transform brief task descriptions into well-structured Jira tickets.
+
+### /ws-jira-enhancer
+
+Transform a brief task description into a comprehensive Jira ticket with user story, acceptance criteria, and technical context.
+
+**Arguments:**
+| Name | Required | Description |
+|------|----------|-------------|
+| `task` | Yes | Brief task description to enhance |
+
+**Behavior:**
+1. Analyzes the task description
+2. Searches the codebase for relevant context (if applicable)
+3. Generates a structured Jira ticket with:
+   - Summary
+   - User story (As a... I want... so that...)
+   - Background and technical context
+   - Acceptance criteria (Given/When/Then format)
+   - Clarifying questions (if needed)
+
+**Example:**
+```
+/ws-jira-enhancer "add dark mode toggle to settings page"
+```
+
+**Output Format:**
+```markdown
+## Summary
+[One clear sentence describing what needs to be done]
+
+## User Story
+As a [role], I want [goal], so that [benefit].
+
+### Background
+[Business context and problem being solved]
+
+### Technical Context
+[Findings from codebase research]
+
+## Acceptance Criteria
+- [ ] Given [precondition], when [action], then [result]
+
+## Questions (if any)
+> [Clarifying questions]
+```
+
+---
+
 ## Agents
 
 These agents are spawned via the Task tool, typically by commands.
