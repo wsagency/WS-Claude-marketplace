@@ -28,6 +28,17 @@
         "name": "WS Agency"
       },
       "tags": ["git", "commit", "pr"]
+    },
+    {
+      "name": "ws-jira-enhancer",
+      "description": "Transform brief task descriptions into well-structured Jira tickets",
+      "version": "1.0.0",
+      "source": "./plugins/ws-jira-enhancer",
+      "category": "development",
+      "author": {
+        "name": "WS Agency"
+      },
+      "tags": ["jira", "ticket", "task-management"]
     }
   ]
 }
