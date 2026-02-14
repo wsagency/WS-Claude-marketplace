@@ -39,6 +39,28 @@
         "name": "WS Agency"
       },
       "tags": ["jira", "ticket", "task-management"]
+    },
+    {
+      "name": "ws-claude-sync",
+      "description": "Sync Claude Code contexts, settings, and sessions across machines via GitHub",
+      "version": "1.0.0",
+      "source": "./plugins/ws-claude-sync",
+      "category": "utilities",
+      "author": {
+        "name": "WS Agency"
+      },
+      "tags": ["sync", "cross-machine", "github", "settings", "context"]
+    },
+    {
+      "name": "ws-clamp",
+      "description": "Move, archive, fix, and manage Claude Code projects while preserving session history",
+      "version": "1.4.1",
+      "source": "./plugins/ws-clamp",
+      "category": "development",
+      "author": {
+        "name": "WS Agency"
+      },
+      "tags": ["project-management", "session-history", "migration", "archive", "maintenance"]
     }
   ]
 }

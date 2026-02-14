@@ -1,0 +1,7 @@
+{
+  "name": "ws-clamp",
+  "description": "Move, archive, fix, and manage Claude Code projects while preserving session history",
+  "author": {
+    "name": "WS Agency"
+  }
+}
