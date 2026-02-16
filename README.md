@@ -11,12 +11,15 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 | [docs-agent](./plugins/docs-agent) | Documentation generation using Diátaxis framework | `/docs-tutorial`, `/docs-howto`, `/docs-explanation`, `/docs-reference`, `/changelog`, `/changelog-entry` |
 | [ws-commit-commands](./plugins/ws-commit-commands) | Git workflows for Gitea using tea CLI | `/ws-commit`, `/ws-commit-push-pr`, `/ws-clean-gone` |
 | [ws-jira-enhancer](./plugins/ws-jira-enhancer) | Transform task descriptions into Jira tickets | `/ws-jira-enhancer` |
+| [ws-claude-sync](./plugins/ws-claude-sync) | Sync Claude contexts across machines via GitHub | `/ws-sync-setup`, `/ws-sync`, `/ws-sync-pull`, `/ws-sync-push`, `/ws-sync-full`, `/ws-sync-status` |
+| [ws-clamp](./plugins/ws-clamp) | Move, archive, and manage Claude projects | `/clamp-move`, `/clamp-inspect`, `/clamp-maintain`, `/clamp-archive` |
 
 ## Prerequisites
 
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
 - [Git](https://git-scm.com/)
 - [tea CLI](https://gitea.com/gitea/tea) (required for ws-commit-commands) — `brew install tea`
+- [Python 3](https://python.org/) (required for ws-claude-sync)
 
 ## Installation
 
@@ -28,6 +31,8 @@ claude plugin marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
 claude plugin install docs-agent@ws-marketplace
 claude plugin install ws-commit-commands@ws-marketplace
 claude plugin install ws-jira-enhancer@ws-marketplace
+claude plugin install ws-claude-sync@ws-marketplace
+claude plugin install ws-clamp@ws-marketplace
 ```
 
 ```bash
@@ -75,6 +80,36 @@ Transform brief task descriptions into well-structured Jira tickets with user st
 **Commands:**
 - `/ws-jira-enhancer <task>` — Generate a complete Jira ticket from a brief description
 
+### ws-claude-sync
+
+Sync Claude Code contexts, settings, and sessions across machines via a private GitHub repository.
+
+**Requires:** [Python 3](https://python.org/), a private GitHub repository for sync storage
+
+**Commands:**
+- `/ws-sync-setup` — Configure sync with a GitHub repository
+- `/ws-sync-pull` — Pull essential context from remote
+- `/ws-sync-push` — Push essential context to remote
+- `/ws-sync` — Bidirectional essential sync (pull + push)
+- `/ws-sync-pull-full` — Pull ALL Claude data from remote
+- `/ws-sync-push-full` — Push ALL Claude data to remote
+- `/ws-sync-full` — Bidirectional full sync
+- `/ws-sync-status` — Show sync configuration and status
+
+**Agents:** `sync-troubleshooter`
+
+### ws-clamp
+
+Move, archive, fix, and manage Claude Code projects while preserving session history. Based on [clamp](https://github.com/wsagency/claude-move-project) v1.4.1.
+
+**Commands:**
+- `/clamp-move` — Move, relocate, or remove a project
+- `/clamp-inspect` — List projects or show project details
+- `/clamp-maintain` — Verify, fix, or prune project references
+- `/clamp-archive` — Pack or unpack portable `.claudepack` archives
+
+**Agents:** `project-manager`
+
 ## Project Structure
 
 ```
@@ -89,7 +124,9 @@ ws-claude-marketplace/
 └── plugins/
     ├── docs-agent/
     ├── ws-commit-commands/
-    └── ws-jira-enhancer/
+    ├── ws-jira-enhancer/
+    ├── ws-claude-sync/
+    └── ws-clamp/
 ```
 
 ## Contributing
