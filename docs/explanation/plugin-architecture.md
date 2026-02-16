@@ -12,15 +12,30 @@ The marketplace is a **plugin registry** that distributes Claude Code plugins to
 ├─────────────────────────────────────────────┤
 │  marketplace.json (registry)                │
 │    ├── docs-agent                           │
-│    └── ws-commit-commands                   │
+│    ├── ws-commit-commands                   │
+│    ├── ws-jira-enhancer                     │
+│    ├── ws-claude-sync                       │
+│    └── ws-clamp                             │
 ├─────────────────────────────────────────────┤
 │  plugins/                                   │
 │    ├── docs-agent/                          │
 │    │   ├── commands/                        │
 │    │   ├── agents/                          │
 │    │   └── skills/                          │
-│    └── ws-commit-commands/                  │
-│        └── commands/                        │
+│    ├── ws-commit-commands/                  │
+│    │   └── commands/                        │
+│    ├── ws-jira-enhancer/                    │
+│    │   └── commands/                        │
+│    ├── ws-claude-sync/                      │
+│    │   ├── commands/                        │
+│    │   ├── agents/                          │
+│    │   ├── skills/                          │
+│    │   └── scripts/                         │
+│    └── ws-clamp/                            │
+│        ├── commands/                        │
+│        ├── agents/                          │
+│        ├── skills/                          │
+│        └── scripts/                         │
 └─────────────────────────────────────────────┘
 ```
 
