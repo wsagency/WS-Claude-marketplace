@@ -58,12 +58,35 @@ Diátaxis identifies four distinct documentation types, each serving different u
 3. **Serve user needs** - Match content type to what users are trying to do
 4. **Maintain clear navigation** - Help users find the right type of content
 
+## Audience-Based Priority
+
+Different users need different quadrants prioritized:
+
+| Audience | Primary Quadrants | Reasoning |
+|----------|------------------|-----------|
+| Non-technical users (PMs) | Tutorials, How-to Guides | Covers 80% of needs |
+| Developers (API consumers) | Reference, How-to Guides | Need accuracy and recipes |
+| New team members (onboarding) | Tutorials, Explanation | Need learning + context |
+| Architects/evaluators | Explanation, Reference | Need "why" + "what" |
+
+## Adopted By
+
+Diátaxis is used by Cloudflare, Canonical/Ubuntu, Django, Gatsby, and many other major projects. Created by Daniele Procida.
+
 ## Common Mistakes
 
 - Tutorial that becomes a how-to (loses teaching focus)
 - Reference that includes tutorial content (confuses purpose)
 - How-to that explains too much (slows down task completion)
 - Explanation mixed into reference (dilutes both)
+- **Most neglected**: Explanation quadrant (the "why" behind decisions)
+
+## Industry Examples
+
+- **Stripe**: Three-column layout, code synced with prose, "docs are part of done"
+- **Linear**: Benefit-driven changelog, visual-first, tied to sprint cycles
+- **shadcn/ui**: Live preview, installation command, variant examples, AI-ready (llms.txt)
+- **Next.js**: Diátaxis in practice — Getting Started (tutorials), Guides (how-to), API Reference
 
 ## References
 

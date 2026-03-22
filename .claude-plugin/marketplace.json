@@ -9,14 +9,14 @@
   "plugins": [
     {
       "name": "docs-agent",
-      "description": "Documentation generation using Diataxis framework",
-      "version": "1.0.0",
+      "description": "Comprehensive documentation suite: Diátaxis docs, changelogs, ADRs, CONTRIBUTING.md, ARCHITECTURE.md, release notes, Conventional Commits, style guide, TSDoc/GraphQL API reference",
+      "version": "2.0.0",
       "source": "./plugins/docs-agent",
       "category": "development",
       "author": {
         "name": "WS Agency"
       },
-      "tags": ["documentation", "changelog", "api-docs"]
+      "tags": ["documentation", "changelog", "api-docs", "adr", "contributing", "architecture", "release-notes", "conventional-commits", "style-guide", "tsdoc", "graphql"]
     },
     {
       "name": "ws-commit-commands",

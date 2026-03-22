@@ -174,10 +174,53 @@ Brief description of the API.
 
 ## Language-Specific Notes
 
-### TypeScript
-- Include generic type parameters
-- Document type constraints
-- Show overloaded signatures separately
+### TypeScript (TSDoc Standard)
+
+Use **TSDoc** (not JSDoc) for TypeScript projects. TSDoc, created by Microsoft, standardizes doc comment parsing and avoids duplicating type information already in TypeScript.
+
+**Key Tags:**
+- `@param` — Parameter description (type comes from TypeScript)
+- `@returns` — Return value description
+- `@remarks` — Extended description and usage notes
+- `@example` — Code example (most valuable tag)
+- `@internal` — Not part of public API
+- `@deprecated` — Scheduled for removal, include migration path
+
+**Focus comments on intent, context, and examples — not types.**
+
+**TypeDoc Configuration:**
+```json
+{
+  "entryPoints": ["src/index.ts"],
+  "out": "docs/api",
+  "exclude": ["**/*+(test|spec).ts"],
+  "plugin": ["typedoc-plugin-markdown"]
+}
+```
+
+**Enforce with:** `eslint-plugin-tsdoc` in CI.
+
+### GraphQL (Self-Documenting Schema)
+
+GraphQL is inherently self-documenting. Add descriptions to **every** type, field, argument, and enum value:
+
+```graphql
+"""A project workspace containing sprints, tasks, and team members."""
+type Project {
+  """The unique identifier."""
+  id: ID!
+  """Human-readable project name, max 100 characters."""
+  name: String!
+}
+```
+
+**Document:**
+- Pagination patterns (Relay-style connections vs. offset)
+- Error handling conventions
+- Authentication requirements per field
+- Rate limiting and complexity limits
+
+**Use SpectaQL** to auto-generate static HTML documentation from the schema.
 
 ### Python
 - Include type hints if present

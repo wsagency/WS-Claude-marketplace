@@ -8,7 +8,7 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 
 | Plugin | Description | Commands |
 |--------|-------------|----------|
-| [docs-agent](./plugins/docs-agent) | Documentation generation using Diátaxis framework | `/docs-tutorial`, `/docs-howto`, `/docs-explanation`, `/docs-reference`, `/changelog`, `/changelog-entry` |
+| [docs-agent](./plugins/docs-agent) | Comprehensive documentation suite (Diátaxis, ADRs, changelogs, style guide) | `/docs`, `/adr`, `/contributing`, `/architecture`, `/release-notes`, `/changelog` |
 | [ws-commit-commands](./plugins/ws-commit-commands) | Git workflows for Gitea using tea CLI | `/ws-commit`, `/ws-commit-push-pr`, `/ws-clean-gone` |
 | [ws-jira-enhancer](./plugins/ws-jira-enhancer) | Transform task descriptions into Jira tickets | `/ws-jira-enhancer` |
 | [ws-claude-sync](./plugins/ws-claude-sync) | Sync Claude contexts across machines via GitHub | `/ws-sync-setup`, `/ws-sync`, `/ws-sync-pull`, `/ws-sync-push`, `/ws-sync-full`, `/ws-sync-status` |
@@ -50,17 +50,64 @@ claude plugin uninstall docs-agent@ws-marketplace
 
 ### docs-agent
 
-Generate changelogs and documentation following Keep a Changelog and Diátaxis standards.
+Comprehensive documentation generation suite covering the full docs-as-code lifecycle: Diátaxis framework docs, Keep a Changelog, Architecture Decision Records (MADR v4.0.0), CONTRIBUTING.md, ARCHITECTURE.md, release notes, Conventional Commits, style guide enforcement, and TSDoc/GraphQL API reference.
 
 **Commands:**
+- `/docs` — Generate a complete documentation suite following Diátaxis
 - `/docs-tutorial` — Create a learning-oriented tutorial
 - `/docs-howto` — Create a task-oriented how-to guide
 - `/docs-explanation` — Write an understanding-oriented explanation
 - `/docs-reference` — Generate API or technical reference documentation
+- `/adr` — Create an Architecture Decision Record (MADR v4.0.0)
+- `/contributing` — Generate CONTRIBUTING.md from project analysis
+- `/architecture` — Generate ARCHITECTURE.md (matklad pattern)
+- `/release-notes` — Generate user-facing release notes (Linear style)
 - `/changelog` — Generate or update CHANGELOG.md from git history
 - `/changelog-entry` — Add a single entry to CHANGELOG.md
 
-**Agents:** `docs-architect`, `tutorial-writer`, `api-documenter`, `changelog-analyzer`
+**Agents:** `docs-architect`, `tutorial-writer`, `api-documenter`, `changelog-analyzer`, `adr-writer`, `contributing-generator`, `architecture-documenter`, `release-notes-writer`
+
+**Skills (knowledge bases):** `diataxis`, `keep-a-changelog`, `conventional-commits`, `style-guide`, `adr`
+
+#### Auto-Applying Documentation Skills
+
+To make Claude Code automatically enforce documentation standards on your projects, add the following to your project's `.claude/CLAUDE.md`:
+
+```markdown
+# Documentation Standards
+
+Always apply these docs-agent standards when working on this project:
+
+- **Commits**: Follow Conventional Commits format (`type(scope): description`)
+- **Code changes**: Update CHANGELOG.md for user-facing changes
+- **New features**: Check if an ADR is needed in docs/decisions/
+- **TypeScript**: Use TSDoc comments on all public APIs
+- **GraphQL**: Add descriptions to every type, field, and argument in the schema
+- **Writing**: Follow Google style guide (active voice, present tense, second person)
+- **Definition of done**: Documentation must ship with the feature
+
+Available commands: /docs, /adr, /contributing, /architecture, /release-notes, /changelog
+```
+
+For **hard enforcement**, add hooks to `.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "Before stopping, verify: 1) Commit messages follow Conventional Commits. 2) CHANGELOG.md updated if user-facing changes were made. 3) Documentation updated for new/changed features. If anything is missing, return {\"ok\": false, \"reason\": \"what's missing\"}.",
+            "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
+```
 
 ### ws-commit-commands
 

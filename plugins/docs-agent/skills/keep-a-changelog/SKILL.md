@@ -64,10 +64,35 @@ Always maintain an `[Unreleased]` section at the top:
 - Use vague descriptions like "various fixes"
 - Include internal refactoring unless it affects users
 
+## Changelog vs. Release Notes
+
+These are complementary but different artifacts:
+
+| Changelog (CHANGELOG.md) | Release Notes |
+|--------------------------|---------------|
+| Developer-facing, technical | User-facing, benefit-driven |
+| Comprehensive — every fix | Curated — only what users care about |
+| In the repository | Published on website/blog/in-app |
+| Follows Keep a Changelog format | Follows Linear's changelog style |
+
+## Automation with Conventional Commits
+
+When combined with Conventional Commits and release-please:
+
+1. Developer commits with `feat:`, `fix:`, etc.
+2. CI validates commit format (commitlint)
+3. On main merge, release-please creates a Release PR
+4. Release PR includes auto-generated CHANGELOG.md updates
+5. Merging the Release PR creates Git tag + release
+
+This keeps the changelog always up-to-date with zero manual effort.
+
 ## References
 
 - [Keep a Changelog Official Site](https://keepachangelog.com)
 - [Semantic Versioning](https://semver.org)
+- [Conventional Commits](https://www.conventionalcommits.org)
+- [release-please](https://github.com/googleapis/release-please)
 
 See `references/changelog-format.md` for the detailed format specification.
 See `examples/changelog-template.md` for a ready-to-use template.

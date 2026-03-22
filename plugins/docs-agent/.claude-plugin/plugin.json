@@ -1,7 +1,7 @@
 {
   "name": "docs-agent",
-  "description": "Generate changelogs and documentation following Keep a Changelog and Diátaxis standards",
+  "description": "Comprehensive documentation generation suite: Diátaxis framework docs, Keep a Changelog, ADRs (MADR v4.0.0), CONTRIBUTING.md, ARCHITECTURE.md, release notes, Conventional Commits, style guide enforcement, TSDoc/GraphQL API reference, and docs-as-code workflows",
   "author": {
-    "name": "docs-agent"
+    "name": "WS Agency"
   }
 }

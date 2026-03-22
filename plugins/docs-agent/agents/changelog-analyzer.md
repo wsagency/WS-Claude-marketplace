@@ -33,7 +33,25 @@ git log v1.0.0..v1.1.0 --pretty=format:"%h|%s|%b---" --no-merges
 
 ### 2. Categorize Commits
 
-Map commits to changelog sections:
+#### Conventional Commits (Preferred)
+
+If the project uses Conventional Commits, map types directly:
+
+| Conventional Commit Type | Changelog Section | SemVer Impact |
+|--------------------------|-------------------|---------------|
+| `feat:` | Added | MINOR |
+| `fix:` | Fixed | PATCH |
+| `perf:` | Changed | PATCH |
+| `refactor:` (user-visible) | Changed | — |
+| `deprecate:` | Deprecated | — |
+| `security:` | Security | PATCH |
+| `BREAKING CHANGE` / `!` | Changed (marked) | MAJOR |
+
+Note: `docs:`, `test:`, `build:`, `ci:`, `chore:` commits are typically excluded from changelogs unless they have user impact.
+
+#### Non-Conventional Commits (Fallback)
+
+If the project doesn't use Conventional Commits, analyze keywords:
 
 | Commit Pattern | Section |
 |---------------|---------|
@@ -123,3 +141,20 @@ When updating an existing CHANGELOG.md:
 2. Add new entries to the [Unreleased] section
 3. Preserve existing entries
 4. Maintain consistent formatting with the rest of the file
+
+## Versioning Strategy
+
+Determine version bumps from commit types (if using Conventional Commits):
+- Any `BREAKING CHANGE` or `!` suffix → MAJOR bump
+- Any `feat:` → MINOR bump (at minimum)
+- Only `fix:`, `perf:` → PATCH bump
+
+For SaaS products with continuous deployment, consider **CalVer** (`2026.03.1`) or a hybrid where the API is SemVer-versioned independently from the application.
+
+## Automation Pipeline Recommendation
+
+If the project lacks automation, recommend:
+1. **commitlint** + **husky** for local enforcement
+2. **commitlint in CI** as immutable safety net
+3. **release-please** for Release PR generation with human review gate
+4. Link to the `conventional-commits` skill for setup details
