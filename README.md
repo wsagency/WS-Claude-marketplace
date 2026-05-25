@@ -9,7 +9,7 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 | Plugin | Description | Commands |
 |--------|-------------|----------|
 | [docs-agent](./plugins/docs-agent) | Comprehensive documentation suite (Diátaxis, ADRs, changelogs, style guide) | `/docs`, `/adr`, `/contributing`, `/architecture`, `/release-notes`, `/changelog` |
-| [ws-commit-commands](./plugins/ws-commit-commands) | Git workflows for Gitea using tea CLI | `/ws-commit`, `/ws-commit-push-pr`, `/ws-clean-gone` |
+| [ws-commit-commands](./plugins/ws-commit-commands) | Jira-aware git workflows: Conventional Commits + ticket suffix, Smart Commit worklogs, PR via tea | `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`, `/ws-clean-gone` |
 | [ws-jira-enhancer](./plugins/ws-jira-enhancer) | Transform task descriptions into Jira tickets | `/ws-jira-enhancer` |
 | [ws-claude-sync](./plugins/ws-claude-sync) | Sync Claude contexts across machines via GitHub | `/ws-sync-setup`, `/ws-sync`, `/ws-sync-pull`, `/ws-sync-push`, `/ws-sync-full`, `/ws-sync-status` |
 | [ws-clamp](./plugins/ws-clamp) | Move, archive, and manage Claude projects | `/clamp-move`, `/clamp-inspect`, `/clamp-maintain`, `/clamp-archive` |
@@ -113,14 +113,20 @@ For **hard enforcement**, add hooks to `.claude/settings.json`:
 
 ### ws-commit-commands
 
-Git workflow commands for Gitea using tea CLI — commit, push, and create pull requests.
+Jira-aware git workflow commands. Detects ticket key from branch name (`WSC-123-feature`), composes Conventional Commits with `(WSC-123)` suffix, optionally adds Smart Commit `#time` worklog (using elapsed time on the branch as the default), and optionally transitions the Jira issue. PR creation via [tea CLI](https://gitea.com/gitea/tea) for Gitea.
 
-**Requires:** [tea CLI](https://gitea.com/gitea/tea) — `brew install tea && tea login add`
+**Requires:** [tea CLI](https://gitea.com/gitea/tea) (`brew install tea && tea login add`), Atlassian MCP server (auto-installed via the `atlassian` plugin)
 
 **Commands:**
-- `/ws-commit` — Create a git commit with conventional commit format
-- `/ws-commit-push-pr` — Commit, push, and create a pull request
+- `/ws-init` — Connect Jira via OAuth and bind the current project to a Jira project
+- `/ws-status` — Show your Jira assignments, sprint status, and a suggestion for what to pick up next
+- `/ws-commit` — Jira-aware commit (Conventional Commits + ticket suffix, optional Smart Commit worklog and transition)
+- `/ws-commit-push-pr` — Commit + push + open PR with Jira link; optionally transitions ticket to In Review
 - `/ws-clean-gone` — Clean up git branches marked as `[gone]`
+
+**Hooks:** `SessionStart` — when claude opens in a folder bound to a WS project, injects a brief Jira dashboard so the user sees their workload without running `/ws-status` manually. Toggle via `hooks.session_start_dashboard: false` in `.claude/ws-project.yaml`.
+
+**Skills:** `ws-jira-conventions` — branch naming, commit format, Smart Commit syntax
 
 ### ws-jira-enhancer
 

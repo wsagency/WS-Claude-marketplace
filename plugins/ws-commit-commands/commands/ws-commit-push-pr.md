@@ -1,34 +1,87 @@
 ---
-allowed-tools: Bash(git checkout:*), Bash(git add:*), Bash(git status:*), Bash(git push:*), Bash(git commit:*), Bash(git diff:*), Bash(git log:*), Bash(git branch:*), Bash(tea pr:*)
-description: Commit, push, and open a PR using tea CLI (Gitea)
+allowed-tools: Bash, Read, AskUserQuestion, mcp__plugin_atlassian_atlassian__getJiraIssue, mcp__plugin_atlassian_atlassian__getTransitionsForJiraIssue, mcp__plugin_atlassian_atlassian__transitionJiraIssue
+description: Commit (Jira-aware), push, and open a PR with the Jira ticket linked in title and body
 ---
 
 ## Context
 
-- Current git status: !`git status`
-- Current git diff (staged and unstaged changes): !`git diff HEAD`
 - Current branch: !`git branch --show-current`
+- Git status: !`git status`
+- Diff: !`git diff HEAD`
+- Project config: !`cat ./.claude/ws-project.yaml 2>/dev/null || echo "(none)"`
 
 ## Your task
 
-Based on the above changes:
+End-to-end Jira-aware flow: commit → push → open PR → optionally transition the ticket.
 
-1. Create a new branch if on main
-2. Create a single commit with an appropriate message
-3. Push the branch to origin
-4. Create a pull request using `tea pr create`
-5. You have the capability to call multiple tools in a single response. You MUST do all of the above in a single message. Do not use any other tools or do anything else. Do not send any other text or messages besides these tool calls.
+### 1. Branch setup
 
-## PR Creation
+If on `main` / `master`, ask the user for a branch name. If they have a Jira ticket in mind, suggest `<TICKET-KEY>-<slugified-title>` (e.g. `WSC-150-dark-mode-toggle`). Create the branch (`git checkout -b ...`).
 
-Use this format for creating PRs with tea:
+### 2. Commit
+
+Run the same logic as `/ws-commit`:
+- Detect ticket from branch name (now guaranteed if step 1 created one)
+- Compose Conventional Commits message with `(TICKET)` suffix
+- Optionally add Smart Commit `#time` worklog (ask user, default = elapsed time since branch diverged from main)
+- Skip transition here — that happens at PR creation instead (typical workflow: PR open = In Review)
+
+### 3. Push
+
+`git push -u origin <branch>` (set upstream on first push).
+
+### 4. Open PR via `tea`
+
+Build PR title: `<commit-subject>` (which already includes ` (TICKET)`), e.g.:
+
+```
+feat(auth): add OTP screen (WSC-142)
+```
+
+PR description includes Jira link section:
 
 ```bash
-tea pr create --title "PR title" --description "$(cat <<'EOF'
+tea pr create --title "feat(auth): add OTP screen (WSC-142)" --description "$(cat <<'EOF'
 ## Summary
-- Brief description of changes
+- Validates 6-digit OTP code
+- Handles 30s resend timeout
+
+## Jira
+[WSC-142](https://wsagency.atlassian.net/browse/WSC-142) — feat: OTP screen for login
+
+## Test plan
+- [ ] Manual OTP entry happy path
+- [ ] Expired code rejection
+- [ ] Resend after timeout
 
 🤖 Generated with [Claude Code](https://claude.ai/code)
 EOF
 )" --base main
 ```
+
+Construct the Jira link from `site` in `~/.claude/ws/config.yaml`. If no ticket, omit the Jira section.
+
+### 5. Transition the ticket (if applicable)
+
+If a ticket exists and `defaults.pr_transition` is set in global config (default: `in-review`):
+- Call `mcp__plugin_atlassian_atlassian__getTransitionsForJiraIssue` to find the matching transition
+- Ask the user (AskUserQuestion):
+  - **Transition to <target>** (e.g. In Review) — recommended
+  - **Skip transition**
+- If confirmed, call `mcp__plugin_atlassian_atlassian__transitionJiraIssue`
+
+### 6. Report
+
+```
+✓ Committed abc1234: feat(auth): add OTP screen (WSC-142)
+✓ Pushed to origin/WSC-142-otp-screen
+✓ PR opened: https://gitea.ws.agency/wsagency/acme-app/pulls/231
+✓ WSC-142 → In Review
+```
+
+### Constraints
+
+- Do all bash steps in a single response after the user confirms the commit message and PR description
+- Don't push to main directly; if user is on main and refuses to branch, abort
+- If `tea` isn't installed, fall back to printing instructions for opening the PR manually
+- Don't transition without explicit user confirmation

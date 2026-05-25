@@ -109,20 +109,69 @@ Add a single entry to the Unreleased section of CHANGELOG.md.
 
 ## ws-commit-commands
 
-Git workflow commands for Gitea using tea CLI.
+Jira-aware git workflows. Detects ticket from branch name, composes Conventional Commits with `(TICKET)` suffix, optionally adds Smart Commit `#time` worklog and transition. PR creation via tea CLI.
 
-**Prerequisites:** [tea CLI](https://gitea.com/gitea/tea) must be installed and configured.
+**Prerequisites:** [tea CLI](https://gitea.com/gitea/tea), Atlassian MCP server (auto via `atlassian` plugin)
 
-### /ws-commit
+### /ws-init
 
-Create a git commit with conventional commit format.
+Connect Jira via OAuth and configure the marketplace for this user. If run inside a git repo, also binds that project to a specific Jira project key.
 
 **Arguments:** None
 
 **Behavior:**
-1. Analyzes staged and unstaged changes
-2. Generates a conventional commit message
-3. Creates the commit
+1. Triggers Atlassian OAuth (interactive — opens browser to authorize)
+2. Stores user account_id, site, and cloud_id in `~/.claude/ws/config.yaml`
+3. If in a git repo, asks which Jira project to bind; writes `./.claude/ws-project.yaml`
+4. Reports summary and suggests next commands
+
+**Example:**
+```
+/ws-init
+```
+
+---
+
+### /ws-status
+
+Show the user's Jira workload (assigned tickets grouped by status) and suggest the next task to pick up. Marks the ticket matching the current branch as "(you're here)".
+
+**Arguments:** None
+
+**Prerequisites:** `/ws-init` already run
+
+**Example:**
+```
+/ws-status
+```
+
+---
+
+### /ws-commit
+
+Jira-aware commit. Detects ticket key from branch name (`WSC-123-feature`), composes Conventional Commits with `(WSC-123)` suffix, optionally adds Smart Commit `#time` worklog and transition.
+
+**Arguments:** None
+
+**Behavior:**
+1. Parses current branch for `^([A-Z]+-\d+)`; if none, asks user for ticket (or proceeds without one)
+2. Fetches ticket title via Atlassian MCP for context
+3. Generates CC message: `<type>(<scope>): <description> (TICKET)` + body + `Refs: TICKET`
+4. Computes elapsed time on the branch as worklog default; asks user to log it, edit, or skip
+5. Asks about transition (To Do → In Progress, etc.) using available Jira transitions
+6. Appends Smart Commit trailer if worklog or transition chosen: `TICKET #time Xh Ym #transition`
+7. Shows full message for confirmation, then commits
+
+**Commit format:**
+```
+feat(auth): add OTP screen for login (WSC-142)
+
+- validates 6-digit code
+- handles 30s resend timeout
+
+Refs: WSC-142
+WSC-142 #time 2h 30m #in-progress
+```
 
 **Example:**
 ```
@@ -133,18 +182,18 @@ Create a git commit with conventional commit format.
 
 ### /ws-commit-push-pr
 
-Commit, push, and create a pull request in one step.
+End-to-end Jira-aware flow: commit, push, open PR with Jira link, optionally transition ticket to In Review.
 
 **Arguments:** None
 
-**Prerequisites:**
-- tea CLI installed and authenticated
-- Remote repository configured
+**Prerequisites:** tea CLI installed and authenticated; remote configured
 
 **Behavior:**
-1. Creates a conventional commit
-2. Pushes to remote branch
-3. Creates a pull request via tea CLI
+1. If on main, asks for branch name and suggests `<TICKET>-<slug>`
+2. Runs `/ws-commit` logic (without the transition prompt — that happens at step 5)
+3. Pushes to origin with `-u`
+4. Creates PR via `tea pr create` with title = commit subject and body including `## Jira` link section
+5. Offers to transition ticket to `defaults.pr_transition` (default: In Review)
 
 **Example:**
 ```
@@ -569,6 +618,12 @@ Skills provide knowledge and templates, loaded on demand.
 | Skill | Trigger Keywords |
 |-------|-----------------|
 | `claude-project-data` | project, session, history, clamp |
+
+### ws-commit-commands Skills
+
+| Skill | Trigger Keywords |
+|-------|-----------------|
+| `ws-jira-conventions` | jira, ticket, WSC-, smart commit, conventional commits |
 
 ### ws-project-hub Skills
 

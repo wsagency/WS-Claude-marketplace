@@ -20,14 +20,14 @@
     },
     {
       "name": "ws-commit-commands",
-      "description": "WS git commit and PR workflows",
-      "version": "1.0.0",
+      "description": "Jira-aware git workflows: Conventional Commits with ticket suffix, Smart Commit worklogs, PR creation via tea (Gitea), and Jira OAuth onboarding",
+      "version": "2.0.0",
       "source": "./plugins/ws-commit-commands",
       "category": "development",
       "author": {
         "name": "WS Agency"
       },
-      "tags": ["git", "commit", "pr"]
+      "tags": ["git", "commit", "pr", "jira", "conventional-commits", "smart-commits", "atlassian", "oauth"]
     },
     {
       "name": "ws-jira-enhancer",
