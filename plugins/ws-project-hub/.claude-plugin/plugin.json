@@ -1,0 +1,7 @@
+{
+  "name": "ws-project-hub",
+  "description": "Multi-repo project hub: single source of truth for projects spanning multiple git repos (app, web, design, docs)",
+  "author": {
+    "name": "WS Agency"
+  }
+}

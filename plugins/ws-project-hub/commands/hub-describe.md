@@ -1,0 +1,28 @@
+---
+allowed-tools: Bash, Read, Edit, Glob, Task
+description: Refresh descriptions and tech fields in project.yaml by reading each sub-repo
+---
+
+## Context
+
+- Hub directory: !`pwd`
+- project.yaml: !`cat ./project.yaml 2>/dev/null || echo "(missing)"`
+
+## Your task
+
+1. Verify `project.yaml` exists.
+
+2. For each registered repo with an accessible local path:
+   - Read its `README.md` (or `README` / first `.md` file at root)
+   - Read `package.json`, `pubspec.yaml`, `requirements.txt`, `Cargo.toml`, `go.mod`, `pyproject.toml` if present — to identify tech stack
+   - Glance at top-level directory structure
+
+3. Propose updates to `description` and `tech` fields. Show the user a diff (current vs proposed) and ask for confirmation before writing.
+
+4. After confirmation, update `project.yaml` (preserve formatting — use Edit for targeted replacements).
+
+5. Regenerate the `<!-- AUTO-GENERATED -->` section of `CLAUDE.md` from the updated yaml.
+
+6. For projects with 4+ sub-repos, optionally delegate the per-repo analysis to the `hub-architect` agent (Task tool) in parallel to keep it fast.
+
+Be conservative — only overwrite a `description` if the new one is clearly better than the existing one (e.g. existing is `"TODO"` or empty).

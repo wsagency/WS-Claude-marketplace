@@ -1,0 +1,40 @@
+# __PROJECT_NAME__-main
+
+Project hub for **__PROJECT_NAME__**. A small meta-repo that holds:
+
+- `project.yaml` — registry of all sub-repos
+- `CLAUDE.md` — project map for AI-assisted work
+- `invoke-ai.sh` — launches Claude with every sub-repo mounted
+- `.claude/skills/` — vendored conventions (works without the marketplace plugin)
+
+The actual code lives in subfolders, each its own git repo. The hub's `.gitignore` keeps them out of this repo's history.
+
+## Quick start
+
+```bash
+# Clone all registered sub-repos (skips ones you don't have access to)
+# Run from a /hub-clone-all command inside claude, or manually:
+#   git clone <url> ./<name>   for each in project.yaml
+
+# Launch Claude across all available sub-repos
+./invoke-ai.sh
+```
+
+## Layout
+
+```
+__PROJECT_NAME__-main/
+├── project.yaml         # repo registry
+├── CLAUDE.md            # AI project map
+├── invoke-ai.sh         # launcher
+├── README.md
+├── .gitignore           # managed block ignores sub-repo subfolders
+├── .claude/skills/      # vendored conventions
+├── __PROJECT_NAME__-app/        # own git, gitignored
+├── __PROJECT_NAME__-marketing/  # own git, gitignored
+└── ...
+```
+
+## Managing the hub
+
+Use the `ws-project-hub` plugin commands: `/hub-clone-all`, `/hub-sync`, `/hub-status`, `/hub-add-repo`, `/hub-scan`, `/hub-describe`.

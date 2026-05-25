@@ -61,6 +61,17 @@
         "name": "WS Agency"
       },
       "tags": ["project-management", "session-history", "migration", "archive", "maintenance"]
+    },
+    {
+      "name": "ws-project-hub",
+      "description": "Multi-repo project hub: single source of truth for projects spanning multiple git repos (app, web, design, docs) with auto-generated CLAUDE.md and Claude launch script",
+      "version": "0.1.0",
+      "source": "./plugins/ws-project-hub",
+      "category": "development",
+      "author": {
+        "name": "WS Agency"
+      },
+      "tags": ["multi-repo", "project-management", "monorepo-alternative", "hub", "claude-launcher"]
     }
   ]
 }
