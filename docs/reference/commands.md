@@ -412,6 +412,98 @@ Pack or unpack portable `.claudepack` project archives.
 
 ---
 
+## ws-project-hub
+
+Multi-repo project hubs. A hub is a small meta-repo (`<project>-main`) that registers all sub-repos (mobile app, marketing site, design, docs, etc.) of a project and launches Claude across them with `--add-dir`. Sub-repos live as gitignored subfolders, each with its own independent git history.
+
+### /hub-init
+
+Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register. Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml`, `CLAUDE.md`, `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), and vendors `.claude/skills/project-hub-conventions/`.
+
+**Example:**
+```
+/hub-init
+```
+
+---
+
+### /hub-launch
+
+Show how to launch the current hub. Prints the `./invoke-ai.sh` command and verifies the hub is correctly initialized. Does not execute the launcher itself (Claude can't re-launch itself from inside a session).
+
+**Example:**
+```
+/hub-launch
+```
+
+---
+
+### /hub-clone-all
+
+Clone every registered sub-repo URL into a missing subfolder of the hub. Skips repos already present or with no `url` field. Failures (no access, bad URL) are reported per-repo and don't abort the run.
+
+**Example:**
+```
+/hub-clone-all
+```
+
+---
+
+### /hub-sync
+
+`git pull --ff-only` across all registered sub-repos. Reports per-repo result (`already up to date`, `fast-forwarded N commits`, `skipped`, `failed`). Skips repos missing from disk.
+
+**Example:**
+```
+/hub-sync
+```
+
+---
+
+### /hub-status
+
+Aggregated git status across all sub-repos. Per repo: current branch, ahead/behind counts, uncommitted change count, last 5 commits. Read-only.
+
+**Example:**
+```
+/hub-status
+```
+
+---
+
+### /hub-add-repo
+
+Register a new sub-repo. Interactive: clone from URL, adopt an existing nested folder, register a sibling in place, or move a sibling into the hub. Updates `project.yaml`, `CLAUDE.md` auto-section, and the `.gitignore` managed block.
+
+**Example:**
+```
+/hub-add-repo
+```
+
+---
+
+### /hub-scan
+
+Find git repos in or near the hub (subfolders + siblings) that aren't yet in `project.yaml`. Interactive prompt to register each unregistered repo.
+
+**Example:**
+```
+/hub-scan
+```
+
+---
+
+### /hub-describe
+
+Refresh `description` and `tech` fields in `project.yaml` by reading each sub-repo's README and manifest files (package.json, pubspec.yaml, etc.). Shows a diff before writing.
+
+**Example:**
+```
+/hub-describe
+```
+
+---
+
 ## Agents
 
 These agents are spawned via the Task tool, typically by commands.
@@ -436,6 +528,12 @@ These agents are spawned via the Task tool, typically by commands.
 | Agent | Description |
 |-------|-------------|
 | `project-manager` | Diagnoses and plans Claude project management operations |
+
+### ws-project-hub Agents
+
+| Agent | Description |
+|-------|-------------|
+| `hub-architect` | Analyzes all sub-repos and generates cross-repo architecture/contracts/deployment docs |
 
 ### Usage
 
@@ -471,5 +569,13 @@ Skills provide knowledge and templates, loaded on demand.
 | Skill | Trigger Keywords |
 |-------|-----------------|
 | `claude-project-data` | project, session, history, clamp |
+
+### ws-project-hub Skills
+
+| Skill | Trigger Keywords |
+|-------|-----------------|
+| `project-hub-conventions` | project hub, multi-repo, `<name>-main`, `<name>-truth` |
+
+This skill is also vendored into every hub at init time (`<hub>/.claude/skills/`), so hubs remain self-documenting even when the marketplace plugin isn't installed.
 
 Skills are automatically loaded when relevant keywords appear in the conversation.

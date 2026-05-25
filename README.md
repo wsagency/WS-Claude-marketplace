@@ -13,6 +13,7 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 | [ws-jira-enhancer](./plugins/ws-jira-enhancer) | Transform task descriptions into Jira tickets | `/ws-jira-enhancer` |
 | [ws-claude-sync](./plugins/ws-claude-sync) | Sync Claude contexts across machines via GitHub | `/ws-sync-setup`, `/ws-sync`, `/ws-sync-pull`, `/ws-sync-push`, `/ws-sync-full`, `/ws-sync-status` |
 | [ws-clamp](./plugins/ws-clamp) | Move, archive, and manage Claude projects | `/clamp-move`, `/clamp-inspect`, `/clamp-maintain`, `/clamp-archive` |
+| [ws-project-hub](./plugins/ws-project-hub) | Multi-repo project hubs with auto-generated CLAUDE.md and Claude launcher | `/hub-init`, `/hub-launch`, `/hub-sync`, `/hub-status`, `/hub-add-repo`, `/hub-scan`, `/hub-describe`, `/hub-clone-all` |
 
 ## Prerequisites
 
@@ -33,6 +34,7 @@ claude plugin install ws-commit-commands@ws-marketplace
 claude plugin install ws-jira-enhancer@ws-marketplace
 claude plugin install ws-claude-sync@ws-marketplace
 claude plugin install ws-clamp@ws-marketplace
+claude plugin install ws-project-hub@ws-marketplace
 ```
 
 ```bash
@@ -157,6 +159,30 @@ Move, archive, fix, and manage Claude Code projects while preserving session his
 
 **Agents:** `project-manager`
 
+### ws-project-hub
+
+Manage multi-repo projects (mobile app, marketing site, design, docs, etc.) through a single hub repo. Generates a `<project>-main` folder with a registry of all sub-repos, an auto-built `CLAUDE.md` project map, and an `invoke-ai.sh` script that launches Claude with every accessible sub-repo mounted via `--add-dir`. Sub-repos live as gitignored subfolders, each with its own independent git.
+
+**Commands:**
+- `/hub-init` — Initialize a new project hub (interactive)
+- `/hub-launch` — Show how to launch the current hub (`./invoke-ai.sh`)
+- `/hub-clone-all` — Clone every registered sub-repo URL into a missing subfolder
+- `/hub-sync` — `git pull` across all sub-repos
+- `/hub-status` — Aggregated git status report
+- `/hub-add-repo` — Register a new sub-repo (clone, adopt, or sibling)
+- `/hub-scan` — Find unregistered repos in/near the hub
+- `/hub-describe` — Refresh sub-repo descriptions from their READMEs
+
+**Agents:** `hub-architect` (generates cross-repo architecture docs)
+
+**Skills:** `project-hub-conventions` (vendored into each hub at init time so hubs work even without the plugin installed)
+
+**Highlights:**
+- ASCII intro animation on launch (atlas figure with rotating Earth, lightning)
+- tmux session detection with attach/new/cancel prompt
+- Marketplace freshness check via `git ls-remote` on every launch
+- Access control via filesystem presence — no config branching by role
+
 ## Project Structure
 
 ```
@@ -173,7 +199,8 @@ ws-claude-marketplace/
     ├── ws-commit-commands/
     ├── ws-jira-enhancer/
     ├── ws-claude-sync/
-    └── ws-clamp/
+    ├── ws-clamp/
+    └── ws-project-hub/
 ```
 
 ## Contributing
