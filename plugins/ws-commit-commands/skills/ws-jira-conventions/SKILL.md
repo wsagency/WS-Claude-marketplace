@@ -85,6 +85,18 @@ Multiple tickets: `WSC-142 WSC-143 #resolve`.
 - PR description includes a **Jira** section with link to ticket
 - On PR open, transition ticket: To Do / In Progress → **In Review**
 
+## Changelog
+
+Changelog updates happen at **PR time** (`/ws-commit-push-pr`), not on every commit — this keeps feature-branch commits clean and consolidates the branch's work into the changelog when it's ready to merge.
+
+- Follows [Keep a Changelog](https://keepachangelog.com/) format, entries go under `[Unreleased]`
+- `CHANGELOG.md` is auto-created if missing
+- CC type → section: `feat`→Added, `fix`→Fixed, `perf`/`refactor`/`revert`→Changed, security→Security, breaking→Changed (prefixed `**BREAKING:**`)
+- Skipped by default: `docs, chore, test, style, build, ci` — configurable per-project via `changelog.skip_types` in `.claude/ws-project.yaml`
+- Entry text includes the ticket key: `- Add OTP screen for login (WSC-142)`
+
+The `keep-a-changelog` skill (docs-agent) auto-loads on the word "CHANGELOG" and guides formatting — no manual invocation needed.
+
 ## Time tracking
 
 The `/ws-commit` command computes elapsed time as a proxy for AI session work:

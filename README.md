@@ -121,8 +121,10 @@ Jira-aware git workflow commands. Detects ticket key from branch name (`WSC-123-
 - `/ws-init` — Connect Jira via OAuth and bind the current project to a Jira project
 - `/ws-status` — Show your Jira assignments, sprint status, and a suggestion for what to pick up next
 - `/ws-commit` — Jira-aware commit (Conventional Commits + ticket suffix, optional Smart Commit worklog and transition)
-- `/ws-commit-push-pr` — Commit + push + open PR with Jira link; optionally transitions ticket to In Review
+- `/ws-commit-push-pr` — Commit + update CHANGELOG.md + push + open PR with Jira link; optionally transitions ticket to In Review
 - `/ws-clean-gone` — Clean up git branches marked as `[gone]`
+
+**Changelog integration:** `/ws-commit-push-pr` auto-updates `CHANGELOG.md` (Keep a Changelog format) at PR time, mapping commit types to sections (`feat`→Added, `fix`→Fixed, etc.). Auto-creates the file if missing. Skips non-functional types (`docs, chore, test, style, build, ci`) by default — configurable per-project. Powered by the docs-agent `keep-a-changelog` skill, which auto-loads on the word "CHANGELOG".
 
 **Hooks:** `SessionStart` — when claude opens in a folder bound to a WS project, injects a brief Jira dashboard so the user sees their workload without running `/ws-status` manually. Toggle via `hooks.session_start_dashboard: false` in `.claude/ws-project.yaml`.
 

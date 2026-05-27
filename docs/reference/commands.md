@@ -190,10 +190,14 @@ End-to-end Jira-aware flow: commit, push, open PR with Jira link, optionally tra
 
 **Behavior:**
 1. If on main, asks for branch name and suggests `<TICKET>-<slug>`
-2. Runs `/ws-commit` logic (without the transition prompt — that happens at step 5)
-3. Pushes to origin with `-u`
-4. Creates PR via `tea pr create` with title = commit subject and body including `## Jira` link section
-5. Offers to transition ticket to `defaults.pr_transition` (default: In Review)
+2. Composes the Conventional Commits message (ticket suffix, optional Smart Commit worklog)
+3. Updates `CHANGELOG.md` (Keep a Changelog format) — auto-creates if missing, maps commit type to section, skips non-functional types per `changelog.skip_types`
+4. Commits code + CHANGELOG.md together (single commit)
+5. Pushes to origin with `-u`
+6. Creates PR via `tea pr create` with title = commit subject and body including `## Jira` link section
+7. Offers to transition ticket to `defaults.pr_transition` (default: In Review)
+
+**Changelog mapping:** `feat`→Added, `fix`→Fixed, `perf`/`refactor`/`revert`→Changed, security→Security, breaking change→Changed (prefixed `**BREAKING:**`). Skipped by default: `docs, chore, test, style, build, ci`.
 
 **Example:**
 ```

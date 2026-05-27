@@ -57,9 +57,15 @@ jira:
   cloud_id: <cloud-id>
   board: 42                  # optional
   default_issue_type: Task
+changelog:
+  auto_update: true                                   # update CHANGELOG.md on /ws-commit-push-pr
+  path: CHANGELOG.md
+  skip_types: [docs, chore, test, style, build, ci]   # CC types that produce no changelog entry
 hooks:
   session_start_dashboard: true   # overrides global default
 ```
+
+Ask the user (AskUserQuestion) whether to enable changelog auto-update and, if they want to narrow the skip set (e.g. only `style, build, ci` so docs/chore/test also get logged), adjust `skip_types` accordingly.
 
 (`mkdir -p ./.claude/` first.)
 

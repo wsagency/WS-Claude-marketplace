@@ -1,6 +1,6 @@
 {
   "name": "ws-commit-commands",
-  "description": "Jira-aware git workflows: Conventional Commits with ticket suffix, Smart Commit worklogs, PR creation via tea (Gitea), and Jira OAuth onboarding",
+  "description": "Jira-aware git workflows: Conventional Commits with ticket suffix, Smart Commit worklogs, automatic Keep-a-Changelog updates, PR creation via tea (Gitea), and Jira OAuth onboarding",
   "author": {
     "name": "WS Agency"
   }
