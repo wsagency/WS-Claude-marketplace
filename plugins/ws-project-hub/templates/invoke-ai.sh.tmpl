@@ -51,10 +51,11 @@ PROJECT_DESC="$(yaml_scalar description)"
 TMUX_SESSION="$(yaml_scalar session)"
 : "${TMUX_SESSION:=${PROJECT_NAME}-hub}"
 
-mapfile -t REPO_NAMES < <(yaml_repos_field name)
-mapfile -t REPO_PATHS < <(yaml_repos_field path)
-mapfile -t REPO_DESCS < <(yaml_repos_field description)
-mapfile -t REPO_TECHS < <(yaml_repos_field tech)
+# Portable array fill (macOS ships bash 3.2 — no `mapfile`/`readarray`)
+REPO_NAMES=(); while IFS= read -r line; do REPO_NAMES+=("$line"); done < <(yaml_repos_field name)
+REPO_PATHS=(); while IFS= read -r line; do REPO_PATHS+=("$line"); done < <(yaml_repos_field path)
+REPO_DESCS=(); while IFS= read -r line; do REPO_DESCS+=("$line"); done < <(yaml_repos_field description)
+REPO_TECHS=(); while IFS= read -r line; do REPO_TECHS+=("$line"); done < <(yaml_repos_field tech)
 
 # ─── colors ────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
