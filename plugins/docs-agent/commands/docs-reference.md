@@ -11,15 +11,29 @@ allowed_tools:
   - Glob
   - Grep
   - Task
+  - AskUserQuestion
 ---
 
 # Generate Reference Documentation
 
 Generate technical reference documentation for **{{ target }}**.
 
+## Audience routing
+
+Before writing anything, determine the audience:
+
+1. Read `.claude/docs-config.yaml` if it exists. If `docs.default_audience` is `user` or `dev`, use that without prompting.
+2. Otherwise, ask the user via AskUserQuestion:
+   > Who reads this? **External user** (consumer / end-user / library client) **or Internal contributor** (maintainer / dev team)?
+3. Cache the answer in the session for any further docs commands.
+
+Destination based on the answer:
+- **user** → `docs/reference/<slug>.md`
+- **dev** → `dev-docs/reference/<slug>.md`
+
 ## Your Task
 
-Create accurate, complete reference documentation by extracting and documenting the technical details of the specified target.
+Create accurate, complete reference documentation by extracting and documenting the technical details of the specified target. Write to the destination determined in the Audience routing section above.
 
 ## Reference Documentation Characteristics
 

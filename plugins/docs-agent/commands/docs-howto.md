@@ -10,15 +10,29 @@ allowed_tools:
   - Write
   - Glob
   - Grep
+  - AskUserQuestion
 ---
 
 # Create How-to Guide
 
 Generate a task-oriented how-to guide following Diátaxis guidelines.
 
+## Audience routing
+
+Before writing anything, determine the audience:
+
+1. Read `.claude/docs-config.yaml` if it exists. If `docs.default_audience` is `user` or `dev`, use that without prompting.
+2. Otherwise, ask the user via AskUserQuestion:
+   > Who reads this? **External user** (consumer / end-user / library client) **or Internal contributor** (maintainer / dev team)?
+3. Cache the answer in the session for any further docs commands.
+
+Destination based on the answer:
+- **user** → `docs/how-to/<slug>.md`
+- **dev** → `dev-docs/runbooks/<slug>.md`
+
 ## Your Task
 
-Create a practical guide that helps users accomplish **{{ task }}**.
+Create a practical guide that helps users accomplish **{{ task }}**. Write to the destination determined in the Audience routing section above.
 
 ## How-to Guide Characteristics
 
