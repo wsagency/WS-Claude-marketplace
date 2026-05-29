@@ -1,6 +1,6 @@
 {
   "name": "docs-agent",
-  "description": "Dual-track documentation generation suite (user docs in docs/, contributor docs in dev-docs/): Diátaxis framework, Keep a Changelog with mirror, Architecture Decision Records (MADR v4.0.0), CONTRIBUTING 3-file set, ARCHITECTURE.md, release notes, Conventional Commits, style guide enforcement, TSDoc/GraphQL API reference, and docs-as-code workflows",
+  "description": "Dual-track documentation suite with unified /ws-docs entry (discovery, init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes), opt-in PreToolUse/Stop hooks, and background subagent dispatch",
   "author": {
     "name": "WS Agency"
   }

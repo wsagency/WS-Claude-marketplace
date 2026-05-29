@@ -1,3 +1,55 @@
+# docs-agent v3.0.0 — Unified /ws-docs entry (BREAKING)
+
+## What Changed in v3.0.0
+
+### Breaking
+All eleven prior commands are removed. There is no back-compat alias.
+
+### Migration table
+
+| v2.x command | v3.0.0 equivalent |
+|---|---|
+| `/docs` | `/ws-docs init` |
+| `/docs-tutorial <topic>` | `/ws-docs write tutorial <topic>` |
+| `/docs-howto <topic>` | `/ws-docs write howto <topic>` |
+| `/docs-reference <topic>` | `/ws-docs write reference <topic>` |
+| `/docs-explanation <topic>` | `/ws-docs write explanation <topic>` |
+| `/adr "<decision>"` | `/ws-docs adr "<decision>"` |
+| `/architecture` | `/ws-docs architecture` |
+| `/contributing` | `/ws-docs contributing` |
+| `/changelog [version]` | `/ws-docs changelog [version]` |
+| `/changelog-entry <type> <text>` | removed — handled automatically by /ws-commit-push-pr and the CLAUDE.md maintenance rules added by `/ws-docs init` |
+| `/release-notes [version]` | `/ws-docs release-notes [version]` |
+
+Run `/ws-docs` (no args) to see the discovery report for your project, then `/ws-docs init` if you haven't initialized.
+
+### New: discovery + automation
+
+- `/ws-docs` with no args returns a per-artifact status table (no writes).
+- `/ws-docs init` writes `.claude/docs-config.yaml` and appends a "Documentation maintenance" section to root `CLAUDE.md`. After init, Claude knows to update CHANGELOG after code changes, propose ADRs for architectural changes, and update `docs/reference/` for public API changes.
+- Two opt-in hooks: PreToolUse blocks `git commit` when staged code changes lack a CHANGELOG entry; Stop blocks claude stop when uncommitted code lacks a CHANGELOG entry. Both no-op without `.claude/docs-config.yaml`.
+
+### New: subagent team for heavy verbs
+
+`init`, `catchup`, `architecture`, `contributing` dispatch background subagents and print a live status block. Main session stays clean.
+
+### New agents
+
+- `docs-doctor` — scans project state, returns the artifact status table
+- `public-api-watcher` — diffs exports/CLI/schema across commits, suggests `docs/reference/` updates
+- `arch-watcher` — detects architectural-decision signals (BREAKING, keywords, large infra diffs, new dependencies)
+
+## Migrating Existing v2.x Projects
+
+1. Update the plugin: `/plugin update docs-agent@ws-marketplace`
+2. Run `/ws-docs` in each project to see what's already in place.
+3. Run `/ws-docs init` (idempotent — preserves existing content).
+4. Commit the new `.claude/docs-config.yaml` and CLAUDE.md additions.
+
+If you were using `/changelog-entry` in scripts or muscle-memory: stop. With v3.0.0 you either let `/ws-commit-push-pr` handle it (recommended) or run `/ws-docs changelog` for explicit edits.
+
+---
+
 # docs-agent v2.1.0 — Dual-track docs convention
 
 ## What Changed in v2.1.0
