@@ -125,3 +125,9 @@ Before finalizing:
 - [ ] Consequences include both good and bad
 - [ ] Each option has honest pros and cons
 - [ ] ADR is numbered and indexed
+
+## Inputs
+
+ADRs always live in `dev-docs/decisions/` — no `destination_track` is needed. The invoking command may pass:
+
+- **`destination_path`** — explicit output path that overrides the default (rarely needed).

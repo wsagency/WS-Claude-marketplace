@@ -158,3 +158,12 @@ If the project lacks automation, recommend:
 2. **commitlint in CI** as immutable safety net
 3. **release-please** for Release PR generation with human review gate
 4. Link to the `conventional-commits` skill for setup details
+
+## Inputs
+
+The invoking command may pass these structured inputs in your prompt:
+
+- **`destination_track`** — `user` (write into `docs/`) or `dev` (write into `dev-docs/`). Required for agents whose audience is ambiguous; ignored by agents that always target one track.
+- **`destination_path`** — an explicit output path that overrides the track default. Use this when the command has already resolved the exact target.
+
+If neither is supplied, default per the routing rules in the `dual-track-docs` skill.
