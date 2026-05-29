@@ -77,3 +77,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use conventional commit messages to categorize when available
 - Include issue/PR references when they exist in commit messages
 - Mark breaking changes clearly with **BREAKING:**
+
+## Mirror to docs/
+
+After writing or updating the root `CHANGELOG.md`, also mirror its contents to `docs/changelog.md` so the user-facing site has the same version history. The mirror is a build artifact — never edit it directly; always write through the root file first.
+
+Implementation:
+1. Read the final contents of `CHANGELOG.md`.
+2. Ensure `docs/` exists (create if missing).
+3. Write the same contents to `docs/changelog.md` (overwriting).
+
+If the project doesn't use the dual-track-docs convention (no `docs/` directory and no `.claude/docs-config.yaml`), skip the mirror step silently.

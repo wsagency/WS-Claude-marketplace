@@ -78,3 +78,14 @@ When creating sections, maintain this order:
 - If CHANGELOG.md doesn't exist, create it with the standard header
 - If the type is invalid, show valid options and ask for correction
 - If [Unreleased] section is missing, create it
+
+## Mirror to docs/
+
+After writing or updating the root `CHANGELOG.md`, also mirror its contents to `docs/changelog.md` so the user-facing site has the same version history. The mirror is a build artifact — never edit it directly; always write through the root file first.
+
+Implementation:
+1. Read the final contents of `CHANGELOG.md`.
+2. Ensure `docs/` exists (create if missing).
+3. Write the same contents to `docs/changelog.md` (overwriting).
+
+If the project doesn't use the dual-track-docs convention (no `docs/` directory and no `.claude/docs-config.yaml`), skip the mirror step silently.
