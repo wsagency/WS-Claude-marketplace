@@ -1,3 +1,41 @@
+# docs-agent v2.1.0 — Dual-track docs convention
+
+## What Changed in v2.1.0
+
+### New Skill
+- **dual-track-docs** — Single source of truth for the user-facing (`docs/`) vs internal contributor (`dev-docs/`) split. All other skills and commands cross-reference it.
+
+### Revised Skills
+- **diataxis** — Notes that the framework is primarily for the user track; `dev-docs/` uses a parallel substructure.
+- **style-guide** — Now labeled into two scopes: prose style (for `docs/`) and code style (for `dev-docs/development.md`).
+- **conventional-commits** — Explicitly marked as dev-doc reference.
+- **keep-a-changelog** — Documents the root→`docs/changelog.md` mirror.
+- **adr** — Destination updated to `dev-docs/decisions/`.
+
+### Revised Commands
+- `/docs` — Scaffolds and generates content across both tracks.
+- `/docs-howto`, `/docs-reference`, `/docs-explanation` — Prompt the user for audience (or read `.claude/docs-config.yaml`), then route to the correct track.
+- `/adr`, `/architecture` — Always write to `dev-docs/`.
+- `/contributing` — Generates 3 files: root router, `docs/contributing.md`, `dev-docs/development.md`.
+- `/changelog`, `/changelog-entry` — Mirror to `docs/changelog.md` after writing the root file.
+- `/release-notes` — Writes to `docs/release-notes/`.
+
+### Agent updates
+All 8 agents now document a `destination_track` input (`user` or `dev`) that the invoking command may pass.
+
+## Migrating Existing Projects
+
+If you adopt v2.1.0 on a project that already has docs in a single `docs/` folder:
+
+1. Decide which existing files belong to the user track vs. dev track.
+2. Create `dev-docs/` and move contributor-only docs (architecture, ADRs, internal runbooks) there.
+3. Run `/contributing` to regenerate the 3-file CONTRIBUTING set.
+4. If `CHANGELOG.md` exists at the root, copy it to `docs/changelog.md` to seed the mirror.
+
+This is intentionally manual for PR 1. A `/docs-init` scaffold command (PR 2) and migration tooling (PR 3 for the marketplace itself) follow in subsequent releases.
+
+---
+
 # docs-agent v2.0.0 — Upgrade Notes and Recommendations
 
 ## What Changed in v2.0.0

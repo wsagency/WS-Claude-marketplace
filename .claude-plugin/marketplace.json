@@ -9,8 +9,8 @@
   "plugins": [
     {
       "name": "docs-agent",
-      "description": "Comprehensive documentation suite: Diátaxis docs, changelogs, ADRs, CONTRIBUTING.md, ARCHITECTURE.md, release notes, Conventional Commits, style guide, TSDoc/GraphQL API reference",
-      "version": "2.0.0",
+      "description": "Dual-track documentation generation suite (user docs in docs/, contributor docs in dev-docs/): Diátaxis framework, Keep a Changelog with mirror, Architecture Decision Records (MADR v4.0.0), CONTRIBUTING 3-file set, ARCHITECTURE.md, release notes, Conventional Commits, style guide enforcement, TSDoc/GraphQL API reference, and docs-as-code workflows",
+      "version": "2.1.0",
       "source": "./plugins/docs-agent",
       "category": "development",
       "author": {
