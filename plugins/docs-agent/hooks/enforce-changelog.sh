@@ -70,8 +70,11 @@ if printf '%s\n' "$staged_files" | grep -q '^CHANGELOG\.md$'; then
   exit 0
 fi
 
-# Try to detect commit type from -m message in the command (best-effort)
-msg=$(printf '%s' "$command" | sed -n "s/.*-m[[:space:]]*[\"']\([^\"']*\)[\"'].*/\1/p" | head -1)
+# Try to detect commit type from -m message in the command (best-effort).
+# Unescape JSON \" -> " first so quoted -m "feat: x" parses regardless of how
+# the upstream JSON encoded the quotes.
+unescaped=$(printf '%s' "$command" | sed 's/\\"/"/g')
+msg=$(printf '%s' "$unescaped" | sed -n "s/.*-m[[:space:]]*[\"']\([^\"']*\)[\"'].*/\1/p" | head -1)
 commit_type=$(printf '%s' "$msg" | sed -n 's/^\([a-z]*\)[(:!].*/\1/p')
 
 if [[ -n "$commit_type" ]]; then
