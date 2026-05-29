@@ -1,13 +1,14 @@
 ---
-description: Generate a complete documentation suite following the Diátaxis framework
+description: Generate a complete documentation suite following Diátaxis and the dual-track docs convention
 arguments:
-  - name: output-dir
-    description: Directory to create documentation in (default: ./docs)
+  - name: scope
+    description: "Scope: 'user' (only docs/), 'dev' (only dev-docs/), or 'both' (default)"
     required: false
 allowed_tools:
   - Bash
   - Read
   - Write
+  - Edit
   - Glob
   - Grep
   - Task
@@ -15,106 +16,37 @@ allowed_tools:
 
 # Generate Documentation Suite
 
-Analyze the codebase and generate comprehensive documentation following the [Diátaxis](https://diataxis.fr) framework.
+Generate a complete dual-track documentation suite for this project. Follows the `dual-track-docs` convention: user-facing content goes into `docs/`, internal contributor content goes into `dev-docs/`.
 
 ## Your Task
 
-1. **Analyze the codebase** to understand its structure, features, and APIs
-2. **Create a documentation plan** identifying what's needed in each quadrant
-3. **Present the plan** to the user for approval
-4. **Generate documentation** for each approved section
+1. **Load the convention** — read the `dual-track-docs` skill for the full rules.
+2. **Determine scope** — default to both tracks if `{{ scope }}` is unset; otherwise honor `user` or `dev`.
+3. **Scaffold missing structure** — ensure `docs/{tutorials,how-to,reference,explanation}/` and `dev-docs/{decisions,runbooks,reference,explanation}/` exist (with `index.md` stubs in each). Never overwrite existing files.
+4. **Analyze the project** — read README, package manifests, top-level source structure to understand what to document.
+5. **Generate content per audience**:
+   - **User track (`docs/`)** — tutorials for external consumers, how-tos for user tasks, reference for public APIs/CLIs, explanations of user-facing concepts.
+   - **Dev track (`dev-docs/`)** — architecture overview, runbooks for contributor tasks (e.g. adding a feature, releasing), reference for internal modules, explanations of internal patterns.
+6. **Wire the changelog mirror** — if `CHANGELOG.md` exists at the root, ensure `docs/changelog.md` is a current copy.
+7. **Generate the router `CONTRIBUTING.md`** — only if missing — pointing to `docs/contributing.md` and `dev-docs/development.md`.
 
-## Diátaxis Quadrants
+## Routing decisions
 
-The documentation will be organized into four types:
-
-| Type | Purpose | Directory |
-|------|---------|-----------|
-| **Tutorials** | Learning-oriented, hands-on for beginners | `tutorials/` |
-| **How-to Guides** | Task-oriented, problem-solving | `how-to/` |
-| **Reference** | Information-oriented, technical details | `reference/` |
-| **Explanation** | Understanding-oriented, concepts | `explanation/` |
-
-## Process
-
-### Phase 1: Analysis
-Use the `docs-architect` agent to:
-- Scan the codebase structure
-- Identify public APIs and features
-- Assess existing documentation
-- Create a documentation plan
-
-### Phase 2: User Approval
-Present the plan showing:
-- Proposed documentation structure
-- List of documents to create
-- Priority order
-- Estimated scope
-
-### Phase 3: Generation
-For each approved document, use the appropriate agent:
-- `tutorial-writer` for tutorials
-- `api-documenter` for reference docs
-- General writing for how-tos and explanations
-
-## Output Structure
-
-```
-{output-dir}/
-├── index.md                    # Documentation home
-├── tutorials/
-│   ├── getting-started.md
-│   └── ...
-├── how-to/
-│   └── ...
-├── reference/
-│   ├── api.md
-│   ├── configuration.md
-│   └── ...
-└── explanation/
-    └── ...
-```
+When a topic is ambiguous (could go in either track), default to **dev** track for anything maintenance-related, **user** track for anything an external consumer would search for.
 
 ## Skills to Use
 
-Load the `diataxis` skill for:
-- Writing guidelines for each documentation type
-- Templates and examples
-- Quality standards
+- `dual-track-docs` — convention single source of truth
+- `diataxis` — quadrant definitions
+- `style-guide` — prose (user) vs code (dev) style
+- `keep-a-changelog` — for the mirror
 
-## Important Guidelines
+## Agents
 
-- **Don't duplicate** existing good documentation
-- **Prioritize** the most impactful docs first
-- **Match scope** to project complexity
-- **Maintain consistency** across all docs
-- **Include navigation** and cross-references
+- `docs-architect` — high-level structure planning
+- `tutorial-writer` — writes tutorials (always user track)
+- `api-documenter` — writes reference (audience determined by command)
+- `architecture-documenter` — writes `dev-docs/architecture.md`
+- `contributing-generator` — writes the 3-file CONTRIBUTING set
 
-## Example Index Page
-
-```markdown
-# Project Documentation
-
-Welcome to the [Project Name] documentation.
-
-## Getting Started
-
-New to [Project]? Start with our tutorials:
-- [Quick Start Tutorial](tutorials/getting-started.md)
-
-## How-to Guides
-
-Practical guides for common tasks:
-- [How to Configure X](how-to/configure-x.md)
-
-## Reference
-
-Technical reference documentation:
-- [API Reference](reference/api.md)
-- [Configuration Reference](reference/configuration.md)
-
-## Understanding [Project]
-
-Learn about the concepts and architecture:
-- [Architecture Overview](explanation/architecture.md)
-```
+Pass `destination_track: user` or `destination_track: dev` to agents whose audience is ambiguous.
