@@ -18,6 +18,10 @@ allowed_tools:
 
 Generate user-facing release notes in Linear's changelog style — benefit-driven, visual, and curated.
 
+## Destination
+
+Release notes are user-facing. Always write to `docs/release-notes/<version>.md` (where `<version>` is e.g. `v1.2.0`). If the `docs/` directory doesn't exist yet, create it. Do not write release notes to `dev-docs/` — that's for internal contributor docs only.
+
 ## Your Task
 
 1. **Gather changes** from CHANGELOG.md or git history for the target version/period
