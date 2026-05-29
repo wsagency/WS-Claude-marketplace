@@ -87,3 +87,7 @@ Conventional Commits directly enables:
 - [commitlint](https://commitlint.js.org)
 - See `references/` for detailed setup guides
 - See `examples/` for commit message examples
+
+## Where this lives in the dual-track convention
+
+Conventional Commits is a developer-facing convention. In projects using the `dual-track-docs` convention, the commit format documentation belongs in `dev-docs/development.md`, not in user-facing `docs/`. The `/contributing` command places it there automatically.

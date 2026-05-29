@@ -15,6 +15,18 @@ triggers:
 
 This skill provides knowledge about industry-standard writing style guides for technical documentation, prose linting with Vale, and agency-specific terminology management.
 
+## Two scopes — prose vs code
+
+This skill covers two different style guides:
+
+1. **Prose style** — for user-facing documentation in `docs/`. Active voice, present tense, second person, Google/Microsoft writing standards. Use this when writing tutorials, how-tos, reference, and explanations for external consumers.
+
+2. **Code style** — for internal code conventions documented in `dev-docs/development.md`. Naming, formatting, language-specific patterns. Use this when generating or updating the contributor development guide.
+
+Sections below are clearly labeled "[Prose]" or "[Code]". When neither label is present, the guidance applies to both.
+
+---
+
 ## Canonical Base: Google Developer Documentation Style Guide
 
 The Google style guide (CC-BY 4.0, freely usable) is the recommended base for all documentation at websolutions.hr. Key rules:

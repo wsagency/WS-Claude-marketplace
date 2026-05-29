@@ -93,3 +93,11 @@ Diátaxis is used by Cloudflare, Canonical/Ubuntu, Django, Gatsby, and many othe
 - [Diátaxis Official Documentation](https://diataxis.fr)
 - See `references/` for detailed guidance on each type
 - See `examples/` for templates and examples
+
+## Relationship to the dual-track docs convention
+
+This skill describes the Diátaxis framework in general. In the WS Agency convention (see the `dual-track-docs` skill), Diátaxis is primarily applied to the user track (`docs/`). The internal track (`dev-docs/`) uses a Diátaxis-like substructure (`runbooks/`, `reference/`, `explanation/`) but with the maintainer audience instead of the external user.
+
+When picking a Diátaxis quadrant for a new doc, decide audience first:
+- **External user** → goes in `docs/<quadrant>/`
+- **Internal contributor** → goes in `dev-docs/<quadrant-or-runbook>/`

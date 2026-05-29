@@ -89,10 +89,10 @@ Chosen option: "[Option N]", because [justification].
 
 ## File Organization
 
-Store ADRs in `docs/decisions/` numbered sequentially:
+Store ADRs in `dev-docs/decisions/` numbered sequentially:
 
 ```
-docs/decisions/
+dev-docs/decisions/
 ├── 0001-use-graphql-over-rest.md
 ├── 0002-choose-tanstack-router.md
 ├── 0003-adopt-drizzle-orm.md
@@ -114,7 +114,7 @@ Add to your pull request template:
 
 ```markdown
 ## Checklist
-- [ ] Does this change require a new ADR? If yes, add one in `docs/decisions/`
+- [ ] Does this change require a new ADR? If yes, add one in `dev-docs/decisions/`
 ```
 
 ## References
@@ -123,3 +123,7 @@ Add to your pull request template:
 - [ADR GitHub Organization](https://adr.github.io/)
 - See `references/` for detailed guidance
 - See `examples/` for real-world ADR examples
+
+## Destination in the dual-track convention
+
+ADRs are internal contributor documentation. They live in `dev-docs/decisions/`, never in user-facing `docs/`. The `/adr` command always writes there.
