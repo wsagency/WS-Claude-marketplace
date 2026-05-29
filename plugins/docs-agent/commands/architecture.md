@@ -2,7 +2,7 @@
 description: Generate an ARCHITECTURE.md file following matklad's pattern
 arguments:
   - name: output-path
-    description: Where to save the file (default: ./ARCHITECTURE.md)
+    description: Where to save the file (default: dev-docs/architecture.md)
     required: false
 allowed_tools:
   - Bash
@@ -55,5 +55,5 @@ The document will include:
 
 ## Examples
 
-`/architecture` — Generate ARCHITECTURE.md in project root
-`/architecture docs/ARCHITECTURE.md` — Save to custom path
+`/architecture` — Generate ARCHITECTURE.md in dev-docs/architecture.md
+`/architecture dev-docs/architecture.md` — Save to custom path
