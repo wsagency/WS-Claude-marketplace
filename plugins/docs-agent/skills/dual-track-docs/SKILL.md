@@ -50,20 +50,23 @@ The distinction is **audience**, not technical complexity. An API reference for 
     └── explanation/
 ```
 
-## Routing rules for docs-agent commands
+## Routing rules for docs-agent
 
-| Command | Destination |
+As of v3.0.0, all docs operations route through `/ws-docs <verb>`:
+
+| Verb | Destination |
 |---|---|
-| `/docs` | Both tracks per Diátaxis category and audience |
-| `/docs-tutorial` | `docs/tutorials/` (always user) |
-| `/docs-howto` | Prompts audience → `docs/how-to/` or `dev-docs/runbooks/` |
-| `/docs-reference` | Prompts audience → `docs/reference/` or `dev-docs/reference/` |
-| `/docs-explanation` | Prompts audience → `docs/explanation/` or `dev-docs/explanation/` |
-| `/adr` | `dev-docs/decisions/` (always internal) |
-| `/architecture` | `dev-docs/architecture.md` (always internal) |
-| `/contributing` | 3 files: root router, `docs/contributing.md`, `dev-docs/development.md` |
-| `/changelog`, `/changelog-entry` | Root `CHANGELOG.md` + mirror to `docs/changelog.md` |
-| `/release-notes` | `docs/release-notes/` |
+| (no verb) | Discovery — prints the artifact status table, no writes |
+| `init` | Scaffolds both tracks, writes `.claude/docs-config.yaml`, appends CLAUDE.md section, generates CHANGELOG.md, 3-file CONTRIBUTING |
+| `audit` | Verbose dijagnoza; optionally writes `docs-audit-<date>.md` |
+| `catchup` | Proposes CHANGELOG entries, reference updates, ADRs; user triages; one big commit |
+| `repair` | Creates missing artifacts only (never deletes) |
+| `write <type> [topic]` | One Diátaxis doc; `type` = `tutorial \| howto \| reference \| explanation` |
+| `adr "<decision>"` | New ADR in `dev-docs/decisions/` |
+| `architecture` | Regenerate `dev-docs/architecture.md` (diff + confirm) |
+| `contributing` | Regenerate 3-file CONTRIBUTING set (diff + confirm) |
+| `changelog [version]` | Update `[Unreleased]` or cut version; mirrors to `docs/changelog.md` |
+| `release-notes [version]` | Linear-style notes → `docs/release-notes/<version>.md` |
 
 ## Audience prompt
 
