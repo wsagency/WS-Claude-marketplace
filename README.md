@@ -197,11 +197,22 @@ Manage multi-repo projects (mobile app, marketing site, design, docs, etc.) thro
 ws-claude-marketplace/
 ├── .claude-plugin/
 │   └── marketplace.json     # Plugin registry
-├── docs/                    # Documentation (Diátaxis)
+├── docs/                    # USER docs (plugin users)
 │   ├── tutorials/
 │   ├── how-to/
 │   ├── reference/
-│   └── explanation/
+│   ├── explanation/
+│   ├── changelog.md         # mirror of root CHANGELOG.md
+│   ├── contributing.md      # how to report bugs / propose plugins
+│   └── superpowers/         # brainstorming specs and plans
+├── dev-docs/                # INTERNAL docs (maintainers / plugin authors)
+│   ├── runbooks/            # create-plugin, add-command, add-agent
+│   ├── reference/           # plugin.json + marketplace.json schemas
+│   ├── decisions/           # ADRs
+│   ├── architecture.md
+│   └── development.md       # local setup, code style, commits
+├── CHANGELOG.md             # single source (Keep a Changelog)
+├── CONTRIBUTING.md          # thin router → docs/ + dev-docs/
 └── plugins/
     ├── docs-agent/
     ├── ws-commit-commands/
@@ -213,20 +224,29 @@ ws-claude-marketplace/
 
 ## Contributing
 
-1. Clone the repository
-2. Add or modify plugins under `plugins/`
-3. Register new plugins in `.claude-plugin/marketplace.json`
-4. Submit a pull request
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the thin router. Quick links:
 
-See [How to Create a Plugin](./docs/how-to/create-plugin.md) for detailed instructions.
+- **Report bugs / request features** → [`docs/contributing.md`](docs/contributing.md)
+- **Add a plugin** → [`dev-docs/runbooks/create-plugin.md`](dev-docs/runbooks/create-plugin.md)
+- **Add a command / agent** → [`dev-docs/runbooks/add-command.md`](dev-docs/runbooks/add-command.md), [`dev-docs/runbooks/add-agent.md`](dev-docs/runbooks/add-agent.md)
+- **Local setup, commit format, code style** → [`dev-docs/development.md`](dev-docs/development.md)
+
+See [`dev-docs/runbooks/create-plugin.md`](dev-docs/runbooks/create-plugin.md) for detailed instructions.
 
 ## Documentation
 
-Full documentation is available in the [`docs/`](./docs/index.md) directory:
+The marketplace follows the **dual-track docs** convention:
 
-- [Getting Started Tutorial](./docs/tutorials/getting-started.md)
-- [How to Create a Plugin](./docs/how-to/create-plugin.md)
-- [Command Reference](./docs/reference/commands.md)
+- **[User docs](docs/index.md)** — install and use plugins
+  - [Getting Started Tutorial](docs/tutorials/getting-started.md)
+  - [Command Reference](docs/reference/commands.md)
+  - [Troubleshooting](docs/how-to/troubleshooting.md)
+- **[Contributor docs](dev-docs/index.md)** — add or modify plugins
+  - [Create a plugin](dev-docs/runbooks/create-plugin.md)
+  - [Add a command](dev-docs/runbooks/add-command.md)
+  - [Add an agent](dev-docs/runbooks/add-agent.md)
+  - [Architecture overview](dev-docs/architecture.md)
+  - [Decisions (ADRs)](dev-docs/decisions/)
 
 ## Attribution
 

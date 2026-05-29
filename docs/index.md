@@ -1,32 +1,34 @@
 # WS Claude Marketplace Documentation
 
-Welcome to the WS Agency Claude Code marketplace documentation.
+Welcome to the WS Agency Claude Code marketplace documentation. This site is for **plugin users** — developers who install marketplace plugins to extend their Claude Code workflow.
+
+Looking to contribute a new plugin or modify the marketplace? See [`dev-docs/`](../dev-docs/index.md) instead.
 
 ## Getting Started
 
 New to the marketplace? Start here:
 
-- [Getting Started Tutorial](tutorials/getting-started.md) - Install the marketplace and use your first plugin
+- [Getting Started Tutorial](tutorials/getting-started.md) — Install the marketplace and use your first plugin
 
 ## How-to Guides
 
 Practical guides for common tasks:
 
-- [How to Create a Plugin](how-to/create-plugin.md) - Build and register a new plugin
-- [How to Add a Command](how-to/add-command.md) - Add a slash command to a plugin
-- [How to Add an Agent](how-to/add-agent.md) - Add an autonomous agent to a plugin
-- [Troubleshooting](how-to/troubleshooting.md) - Fix common issues
+- [Troubleshooting](how-to/troubleshooting.md) — Fix common installation and runtime issues
 
 ## Reference
 
 Technical reference documentation:
 
-- [Command Reference](reference/commands.md) - All available commands
-- [marketplace.json Schema](reference/marketplace-json.md) - Marketplace registry format
-- [plugin.json Schema](reference/plugin-json.md) - Plugin metadata format
+- [Command Reference](reference/commands.md) — All available slash commands across the installed plugins
 
 ## Understanding the Marketplace
 
 Learn about the architecture and concepts:
 
-- [Plugin Architecture](explanation/plugin-architecture.md) - How the plugin system works
+- [Plugin Architecture](explanation/plugin-architecture.md) — How the plugin system works from a user perspective
+
+## Other resources
+
+- [Changelog](changelog.md) — Version history (mirrored from the root `CHANGELOG.md`)
+- [Contributing](contributing.md) — How to report bugs and request features
