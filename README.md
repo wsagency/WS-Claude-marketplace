@@ -8,7 +8,7 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 
 | Plugin | Description | Commands |
 |--------|-------------|----------|
-| [docs-agent](./plugins/docs-agent) | Comprehensive documentation suite (Diátaxis, ADRs, changelogs, style guide) | `/docs`, `/adr`, `/contributing`, `/architecture`, `/release-notes`, `/changelog` |
+| [docs-agent](./plugins/docs-agent) | Dual-track documentation suite with a single `/ws-docs` entry (Diátaxis, ADRs, changelogs, style guide) | `/ws-docs <verb>` (init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes) |
 | [ws-commit-commands](./plugins/ws-commit-commands) | Jira-aware git workflows: Conventional Commits + ticket suffix, Smart Commit worklogs, PR via tea | `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`, `/ws-clean-gone` |
 | [ws-jira-enhancer](./plugins/ws-jira-enhancer) | Transform task descriptions into Jira tickets | `/ws-jira-enhancer` |
 | [ws-claude-sync](./plugins/ws-claude-sync) | Sync Claude contexts across machines via GitHub | `/ws-sync-setup`, `/ws-sync`, `/ws-sync-pull`, `/ws-sync-push`, `/ws-sync-full`, `/ws-sync-status` |
@@ -52,24 +52,21 @@ claude plugin uninstall docs-agent@ws-marketplace
 
 ### docs-agent
 
-Comprehensive documentation generation suite covering the full docs-as-code lifecycle: Diátaxis framework docs, Keep a Changelog, Architecture Decision Records (MADR v4.0.0), CONTRIBUTING.md, ARCHITECTURE.md, release notes, Conventional Commits, style guide enforcement, and TSDoc/GraphQL API reference.
+Dual-track documentation suite (v3.0.0) with a single unified `/ws-docs` entry covering the full docs-as-code lifecycle: Diátaxis framework docs, Keep a Changelog, Architecture Decision Records (MADR v4.0.0), CONTRIBUTING.md, ARCHITECTURE.md, release notes, Conventional Commits, style guide enforcement, and TSDoc/GraphQL API reference. Ships opt-in PreToolUse/Stop hooks and dispatches work to background subagents.
 
-**Commands:**
-- `/docs` — Generate a complete documentation suite following Diátaxis
-- `/docs-tutorial` — Create a learning-oriented tutorial
-- `/docs-howto` — Create a task-oriented how-to guide
-- `/docs-explanation` — Write an understanding-oriented explanation
-- `/docs-reference` — Generate API or technical reference documentation
-- `/adr` — Create an Architecture Decision Record (MADR v4.0.0)
-- `/contributing` — Generate CONTRIBUTING.md from project analysis
-- `/architecture` — Generate ARCHITECTURE.md (matklad pattern)
-- `/release-notes` — Generate user-facing release notes (Linear style)
-- `/changelog` — Generate or update CHANGELOG.md from git history
-- `/changelog-entry` — Add a single entry to CHANGELOG.md
+**Commands** (all via the unified `/ws-docs` entry):
+- `/ws-docs` — Discovery / status (run with no verb to see what exists, what's stale, what's missing)
+- `/ws-docs init | audit | catchup | repair` — Scaffold the dual-track layout, audit docs state, backfill from git history, or fix drift
+- `/ws-docs write <type> <topic>` — Write a Diátaxis doc: `tutorial`, `how-to`, `explanation`, or `reference`
+- `/ws-docs adr <decision>` — Create an Architecture Decision Record (MADR v4.0.0)
+- `/ws-docs architecture` — Generate ARCHITECTURE.md (matklad pattern)
+- `/ws-docs contributing` — Generate CONTRIBUTING.md from project analysis
+- `/ws-docs changelog [version]` — Generate or update CHANGELOG.md from git history
+- `/ws-docs release-notes [version]` — Generate user-facing release notes (Linear style)
 
-**Agents:** `docs-architect`, `tutorial-writer`, `api-documenter`, `changelog-analyzer`, `adr-writer`, `contributing-generator`, `architecture-documenter`, `release-notes-writer`
+**Agents:** `docs-architect`, `tutorial-writer`, `api-documenter`, `changelog-analyzer`, `adr-writer`, `arch-watcher`, `contributing-generator`, `architecture-documenter`, `docs-doctor`, `public-api-watcher`, `release-notes-writer`
 
-**Skills (knowledge bases):** `diataxis`, `keep-a-changelog`, `conventional-commits`, `style-guide`, `adr`
+**Skills (knowledge bases):** `diataxis`, `keep-a-changelog`, `conventional-commits`, `style-guide`, `adr`, `dual-track-docs`
 
 #### Auto-Applying Documentation Skills
 
@@ -88,7 +85,7 @@ Always apply these docs-agent standards when working on this project:
 - **Writing**: Follow Google style guide (active voice, present tense, second person)
 - **Definition of done**: Documentation must ship with the feature
 
-Available commands: /docs, /adr, /contributing, /architecture, /release-notes, /changelog
+Available commands: /ws-docs (run with no verb for discovery, or with init | audit | catchup | repair | write | adr | architecture | contributing | changelog | release-notes)
 ```
 
 For **hard enforcement**, add hooks to `.claude/settings.json`:
