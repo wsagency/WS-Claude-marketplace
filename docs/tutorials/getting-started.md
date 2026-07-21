@@ -90,26 +90,6 @@ Now you can use commands like:
 - `/ws-commit` - Create a conventional commit
 - `/ws-commit-push-pr` - Commit, push, and create a PR in one step
 
-### Cross-Machine Sync
-
-Sync your Claude contexts across machines:
-
-```bash
-claude plugin install ws-claude-sync@ws-marketplace
-```
-
-Set up with `/ws-sync-setup`, then use `/ws-sync-pull` and `/ws-sync-push` daily.
-
-### Project Management
-
-Move and manage Claude projects without losing session history:
-
-```bash
-claude plugin install ws-clamp@ws-marketplace
-```
-
-Use `/clamp-inspect` to list projects, `/clamp-move` to relocate them.
-
 ## What's Next?
 
 - Browse the [Command Reference](../reference/commands.md) to discover all available commands

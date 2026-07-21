@@ -1,7 +1,0 @@
-{
-  "name": "ws-claude-sync",
-  "description": "Sync Claude Code contexts, settings, and sessions across machines via GitHub",
-  "author": {
-    "name": "WS Agency"
-  }
-}

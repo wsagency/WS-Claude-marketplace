@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING:** ws-claude-sync plugin (8 commands, 1 agent, 1 skill) removed from the marketplace
+- **BREAKING:** ws-clamp plugin (4 commands, 1 agent, 1 skill) removed from the marketplace
+
 ## [2.0.0] - 2026-06-02
 
 ### Added

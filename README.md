@@ -11,8 +11,6 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 | [docs-agent](./plugins/docs-agent) | Dual-track documentation suite with a single `/ws-docs` entry (Diátaxis, ADRs, changelogs, style guide) | `/ws-docs <verb>` (init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes) |
 | [ws-commit-commands](./plugins/ws-commit-commands) | Jira-aware git workflows: Conventional Commits + ticket suffix, Smart Commit worklogs, PR via tea | `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`, `/ws-clean-gone` |
 | [ws-jira-enhancer](./plugins/ws-jira-enhancer) | Transform task descriptions into Jira tickets | `/ws-jira-enhancer` |
-| [ws-claude-sync](./plugins/ws-claude-sync) | Sync Claude contexts across machines via GitHub | `/ws-sync-setup`, `/ws-sync`, `/ws-sync-pull`, `/ws-sync-push`, `/ws-sync-full`, `/ws-sync-status` |
-| [ws-clamp](./plugins/ws-clamp) | Move, archive, and manage Claude projects | `/clamp-move`, `/clamp-inspect`, `/clamp-maintain`, `/clamp-archive` |
 | [ws-project-hub](./plugins/ws-project-hub) | Multi-repo project hubs with auto-generated CLAUDE.md and Claude launcher | `/hub-init`, `/hub-launch`, `/hub-sync`, `/hub-status`, `/hub-add-repo`, `/hub-scan`, `/hub-describe`, `/hub-clone-all` |
 
 ## Prerequisites
@@ -20,7 +18,6 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 - [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code)
 - [Git](https://git-scm.com/)
 - [tea CLI](https://gitea.com/gitea/tea) (required for ws-commit-commands) — `brew install tea`
-- [Python 3](https://python.org/) (required for ws-claude-sync)
 
 ## Installation
 
@@ -32,8 +29,6 @@ claude plugin marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
 claude plugin install docs-agent@ws-marketplace
 claude plugin install ws-commit-commands@ws-marketplace
 claude plugin install ws-jira-enhancer@ws-marketplace
-claude plugin install ws-claude-sync@ws-marketplace
-claude plugin install ws-clamp@ws-marketplace
 claude plugin install ws-project-hub@ws-marketplace
 ```
 
@@ -134,36 +129,6 @@ Transform brief task descriptions into well-structured Jira tickets with user st
 **Commands:**
 - `/ws-jira-enhancer <task>` — Generate a complete Jira ticket from a brief description
 
-### ws-claude-sync
-
-Sync Claude Code contexts, settings, and sessions across machines via a private GitHub repository.
-
-**Requires:** [Python 3](https://python.org/), a private GitHub repository for sync storage
-
-**Commands:**
-- `/ws-sync-setup` — Configure sync with a GitHub repository
-- `/ws-sync-pull` — Pull essential context from remote
-- `/ws-sync-push` — Push essential context to remote
-- `/ws-sync` — Bidirectional essential sync (pull + push)
-- `/ws-sync-pull-full` — Pull ALL Claude data from remote
-- `/ws-sync-push-full` — Push ALL Claude data to remote
-- `/ws-sync-full` — Bidirectional full sync
-- `/ws-sync-status` — Show sync configuration and status
-
-**Agents:** `sync-troubleshooter`
-
-### ws-clamp
-
-Move, archive, fix, and manage Claude Code projects while preserving session history. Based on [clamp](https://github.com/wsagency/claude-move-project) v1.4.1.
-
-**Commands:**
-- `/clamp-move` — Move, relocate, or remove a project
-- `/clamp-inspect` — List projects or show project details
-- `/clamp-maintain` — Verify, fix, or prune project references
-- `/clamp-archive` — Pack or unpack portable `.claudepack` archives
-
-**Agents:** `project-manager`
-
 ### ws-project-hub
 
 Manage multi-repo projects (mobile app, marketing site, design, docs, etc.) through a single hub repo. Generates a `<project>-main` folder with a registry of all sub-repos, an auto-built `CLAUDE.md` project map, and an `invoke-ai.sh` script that launches Claude with every accessible sub-repo mounted via `--add-dir`. Sub-repos live as gitignored subfolders, each with its own independent git.
@@ -214,8 +179,6 @@ ws-claude-marketplace/
     ├── docs-agent/
     ├── ws-commit-commands/
     ├── ws-jira-enhancer/
-    ├── ws-claude-sync/
-    ├── ws-clamp/
     └── ws-project-hub/
 ```
 

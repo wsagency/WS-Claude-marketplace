@@ -21,8 +21,6 @@ Have an idea for a new plugin? Check the existing set first to avoid duplication
 
 - **docs-agent** — documentation generation, ADRs, changelogs, style guides
 - **ws-commit-commands** — git workflow helpers (status, clean, init, commit with conventions)
-- **ws-claude-sync** — two-way sync between Claude Code and external services
-- **ws-clamp** — project clipping and context management
 - **ws-jira-enhancer** — Jira ticket bridging and workflow automation
 - **ws-project-hub** — monorepo scanning and project discovery
 
