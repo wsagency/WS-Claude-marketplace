@@ -37,7 +37,7 @@ description: Register a new sub-repo in the current hub (clone, adopt nested, or
    ```
    If the block doesn't exist, create it at the top of `.gitignore` (preserve all other rules). If the path is sibling (`../`), no .gitignore update needed.
 
-6. Regenerate the `<!-- AUTO-GENERATED -->` section of `CLAUDE.md` to include the new repo.
+6. Regenerate the `CLAUDE.md` region between `<!-- ws-hub:repos:start -->` and `<!-- ws-hub:repos:end -->` to include the new repo (see the marker-pair definition in the project-hub-conventions skill).
 
 7. Run `git status` from the hub to confirm the new sub-repo doesn't show up as untracked. If it does, report which file isn't filtered correctly.
 

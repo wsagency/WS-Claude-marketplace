@@ -28,7 +28,7 @@ Gather information about:
 - What constraints exist (team skills, budget, timeline, existing infrastructure)?
 
 **Related Decisions**
-- Check for existing ADRs in `docs/decisions/`
+- Check for existing ADRs in `dev-docs/decisions/`
 - Identify dependencies on or conflicts with past decisions
 
 ### 2. Research Options
@@ -91,8 +91,8 @@ Chosen option: "[Option N]", because [justification connecting back to decision 
 ### 4. File and Number the ADR
 
 - Determine the next sequential number by checking existing ADRs
-- Save to `docs/decisions/NNNN-kebab-case-title.md`
-- Update `docs/decisions/README.md` index if it exists
+- Save to `dev-docs/decisions/NNNN-kebab-case-title.md`
+- Update `dev-docs/decisions/README.md` index if it exists
 
 ## Writing Guidelines
 

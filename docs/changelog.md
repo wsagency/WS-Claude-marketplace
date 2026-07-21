@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- docs-agent adr-writer now writes ADRs to `dev-docs/decisions/` (three occurrences pointed at `docs/decisions/`, contradicting the adr skill and the dual-track convention)
+- ws-project-hub CLAUDE.md regeneration markers unified into the `<!-- ws-hub:repos:start/end -->` pair (commands referenced a bare `AUTO-GENERATED` marker that never literally appeared in the template)
+
 ### Removed
 
 - **BREAKING:** ws-claude-sync plugin (8 commands, 1 agent, 1 skill) removed from the marketplace

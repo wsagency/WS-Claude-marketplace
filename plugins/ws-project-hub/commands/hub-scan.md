@@ -26,7 +26,7 @@ description: Find git repos in/near the hub that aren't yet registered in projec
    - Nested → register at `./<name>` + update `.gitignore` managed block
    - Sibling → ask whether to move into hub or register in place
 
-6. After registration, regenerate the `<!-- AUTO-GENERATED -->` section of `CLAUDE.md`.
+6. After registration, regenerate the `CLAUDE.md` region between `<!-- ws-hub:repos:start -->` and `<!-- ws-hub:repos:end -->` (see the marker-pair definition in the project-hub-conventions skill).
 
 7. Verify with `git status` that no unregistered nested repos pollute the hub's working tree.
 

@@ -74,6 +74,21 @@ When `invoke-ai.sh` launches Claude with `--add-dir <hub>/<sub-repo>` for each a
 
 Per-repo rules belong **in the repo they apply to**, not in the hub. The hub's CLAUDE.md is for cross-cutting context only.
 
+### Regenerated region (marker pair)
+
+The hub CLAUDE.md's "Sub-repos" section is machine-managed between paired markers — this is the **single definition** of the region:
+
+```
+<!-- ws-hub:repos:start -->
+…one block per registered repo, generated from project.yaml…
+<!-- ws-hub:repos:end -->
+```
+
+Rules:
+- Commands rewrite ONLY the content between the markers; everything outside is hand-written and preserved
+- `/hub-init` fills the region via the template's `__REPO_SECTIONS__` placeholder; later commands regenerate it from `project.yaml`
+- If the markers are missing, recreate the pair at the end of the "Sub-repos" section — never guess at a partial match
+
 ## `invoke-ai.sh` contract
 
 Five steps every launch:
