@@ -67,7 +67,7 @@ An **agent** is an autonomous subprocess that handles complex, multi-step tasks.
 - Defined in `agents/*.md` files
 
 **Example use cases:**
-- `docs-architect` - Plans documentation structure
+- `diataxis-writer` - Writes tutorials, how-to guides, and explanations
 - `api-documenter` - Analyzes code and generates API docs
 
 ### Skills

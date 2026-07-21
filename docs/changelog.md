@@ -11,11 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - ws-commit-commands /ws-ticket command: turn a brief description into a structured Jira ticket (ticket-writing skill) with optional creation via jira-cli
 - ws-commit-commands ticket-writing skill: ticket structure, Given/When/Then acceptance criteria, codebase research, jira-cli creation
+- ws-project-hub /ws-hub-docs command — dedicated entry point for the hub-architect agent (cross-repo architecture/contracts/deployment docs)
 
 ### Changed
 
 - **BREAKING:** ws-commit-commands v3.0.0 migrates all Jira access from the Atlassian MCP server to jira-cli (ankitpokhrel); onboarding now requires `brew install ankitpokhrel/jira-cli/jira-cli`, `JIRA_API_TOKEN`, and `jira init`, then re-running /ws-init
 - ws-commit-commands worklogs/transitions/comments are applied by explicit jira-cli calls; the Smart Commit trailer remains as an optional record (`smart_commit_trailer`, default true)
+- **BREAKING:** ws-project-hub v0.2.0 consolidates 8 `/hub-*` commands into 6 `ws-hub-*` commands: `/ws-hub-init`, `/ws-hub-status`, `/ws-hub-repos <pull|clone>` (was hub-sync + hub-clone-all), `/ws-hub-add-repo [--scan]` (was hub-add-repo + hub-scan), `/ws-hub-describe`; `/hub-launch` dropped (use `./invoke-ai.sh`)
+- ws-project-hub conventions (project.yaml schema, .gitignore block, tech inference, marker pair) single-sourced in the project-hub-conventions skill; commands reference it instead of restating
+- docs-agent v3.1.0 renames `tutorial-writer` to `diataxis-writer` (quadrant-parameterized: tutorial | howto | explanation) and has `/ws-docs audit` dispatch arch-watcher and public-api-watcher alongside docs-doctor
+- docs-agent writer agents now point at skills instead of restating them (MADR template → adr skill, release-notes comparison → keep-a-changelog, SemVer mapping → conventional-commits); keep-a-changelog automation pipeline deduplicated into conventional-commits
+
 
 ### Fixed
 
@@ -25,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - **BREAKING:** ws-jira-enhancer plugin retired — /ws-jira-enhancer is replaced by /ws-ticket in ws-commit-commands
+- docs-agent orphaned docs-architect agent deleted (never dispatched by /ws-docs; unique AI-readiness guidance folded into the diataxis skill)
 - **BREAKING:** ws-claude-sync plugin (8 commands, 1 agent, 1 skill) removed from the marketplace
 - **BREAKING:** ws-clamp plugin (4 commands, 1 agent, 1 skill) removed from the marketplace
 

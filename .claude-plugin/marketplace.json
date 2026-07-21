@@ -10,7 +10,7 @@
     {
       "name": "docs-agent",
       "description": "Dual-track documentation suite with unified /ws-docs entry (discovery, init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes), opt-in PreToolUse/Stop hooks, and background subagent dispatch",
-      "version": "3.0.0",
+      "version": "3.1.0",
       "source": "./plugins/docs-agent",
       "category": "development",
       "author": {
@@ -31,8 +31,8 @@
     },
     {
       "name": "ws-project-hub",
-      "description": "Multi-repo project hub: single source of truth for projects spanning multiple git repos (app, web, design, docs) with auto-generated CLAUDE.md and Claude launch script",
-      "version": "0.1.0",
+      "description": "Multi-repo project hub: single source of truth for projects spanning multiple git repos (app, web, design, docs), managed via the consolidated ws-hub-* commands (init, status, repos, add-repo, describe, docs)",
+      "version": "0.2.0",
       "source": "./plugins/ws-project-hub",
       "category": "development",
       "author": {

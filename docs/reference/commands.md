@@ -4,108 +4,43 @@ All available commands in the WS Claude Marketplace.
 
 ## docs-agent
 
-Documentation generation following the Diátaxis framework.
+Dual-track documentation suite. All operations route through the single `/ws-docs` entry.
 
-### /docs-tutorial
+### /ws-docs
 
-Create a learning-oriented tutorial for a specific topic.
-
-**Arguments:**
-| Name | Required | Description |
-|------|----------|-------------|
-| `topic` | No | Topic for the tutorial |
-| `output-dir` | No | Output directory (default: current) |
-
-**Example:**
-```
-/docs-tutorial authentication
-```
-
----
-
-### /docs-howto
-
-Create a task-oriented how-to guide for solving a specific problem.
+Unified documentation command. Run with no verb for discovery (artifact status table, no writes).
 
 **Arguments:**
 | Name | Required | Description |
 |------|----------|-------------|
-| `task` | No | Task the guide addresses |
-| `output-dir` | No | Output directory |
+| `verb` | No | One of: `init`, `audit`, `catchup`, `repair`, `write`, `adr`, `architecture`, `contributing`, `changelog`, `release-notes` |
+| `args` | No | Verb-specific (e.g. `write <type> [topic]`, `adr "<decision>"`, `changelog [version]`) |
 
-**Example:**
+**Verbs:**
+| Verb | Destination / effect |
+|---|---|
+| (none) | Discovery — status table of docs artifacts |
+| `init` | Scaffold both tracks (`docs/`, `dev-docs/`), config, CHANGELOG, 3-file CONTRIBUTING |
+| `audit` | Verbose diagnosis (docs-doctor + arch-watcher + public-api-watcher in parallel) |
+| `catchup` | Propose CHANGELOG entries, reference updates, ADRs from git history; user triages |
+| `repair` | Create missing artifacts only (never deletes) |
+| `write <type> [topic]` | One Diátaxis doc; `tutorial \| howto \| explanation` → diataxis-writer, `reference` → api-documenter |
+| `adr "<decision>"` | New ADR in `dev-docs/decisions/` (MADR v4.0.0) |
+| `architecture` | Regenerate `dev-docs/architecture.md` (diff + confirm) |
+| `contributing` | Regenerate 3-file CONTRIBUTING set (diff + confirm) |
+| `changelog [version]` | Update `[Unreleased]` or cut version; mirrors to `docs/changelog.md` |
+| `release-notes [version]` | Linear-style notes → `docs/release-notes/<version>.md` |
+
+**Examples:**
 ```
-/docs-howto "configure SSL certificates"
-```
-
----
-
-### /docs-explanation
-
-Write an understanding-oriented explanation of a concept.
-
-**Arguments:**
-| Name | Required | Description |
-|------|----------|-------------|
-| `concept` | No | Concept to explain |
-| `output-dir` | No | Output directory |
-
-**Example:**
-```
-/docs-explanation "event-driven architecture"
-```
-
----
-
-### /docs-reference
-
-Generate API or technical reference documentation.
-
-**Arguments:**
-| Name | Required | Description |
-|------|----------|-------------|
-| `target` | No | Target module or API |
-| `output-dir` | No | Output directory |
-
-**Example:**
-```
-/docs-reference src/api/
+/ws-docs
+/ws-docs write tutorial "getting started"
+/ws-docs adr "adopt jira-cli for Jira access"
+/ws-docs changelog
 ```
 
 ---
 
-### /changelog
-
-Generate or update CHANGELOG.md from git history following Keep a Changelog standard.
-
-**Arguments:**
-| Name | Required | Description |
-|------|----------|-------------|
-| `version` | No | Version for the release |
-
-**Example:**
-```
-/changelog 1.2.0
-```
-
----
-
-### /changelog-entry
-
-Add a single entry to the Unreleased section of CHANGELOG.md.
-
-**Arguments:**
-| Name | Required | Description |
-|------|----------|-------------|
-| `type` | No | Entry type (Added, Changed, Fixed, etc.) |
-| `description` | No | Description of the change |
-
-**Example:**
-```
-/changelog-entry Added "User authentication via OAuth"
-```
-
----
 
 ## ws-commit-commands
 
@@ -251,93 +186,86 @@ Turn a brief task description into a comprehensive Jira ticket (user story, Give
 
 Multi-repo project hubs. A hub is a small meta-repo (`<project>-main`) that registers all sub-repos (mobile app, marketing site, design, docs, etc.) of a project and launches Claude across them with `--add-dir`. Sub-repos live as gitignored subfolders, each with its own independent git history.
 
-### /hub-init
+Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-hub-status`).
 
-Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register. Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml`, `CLAUDE.md`, `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), and vendors `.claude/skills/project-hub-conventions/`.
+### /ws-hub-init
+
+Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register. Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml`, `CLAUDE.md`, `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), and vendors `.claude/skills/project-hub-conventions/`. Registration details (schema, managed block, tech inference) are defined in the project-hub-conventions skill.
 
 **Example:**
 ```
-/hub-init
+/ws-hub-init
 ```
 
 ---
 
-### /hub-launch
+### /ws-hub-status
 
-Show how to launch the current hub. Prints the `./invoke-ai.sh` command and verifies the hub is correctly initialized. Does not execute the launcher itself (Claude can't re-launch itself from inside a session).
+Aggregated git status report across all registered sub-repos: branch, ahead/behind upstream, uncommitted count, recent commits. Read-only; ends with the `./invoke-ai.sh` launch hint.
 
 **Example:**
 ```
-/hub-launch
+/ws-hub-status
 ```
 
 ---
 
-### /hub-clone-all
+### /ws-hub-repos
 
-Clone every registered sub-repo URL into a missing subfolder of the hub. Skips repos already present or with no `url` field. Failures (no access, bad URL) are reported per-repo and don't abort the run.
+One traversal over all registered sub-repos, verb picks the git operation.
 
-**Example:**
+**Arguments:**
+| Name | Required | Description |
+|------|----------|-------------|
+| `verb` | Yes | `pull` — `git pull --ff-only` across all sub-repos; `clone` — clone every registered URL into a missing subfolder |
+
+**Examples:**
 ```
-/hub-clone-all
-```
-
----
-
-### /hub-sync
-
-`git pull --ff-only` across all registered sub-repos. Reports per-repo result (`already up to date`, `fast-forwarded N commits`, `skipped`, `failed`). Skips repos missing from disk.
-
-**Example:**
-```
-/hub-sync
+/ws-hub-repos pull
+/ws-hub-repos clone
 ```
 
 ---
 
-### /hub-status
+### /ws-hub-add-repo
 
-Aggregated git status across all sub-repos. Per repo: current branch, ahead/behind counts, uncommitted change count, last 5 commits. Read-only.
+Register a new sub-repo (clone-URL, adopt-nested, register-sibling, or move-sibling-in). With `--scan`, first discovers nested/sibling git repos not yet in `project.yaml` and offers them for registration through the same flow.
 
-**Example:**
+**Arguments:**
+| Name | Required | Description |
+|------|----------|-------------|
+| `--scan` | No | Run discovery before registration |
+
+**Examples:**
 ```
-/hub-status
-```
-
----
-
-### /hub-add-repo
-
-Register a new sub-repo. Interactive: clone from URL, adopt an existing nested folder, register a sibling in place, or move a sibling into the hub. Updates `project.yaml`, `CLAUDE.md` auto-section, and the `.gitignore` managed block.
-
-**Example:**
-```
-/hub-add-repo
+/ws-hub-add-repo
+/ws-hub-add-repo --scan
 ```
 
 ---
 
-### /hub-scan
+### /ws-hub-describe
 
-Find git repos in or near the hub (subfolders + siblings) that aren't yet in `project.yaml`. Interactive prompt to register each unregistered repo.
+Refresh `description` and `tech` fields in `project.yaml` by reading each sub-repo's README and manifest files. Shows a diff before writing, then regenerates the CLAUDE.md repos region.
 
 **Example:**
 ```
-/hub-scan
+/ws-hub-describe
 ```
 
 ---
 
-### /hub-describe
+### /ws-hub-docs
 
-Refresh `description` and `tech` fields in `project.yaml` by reading each sub-repo's README and manifest files (package.json, pubspec.yaml, etc.). Shows a diff before writing.
+Generate cross-repo documentation (architecture, contracts, deployment topology) via the `hub-architect` agent. Targets the hub's `docs/`; docs-repo targeting arrives with `role: docs` support (v0.3.0).
 
 **Example:**
 ```
-/hub-describe
+/ws-hub-docs
 ```
 
 ---
+
 
 ## Agents
 
@@ -347,10 +275,16 @@ These agents are spawned via the Task tool, typically by commands.
 
 | Agent | Description |
 |-------|-------------|
-| `docs-architect` | Plans documentation structure using Diátaxis |
-| `tutorial-writer` | Writes hands-on tutorials |
+| `docs-doctor` | Scans docs artifact presence and staleness |
+| `diataxis-writer` | Writes tutorials, how-to guides, and explanations (quadrant-parameterized) |
 | `api-documenter` | Generates API reference from code |
 | `changelog-analyzer` | Analyzes git commits for changelog |
+| `adr-writer` | Writes MADR ADRs to dev-docs/decisions/ |
+| `release-notes-writer` | User-facing release notes |
+| `architecture-documenter` | Writes dev-docs/architecture.md |
+| `contributing-generator` | Generates the 3-file CONTRIBUTING set |
+| `arch-watcher` | Detects commits that warrant an ADR |
+| `public-api-watcher` | Detects public API surface changes |
 
 ### ws-project-hub Agents
 
@@ -364,7 +298,7 @@ Agents are invoked through the Task tool:
 
 ```
 Task tool with:
-  subagent_type: "docs-agent:tutorial-writer"
+  subagent_type: "docs-agent:diataxis-writer"
   prompt: "Write a tutorial on setting up the development environment"
 ```
 
@@ -392,7 +326,7 @@ Skills provide knowledge and templates, loaded on demand.
 
 | Skill | Trigger Keywords |
 |-------|-----------------|
-| `project-hub-conventions` | project hub, multi-repo, `<name>-main`, `<name>-truth` |
+| `project-hub-conventions` | project hub, multi-repo, `<name>-main` |
 
 This skill is also vendored into every hub at init time (`<hub>/.claude/skills/`), so hubs remain self-documenting even when the marketplace plugin isn't installed.
 

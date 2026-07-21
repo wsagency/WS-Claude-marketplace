@@ -10,7 +10,7 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 |--------|-------------|----------|
 | [docs-agent](./plugins/docs-agent) | Dual-track documentation suite with a single `/ws-docs` entry (Diátaxis, ADRs, changelogs, style guide) | `/ws-docs <verb>` (init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes) |
 | [ws-commit-commands](./plugins/ws-commit-commands) | Jira-aware git workflows via jira-cli: Conventional Commits + ticket suffix, worklogs, ticket writing, PR via tea | `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`, `/ws-ticket`, `/ws-clean-gone` |
-| [ws-project-hub](./plugins/ws-project-hub) | Multi-repo project hubs with auto-generated CLAUDE.md and Claude launcher | `/hub-init`, `/hub-launch`, `/hub-sync`, `/hub-status`, `/hub-add-repo`, `/hub-scan`, `/hub-describe`, `/hub-clone-all` |
+| [ws-project-hub](./plugins/ws-project-hub) | Multi-repo project hubs with auto-generated CLAUDE.md and Claude launcher | `/ws-hub-init`, `/ws-hub-status`, `/ws-hub-repos <pull\|clone>`, `/ws-hub-add-repo [--scan]`, `/ws-hub-describe`, `/ws-hub-docs` |
 
 ## Prerequisites
 
@@ -58,7 +58,7 @@ Dual-track documentation suite (v3.0.0) with a single unified `/ws-docs` entry c
 - `/ws-docs changelog [version]` — Generate or update CHANGELOG.md from git history
 - `/ws-docs release-notes [version]` — Generate user-facing release notes (Linear style)
 
-**Agents:** `docs-architect`, `tutorial-writer`, `api-documenter`, `changelog-analyzer`, `adr-writer`, `arch-watcher`, `contributing-generator`, `architecture-documenter`, `docs-doctor`, `public-api-watcher`, `release-notes-writer`
+**Agents:** `diataxis-writer`, `api-documenter`, `changelog-analyzer`, `adr-writer`, `arch-watcher`, `contributing-generator`, `architecture-documenter`, `docs-doctor`, `public-api-watcher`, `release-notes-writer`
 
 **Skills (knowledge bases):** `diataxis`, `keep-a-changelog`, `conventional-commits`, `style-guide`, `adr`, `dual-track-docs`
 
@@ -127,14 +127,14 @@ Jira-aware git workflow commands, powered by [jira-cli](https://github.com/ankit
 Manage multi-repo projects (mobile app, marketing site, design, docs, etc.) through a single hub repo. Generates a `<project>-main` folder with a registry of all sub-repos, an auto-built `CLAUDE.md` project map, and an `invoke-ai.sh` script that launches Claude with every accessible sub-repo mounted via `--add-dir`. Sub-repos live as gitignored subfolders, each with its own independent git.
 
 **Commands:**
-- `/hub-init` — Initialize a new project hub (interactive)
-- `/hub-launch` — Show how to launch the current hub (`./invoke-ai.sh`)
-- `/hub-clone-all` — Clone every registered sub-repo URL into a missing subfolder
-- `/hub-sync` — `git pull` across all sub-repos
-- `/hub-status` — Aggregated git status report
-- `/hub-add-repo` — Register a new sub-repo (clone, adopt, or sibling)
-- `/hub-scan` — Find unregistered repos in/near the hub
-- `/hub-describe` — Refresh sub-repo descriptions from their READMEs
+- `/ws-hub-init` — Initialize a new project hub (interactive)
+- `/ws-hub-status` — Aggregated git status report (read-only), ends with the launch hint
+- `/ws-hub-repos <pull|clone>` — `git pull` across all sub-repos, or clone every registered URL into a missing subfolder
+- `/ws-hub-add-repo [--scan]` — Register a new sub-repo; `--scan` first discovers unregistered repos in/near the hub
+- `/ws-hub-describe` — Refresh sub-repo descriptions from their READMEs
+- `/ws-hub-docs` — Generate cross-repo architecture/contracts/deployment docs (hub-architect agent)
+
+Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-hub-status`).
 
 **Agents:** `hub-architect` (generates cross-repo architecture docs)
 
