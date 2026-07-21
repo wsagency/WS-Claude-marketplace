@@ -67,6 +67,33 @@ As of v3.0.0, all docs operations route through `/ws-docs <verb>`:
 | `contributing` | Regenerate 3-file CONTRIBUTING set (diff + confirm) |
 | `changelog [version]` | Update `[Unreleased]` or cut version; mirrors to `docs/changelog.md` |
 | `release-notes [version]` | Linear-style notes → `docs/release-notes/<version>.md` |
+| `explain` | Regenerate `docs/explained.md` — Outline-safe product onboarding page (in `DOCS_REPO` when in hub mode) |
+| `publish` | Lint + push `docs/` to Outline via `outline-sync.py`; commits `.outline-sync.json` |
+| `pull-back` | Pull Outline edits into git as a review PR (branch `docs/outline-pull-back-<date>`) |
+
+## Product docs repo (hub mode)
+
+In a WS project hub, `project.yaml` may register at most one sub-repo with
+`role: docs` — the product docs repo (see ws-project-hub's
+project-hub-conventions skill). When `/ws-docs` finds one, it runs in **hub
+mode** and routes product-level writes to that repo (`DOCS_REPO`).
+
+Split rule: **concerns more than one repo, the client, or any end user → docs
+repo.** Sub-repos keep only repo-specific `dev-docs/`; user docs are always
+product-level. `CHANGELOG.md` stays per-repo.
+
+Scope routing in hub mode (repo-level behavior is unchanged outside hubs):
+
+| Verb | Hub-mode routing |
+|---|---|
+| `write` (user audience) | ALWAYS `DOCS_REPO/docs/` — user docs are product-level by definition |
+| `write` (dev audience) | Ask scope: **this repo** (local `dev-docs/`) or **product** (`DOCS_REPO/dev-docs/`) |
+| `adr` | Ask scope: repo ADR (local `dev-docs/decisions/`) or product ADR (`DOCS_REPO/dev-docs/decisions/`) |
+| `architecture` | Ask scope; product scope targets `DOCS_REPO/dev-docs/architecture.md` (delegate to ws-project-hub's hub-architect agent when available) |
+| `changelog`, `release-notes` | Repo-level, unchanged |
+
+The scope answer may be cached in `.claude/docs-config.yaml` as
+`default_scope: repo | product | ask` (honored like `default_audience`).
 
 ## Audience prompt
 
@@ -79,11 +106,12 @@ The answer can be cached for the session as a default, or persisted in `.claude/
 ```yaml
 docs:
   default_audience: user    # user | dev | ask
+  default_scope: ask        # repo | product | ask — hub mode only
   user_track: docs
   dev_track: dev-docs
 ```
 
-If the config file exists and `default_audience` is `user` or `dev`, skip the prompt.
+If the config file exists and `default_audience` is `user` or `dev`, skip the prompt. `default_scope` works the same way for the hub-mode scope question (repo vs product).
 
 ## Changelog mirror
 
@@ -111,6 +139,27 @@ The canonical changelog lives at the repo root (`CHANGELOG.md`) for GitHub's aut
 ## VitePress portability
 
 `docs/` is structured to work as a VitePress source directory with no additional config (option A from the design spec). Each Diátaxis subfolder has an `index.md`. Markdown uses YAML frontmatter only where useful. No `.vitepress/` config is generated — users add VitePress themselves if they want.
+
+## Outline-safe markdown profile
+
+The user track syncs to Outline (docs.wsagency.io) via `/ws-docs publish`,
+which lints before pushing (`outline-sync.py lint`). Only `docs/` is bound by
+this profile — `dev-docs/` never syncs.
+
+Allowed:
+- mermaid fences
+- `:::info` / `:::warning` / `:::tip` notices
+- tables and task lists
+- `$$math$$`
+- embeds (provider URL alone on a line)
+- images and links
+
+Banned:
+- raw HTML elements (HTML comments are allowed)
+- footnotes (`[^1]`)
+- `==highlight==`
+- manual heading IDs (`{#custom-id}`)
+- definition lists
 
 ## When NOT to use this convention
 
