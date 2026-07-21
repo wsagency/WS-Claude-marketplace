@@ -8,7 +8,7 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 
 | Plugin | Description | Commands |
 |--------|-------------|----------|
-| [docs-agent](./plugins/docs-agent) | Dual-track documentation suite with a single `/ws-docs` entry (Diátaxis, ADRs, changelogs, style guide) | `/ws-docs <verb>` (init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes) |
+| [docs-agent](./plugins/docs-agent) | Dual-track documentation suite with a single `/ws-docs` entry (Diátaxis, ADRs, changelogs, Outline sync) | `/ws-docs <verb>` (init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes, explain, publish, pull-back) |
 | [ws-commit-commands](./plugins/ws-commit-commands) | Jira-aware git workflows via jira-cli: Conventional Commits + ticket suffix, worklogs, ticket writing, PR via tea | `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`, `/ws-ticket`, `/ws-clean-gone` |
 | [ws-project-hub](./plugins/ws-project-hub) | Multi-repo project hubs with auto-generated CLAUDE.md and Claude launcher | `/ws-hub-init`, `/ws-hub-status`, `/ws-hub-repos <pull\|clone>`, `/ws-hub-add-repo [--scan]`, `/ws-hub-describe`, `/ws-hub-docs` |
 
@@ -18,6 +18,7 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 - [Git](https://git-scm.com/)
 - [tea CLI](https://gitea.com/gitea/tea) (required for ws-commit-commands) — `brew install tea`
 - [jira-cli](https://github.com/ankitpokhrel/jira-cli) (required for ws-commit-commands) — `brew install ankitpokhrel/jira-cli/jira-cli`, then `export JIRA_API_TOKEN=<token>` and `jira init`
+- [Python 3](https://python.org/) (required for `/ws-docs publish` / `pull-back` — Outline sync) with `OUTLINE_API_TOKEN` exported or stored in `~/.config/ws-docs/outline-token`
 
 ## Installation
 
@@ -57,6 +58,11 @@ Dual-track documentation suite (v3.0.0) with a single unified `/ws-docs` entry c
 - `/ws-docs contributing` — Generate CONTRIBUTING.md from project analysis
 - `/ws-docs changelog [version]` — Generate or update CHANGELOG.md from git history
 - `/ws-docs release-notes [version]` — Generate user-facing release notes (Linear style)
+- `/ws-docs explain` — Regenerate `docs/explained.md`, a generated Outline-safe onboarding page (mermaid diagrams, roles, quickstart)
+- `/ws-docs publish` — Lint the Outline-safe profile, then push `docs/` to an Outline collection (docs.wsagency.io) via `outline-sync.py`
+- `/ws-docs pull-back` — Pull Outline edits into a review branch + PR (git stays authoritative)
+
+In a multi-repo hub (ws-project-hub) with a `role: docs` sub-repo, `/ws-docs` routes product-level writes (user docs, product ADRs, architecture) to that docs repo automatically.
 
 **Agents:** `diataxis-writer`, `api-documenter`, `changelog-analyzer`, `adr-writer`, `arch-watcher`, `contributing-generator`, `architecture-documenter`, `docs-doctor`, `public-api-watcher`, `release-notes-writer`
 
@@ -132,7 +138,9 @@ Manage multi-repo projects (mobile app, marketing site, design, docs, etc.) thro
 - `/ws-hub-repos <pull|clone>` — `git pull` across all sub-repos, or clone every registered URL into a missing subfolder
 - `/ws-hub-add-repo [--scan]` — Register a new sub-repo; `--scan` first discovers unregistered repos in/near the hub
 - `/ws-hub-describe` — Refresh sub-repo descriptions from their READMEs
-- `/ws-hub-docs` — Generate cross-repo architecture/contracts/deployment docs (hub-architect agent)
+- `/ws-hub-docs` — Generate cross-repo architecture/contracts/deployment docs (hub-architect agent; targets the `role: docs` repo's `dev-docs/` when one is registered)
+
+One sub-repo per hub can be marked `role: docs` — the product docs repo (`<project>-docs`), single source of truth for user docs (synced to Outline via `/ws-docs publish`) and cross-repo dev docs. `/ws-hub-init` offers to scaffold it.
 
 Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-hub-status`).
 

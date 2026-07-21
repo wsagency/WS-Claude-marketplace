@@ -9,14 +9,27 @@
   "plugins": [
     {
       "name": "docs-agent",
-      "description": "Dual-track documentation suite with unified /ws-docs entry (discovery, init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes), opt-in PreToolUse/Stop hooks, and background subagent dispatch",
-      "version": "3.1.0",
+      "description": "Dual-track documentation suite with unified /ws-docs entry (discovery, init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes, explain, publish, pull-back), hub-aware product-docs routing, Outline sync via outline-sync.py, opt-in PreToolUse/Stop hooks, and background subagent dispatch",
+      "version": "3.2.0",
       "source": "./plugins/docs-agent",
       "category": "development",
       "author": {
         "name": "WS Agency"
       },
-      "tags": ["documentation", "changelog", "api-docs", "adr", "contributing", "architecture", "release-notes", "conventional-commits", "style-guide", "tsdoc", "graphql"]
+      "tags": [
+        "documentation",
+        "changelog",
+        "api-docs",
+        "adr",
+        "contributing",
+        "architecture",
+        "release-notes",
+        "conventional-commits",
+        "style-guide",
+        "tsdoc",
+        "graphql",
+        "outline"
+      ]
     },
     {
       "name": "ws-commit-commands",
@@ -27,18 +40,32 @@
       "author": {
         "name": "WS Agency"
       },
-      "tags": ["git", "commit", "pr", "jira", "jira-cli", "conventional-commits", "ticket"]
+      "tags": [
+        "git",
+        "commit",
+        "pr",
+        "jira",
+        "jira-cli",
+        "conventional-commits",
+        "ticket"
+      ]
     },
     {
       "name": "ws-project-hub",
-      "description": "Multi-repo project hub: single source of truth for projects spanning multiple git repos (app, web, design, docs), managed via the consolidated ws-hub-* commands (init, status, repos, add-repo, describe, docs)",
-      "version": "0.2.0",
+      "description": "Multi-repo project hub: single source of truth for projects spanning multiple git repos (app, web, design, docs), managed via the consolidated ws-hub-* commands (init, status, repos, add-repo, describe, docs), with a role: docs product-docs sub-repo convention",
+      "version": "0.3.0",
       "source": "./plugins/ws-project-hub",
       "category": "development",
       "author": {
         "name": "WS Agency"
       },
-      "tags": ["multi-repo", "project-management", "monorepo-alternative", "hub", "claude-launcher"]
+      "tags": [
+        "multi-repo",
+        "project-management",
+        "monorepo-alternative",
+        "hub",
+        "claude-launcher"
+      ]
     }
   ]
 }

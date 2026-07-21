@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ws-commit-commands /ws-ticket command: turn a brief description into a structured Jira ticket (ticket-writing skill) with optional creation via jira-cli
 - ws-commit-commands ticket-writing skill: ticket structure, Given/When/Then acceptance criteria, codebase research, jira-cli creation
 - ws-project-hub /ws-hub-docs command — dedicated entry point for the hub-architect agent (cross-repo architecture/contracts/deployment docs)
+- ws-project-hub v0.3.0 `role: docs` convention: one product docs sub-repo per hub (dual-track layout, scaffolded by /ws-hub-init, markable via /ws-hub-add-repo)
+- docs-agent v3.2.0 hub mode: /ws-docs detects a `role: docs` repo and routes product-level writes there (user docs always product-level; dev-scope prompt cacheable as `default_scope`)
+- docs-agent /ws-docs explain verb — generated Outline-safe onboarding page (`docs/explained.md`)
+- docs-agent /ws-docs publish and pull-back verbs with `scripts/outline-sync.py` (Python 3 stdlib, Outline REST): profile lint, conflict-safe push with archive-not-delete, pull-back into a review branch/PR; state in `.outline-sync.json` (`--normalize` and attachment upload deferred)
 
 ### Changed
 
@@ -21,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ws-project-hub conventions (project.yaml schema, .gitignore block, tech inference, marker pair) single-sourced in the project-hub-conventions skill; commands reference it instead of restating
 - docs-agent v3.1.0 renames `tutorial-writer` to `diataxis-writer` (quadrant-parameterized: tutorial | howto | explanation) and has `/ws-docs audit` dispatch arch-watcher and public-api-watcher alongside docs-doctor
 - docs-agent writer agents now point at skills instead of restating them (MADR template → adr skill, release-notes comparison → keep-a-changelog, SemVer mapping → conventional-commits); keep-a-changelog automation pipeline deduplicated into conventional-commits
+- ws-project-hub hub-architect and /ws-hub-docs now target the `role: docs` repo's `dev-docs/` when one is registered
 
 
 ### Fixed

@@ -19,6 +19,13 @@ WS products span multiple sub-repos (app, admin, frontend, …) under a `<projec
 Goal: one source of truth in git, writable from any sub-repo session, published to Outline
 for non-dev readers, with Outline edits flowing back through review.
 
+> **Amendments (2026-07-21, at implementation):** (1) command names map through the
+> consolidation rename table (`/hub-*` → `ws-hub-*`; versions ws-project-hub 0.3.0,
+> docs-agent 3.2.0); (2) sync state lives in **`.outline-sync.json`**, not `.yaml` —
+> the script is stdlib-only and Python's stdlib has no YAML parser; (3) `--normalize`
+> and image/attachment upload are deferred to a later version (recorded in the
+> script's docstring and the changelog).
+
 ## Decisions
 
 | Question | Decision |

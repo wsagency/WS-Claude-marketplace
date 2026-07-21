@@ -13,7 +13,7 @@ Unified documentation command. Run with no verb for discovery (artifact status t
 **Arguments:**
 | Name | Required | Description |
 |------|----------|-------------|
-| `verb` | No | One of: `init`, `audit`, `catchup`, `repair`, `write`, `adr`, `architecture`, `contributing`, `changelog`, `release-notes` |
+| `verb` | No | One of: `init`, `audit`, `catchup`, `repair`, `write`, `adr`, `architecture`, `contributing`, `changelog`, `release-notes`, `explain`, `publish`, `pull-back` |
 | `args` | No | Verb-specific (e.g. `write <type> [topic]`, `adr "<decision>"`, `changelog [version]`) |
 
 **Verbs:**
@@ -30,6 +30,11 @@ Unified documentation command. Run with no verb for discovery (artifact status t
 | `contributing` | Regenerate 3-file CONTRIBUTING set (diff + confirm) |
 | `changelog [version]` | Update `[Unreleased]` or cut version; mirrors to `docs/changelog.md` |
 | `release-notes [version]` | Linear-style notes → `docs/release-notes/<version>.md` |
+| `explain` | Regenerate `docs/explained.md` — generated Outline-safe onboarding page |
+| `publish` | Lint Outline-safe profile, push `docs/` to Outline (`outline-sync.py`; needs Python 3 + `OUTLINE_API_TOKEN`) |
+| `pull-back` | Pull Outline edits into a review branch + PR (git authoritative) |
+
+In a hub with a `role: docs` sub-repo, `/ws-docs` enters hub mode: user-audience writes, product ADRs, and product architecture route to the docs repo (scope prompt, cacheable as `default_scope`).
 
 **Examples:**
 ```
@@ -190,7 +195,7 @@ Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-h
 
 ### /ws-hub-init
 
-Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register. Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml`, `CLAUDE.md`, `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), and vendors `.claude/skills/project-hub-conventions/`. Registration details (schema, managed block, tech inference) are defined in the project-hub-conventions skill.
+Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register. Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml`, `CLAUDE.md`, `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), and vendors `.claude/skills/project-hub-conventions/`. Offers to scaffold a `role: docs` product docs repo (`<project>-docs`). Registration details (schema, managed block, tech inference, docs-repo layout) are defined in the project-hub-conventions skill.
 
 **Example:**
 ```
@@ -229,7 +234,7 @@ One traversal over all registered sub-repos, verb picks the git operation.
 
 ### /ws-hub-add-repo
 
-Register a new sub-repo (clone-URL, adopt-nested, register-sibling, or move-sibling-in). With `--scan`, first discovers nested/sibling git repos not yet in `project.yaml` and offers them for registration through the same flow.
+Register a new sub-repo (clone-URL, adopt-nested, register-sibling, or move-sibling-in). With `--scan`, first discovers nested/sibling git repos not yet in `project.yaml` and offers them for registration through the same flow. A repo can be marked `role: docs` (product docs repo, max one per hub).
 
 **Arguments:**
 | Name | Required | Description |
@@ -257,7 +262,7 @@ Refresh `description` and `tech` fields in `project.yaml` by reading each sub-re
 
 ### /ws-hub-docs
 
-Generate cross-repo documentation (architecture, contracts, deployment topology) via the `hub-architect` agent. Targets the hub's `docs/`; docs-repo targeting arrives with `role: docs` support (v0.3.0).
+Generate cross-repo documentation (architecture, contracts, deployment topology) via the `hub-architect` agent. Targets the `role: docs` repo's `dev-docs/` when one is registered, else the hub's `docs/`.
 
 **Example:**
 ```

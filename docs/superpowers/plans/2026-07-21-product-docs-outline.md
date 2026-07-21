@@ -31,7 +31,7 @@
 **Interfaces:**
 - Produces: skill sections "Product docs repo (`role: docs`)" and the scaffold layout that Tasks 2–3 and docs-agent's hub detection (Task 7) reference by name.
 
-- [ ] **Step 1: Add `role` to the project.yaml schema block in SKILL.md**
+- [x] **Step 1: Add `role` to the project.yaml schema block in SKILL.md**
 
 In the `## \`project.yaml\` schema` section, add to the repo entry fields:
 
@@ -39,7 +39,7 @@ In the `## \`project.yaml\` schema` section, add to the repo entry fields:
     role: docs                  # optional; marks the product docs repo (max ONE per hub)
 ```
 
-- [ ] **Step 2: Add a "Product docs repo (`role: docs`)" section to SKILL.md** (after "Tech inference"):
+- [x] **Step 2: Add a "Product docs repo (`role: docs`)" section to SKILL.md** (after "Tech inference"):
 
 ```markdown
 ## Product docs repo (`role: docs`)
@@ -74,7 +74,7 @@ Validation: commands that write `project.yaml` must refuse a second
 `role: docs` entry.
 ```
 
-- [ ] **Step 3: Add the SoT pointer to `templates/CLAUDE.md.tmpl`** (new section before "Access notes"):
+- [x] **Step 3: Add the SoT pointer to `templates/CLAUDE.md.tmpl`** (new section before "Access notes"):
 
 ```markdown
 ## Documentation
@@ -86,7 +86,7 @@ Write product-level docs THERE, not in the hub and not in feature repos.
 Repo-specific dev docs stay in each sub-repo's own `dev-docs/`.
 ```
 
-- [ ] **Step 4: Verify**
+- [x] **Step 4: Verify**
 
 Run: `grep -c "role: docs" plugins/ws-project-hub/skills/project-hub-conventions/SKILL.md`
 Expected: >= 2
@@ -100,7 +100,7 @@ Expected: >= 2
 **Interfaces:**
 - Consumes: skill sections from Task 1 (reference them, do not restate the layout).
 
-- [ ] **Step 1: In `ws-hub-init.md`**, after the sub-repo registration step, add:
+- [x] **Step 1: In `ws-hub-init.md`**, after the sub-repo registration step, add:
 
 ```markdown
 ### Product docs repo
@@ -117,7 +117,7 @@ Ask (AskUserQuestion): "Create a product docs repo (`<project>-docs`)?"
 - **No** → skip; note that /ws-hub-add-repo can mark one later.
 ```
 
-- [ ] **Step 2: In `ws-hub-add-repo.md`**, in the registration flow's metadata gathering, add:
+- [x] **Step 2: In `ws-hub-add-repo.md`**, in the registration flow's metadata gathering, add:
 
 ```markdown
 - Ask whether this repo is the product docs repo (`role: docs`). Before
@@ -126,7 +126,7 @@ Ask (AskUserQuestion): "Create a product docs repo (`<project>-docs`)?"
   project-hub-conventions skill).
 ```
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run: `grep -l "role: docs" plugins/ws-project-hub/commands/ws-hub-init.md plugins/ws-project-hub/commands/ws-hub-add-repo.md`
 Expected: both paths printed
@@ -137,7 +137,7 @@ Expected: both paths printed
 - Modify: `plugins/ws-project-hub/agents/hub-architect.md`
 - Modify: `plugins/ws-project-hub/commands/ws-hub-docs.md`
 
-- [ ] **Step 1: In `hub-architect.md`**, replace the output-location instruction with:
+- [x] **Step 1: In `hub-architect.md`**, replace the output-location instruction with:
 
 ```markdown
 Output location: if project.yaml registers a repo with `role: docs`, write
@@ -145,9 +145,9 @@ architecture.md, contracts.md, and deployment.md into `<docs-repo>/dev-docs/`.
 Otherwise fall back to the hub's `docs/` as before.
 ```
 
-- [ ] **Step 2: In `ws-hub-docs.md`**, replace the v0.3.0 forward-note ("docs-repo targeting arrives with v0.3.0") with the live behavior: outputs go to the `role: docs` repo's `dev-docs/` when one is registered, else the hub's `docs/`.
+- [x] **Step 2: In `ws-hub-docs.md`**, replace the v0.3.0 forward-note ("docs-repo targeting arrives with v0.3.0") with the live behavior: outputs go to the `role: docs` repo's `dev-docs/` when one is registered, else the hub's `docs/`.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run: `grep -rn "v0.3.0" plugins/ws-project-hub/commands/ws-hub-docs.md`
 Expected: no matches
@@ -165,7 +165,7 @@ Expected: no matches
   - `lint_markdown(text) -> list[str]` (empty = clean)
   - `read_token() -> str` (env `OUTLINE_API_TOKEN`, else `~/.config/ws-docs/outline-token`, else `SystemExit` with setup instructions)
 
-- [ ] **Step 1: Write failing lint tests** in `plugins/docs-agent/scripts/test_outline_sync.py`:
+- [x] **Step 1: Write failing lint tests** in `plugins/docs-agent/scripts/test_outline_sync.py`:
 
 ```python
 import importlib.util, pathlib, unittest
@@ -197,12 +197,12 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `python3 -m unittest discover plugins/docs-agent/scripts/ -p 'test_*.py' -v 2>&1 | tail -3`
 Expected: errors (file `outline-sync.py` missing)
 
-- [ ] **Step 3: Create `outline-sync.py` with header, constants, state, auth, lint**
+- [x] **Step 3: Create `outline-sync.py` with header, constants, state, auth, lint**
 
 ```python
 #!/usr/bin/env python3
@@ -272,7 +272,7 @@ def content_hash(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 ```
 
-- [ ] **Step 4: Run lint tests**
+- [x] **Step 4: Run lint tests**
 
 Run: `python3 -m unittest discover plugins/docs-agent/scripts/ -p 'test_*.py' -v 2>&1 | tail -3`
 Expected: `OK` for the 3 lint tests
@@ -286,7 +286,7 @@ Expected: `OK` for the 3 lint tests
 **Interfaces:**
 - Produces: `doc_title(text, path) -> str`, `walk_docs(root, docs_dir) -> list[str]` (repo-relative, parents-first: each folder's `index.md` precedes its siblings' children; `explained.md` first among top-level files), `parent_of(path, docs_dir) -> str|None` (the folder's `index.md`, or None at top level), `rewrite_links_to_outline(text, path, url_map) -> str`, `rewrite_links_to_local(text, reverse_map) -> str`, `plan_push(files, read_text, state) -> dict[path, "create"|"update"|"skip"]`.
 
-- [ ] **Step 1: Add failing tests**
+- [x] **Step 1: Add failing tests**
 
 ```python
 class TestMapping(unittest.TestCase):
@@ -320,9 +320,9 @@ class TestPlanPush(unittest.TestCase):
         self.assertEqual(osync.plan_push(list(texts), lambda p: texts[p], state)["docs/a.md"], "update")
 ```
 
-- [ ] **Step 2: Run to verify failure** — same unittest command, expected: FAIL/ERROR for the new tests.
+- [x] **Step 2: Run to verify failure** — same unittest command, expected: FAIL/ERROR for the new tests.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```python
 LINK = re.compile(r"(\[[^\]]*\]\()([^)\s]+)(\))")
@@ -404,7 +404,7 @@ def plan_push(files, read_text, state):
 
 Note for implementer: `rewrite_links_to_local`'s relative-path base must be the PULLED file's own folder — thread the target path through when wiring `pull` in Task 6 (signature may grow to `(text, reverse_map, target_path)`); keep the test green by defaulting the base as shown, and adjust the test if you improve the signature.
 
-- [ ] **Step 4: Run tests** — expected: `OK` (all tests).
+- [x] **Step 4: Run tests** — expected: `OK` (all tests).
 
 ### Task 6: `outline-sync.py` — API client, push/pull execution
 
@@ -415,7 +415,7 @@ Note for implementer: `rewrite_links_to_local`'s relative-path base must be the 
 - Consumes: everything from Tasks 4–5.
 - Produces: working `lint|push|pull` CLI; push honors `--dry-run`/`--force`, archives deleted files, creates the collection on first run; pull writes changed/unmapped docs into the working tree and prints a JSON report.
 
-- [ ] **Step 1: Implement the Outline API client and subcommands** (append):
+- [x] **Step 1: Implement the Outline API client and subcommands** (append):
 
 ```python
 class OutlineAPI:
@@ -538,17 +538,17 @@ if __name__ == "__main__":
 
 Implementer notes: (a) the marketplace repo's own `docs/` is the e2e guinea pig later — do NOT run non-dry-run push in this task; (b) `--normalize` from the spec is deferred (record in Task 9's changelog entry as "planned"); (c) image/attachment upload is deferred with a `TODO(v-next)` comment allowed ONLY as a tracked deferral note in the module docstring, not in logic.
 
-- [ ] **Step 2: Syntax check + tests**
+- [x] **Step 2: Syntax check + tests**
 
 Run: `python3 -m py_compile plugins/docs-agent/scripts/outline-sync.py && python3 -m unittest discover plugins/docs-agent/scripts/ -p 'test_*.py' 2>&1 | tail -2`
 Expected: `OK`
 
-- [ ] **Step 3: Dry-run smoke test against the marketplace repo**
+- [x] **Step 3: Dry-run smoke test against the marketplace repo**
 
 Run: `python3 plugins/docs-agent/scripts/outline-sync.py push --root . --dry-run`
 Expected: JSON report; every `docs/**/*.md` under `created`; exit 0; NO network calls (no token needed on dry-run path — verify `read_token` is not called when `--dry-run` and no collection exists; if it is, guard it).
 
-- [ ] **Step 4: Lint smoke test**
+- [x] **Step 4: Lint smoke test**
 
 Run: `python3 plugins/docs-agent/scripts/outline-sync.py lint --root .`
 Expected: JSON with `"clean": true` or a genuine violation list for the marketplace docs (fix any real violations found in `docs/` as part of this task).
@@ -563,7 +563,7 @@ Expected: JSON with `"clean": true` or a genuine violation list for the marketpl
 - Consumes: `role: docs` convention (Task 1).
 - Produces: "hub mode" definition referenced by Task 8's verbs.
 
-- [ ] **Step 1: Add a "Hub mode" section to `ws-docs.md`** (before the verb table):
+- [x] **Step 1: Add a "Hub mode" section to `ws-docs.md`** (before the verb table):
 
 ```markdown
 ## Hub mode
@@ -589,9 +589,9 @@ The scope answer may be cached in `.claude/docs-config.yaml` as
 `default_scope: repo | product | ask` (honor it like `default_audience`).
 ```
 
-- [ ] **Step 2: Add matching rows/section to `dual-track-docs/SKILL.md`**: a "Product docs repo (hub mode)" section stating the split rule ("concerns more than one repo, the client, or any end user → docs repo") and the scope-routing table above, plus `default_scope` alongside the existing `default_audience` config example.
+- [x] **Step 2: Add matching rows/section to `dual-track-docs/SKILL.md`**: a "Product docs repo (hub mode)" section stating the split rule ("concerns more than one repo, the client, or any end user → docs repo") and the scope-routing table above, plus `default_scope` alongside the existing `default_audience` config example.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run: `grep -c "DOCS_REPO" plugins/docs-agent/commands/ws-docs.md`
 Expected: >= 4
@@ -605,7 +605,7 @@ Expected: >= 4
 **Interfaces:**
 - Consumes: script CLI from Task 6 (`outline-sync.py <lint|push|pull> --root ...`), hub mode from Task 7.
 
-- [ ] **Step 1: Add three verbs to the `ws-docs.md` verb table and dispatch section:**
+- [x] **Step 1: Add three verbs to the `ws-docs.md` verb table and dispatch section:**
 
 ```markdown
 ### explain
@@ -645,9 +645,9 @@ the PR.
 
 Also add all three to the verbs list in the command's frontmatter/description and mark `publish`/`pull-back` as requiring Python 3 + `OUTLINE_API_TOKEN` (point at the token setup message from the script).
 
-- [ ] **Step 2: Add an "Outline-safe markdown profile" section to `dual-track-docs/SKILL.md`** — allowed list (mermaid fences, `:::info|warning|tip` notices, tables, task lists, `$$math$$`, provider-URL embeds, images/links), banned list (raw HTML, footnotes, `==highlight==`, manual heading IDs, definition lists), and the rule that only `docs/` is bound by it (dev-docs never syncs). Note that `/ws-docs publish` lints before pushing.
+- [x] **Step 2: Add an "Outline-safe markdown profile" section to `dual-track-docs/SKILL.md`** — allowed list (mermaid fences, `:::info|warning|tip` notices, tables, task lists, `$$math$$`, provider-URL embeds, images/links), banned list (raw HTML, footnotes, `==highlight==`, manual heading IDs, definition lists), and the rule that only `docs/` is bound by it (dev-docs never syncs). Note that `/ws-docs publish` lints before pushing.
 
-- [ ] **Step 3: Verify**
+- [x] **Step 3: Verify**
 
 Run: `grep -c "outline-sync.py" plugins/docs-agent/commands/ws-docs.md`
 Expected: >= 3
@@ -662,9 +662,9 @@ Expected: >= 3
 - Modify: `CHANGELOG.md` + mirror `docs/changelog.md`
 - Modify: `docs/superpowers/specs/2026-07-18-product-docs-outline-design.md` (amendment note under Decisions: state file is `.outline-sync.json` — stdlib has no YAML parser; `--normalize` and attachment upload deferred)
 
-- [ ] **Step 1: Apply all metadata/docs edits above** (exact wording follows the established README/reference formats).
-- [ ] **Step 2: CHANGELOG entries** under `[Unreleased]`: Added — `role: docs` convention + scaffold (ws-project-hub 0.3.0), /ws-docs hub mode + explain/publish/pull-back + outline-sync.py (docs-agent 3.2.0); Changed — hub-architect targets the docs repo. Mirror to `docs/changelog.md`.
-- [ ] **Step 3: Final verification**
+- [x] **Step 1: Apply all metadata/docs edits above** (exact wording follows the established README/reference formats).
+- [x] **Step 2: CHANGELOG entries** under `[Unreleased]`: Added — `role: docs` convention + scaffold (ws-project-hub 0.3.0), /ws-docs hub mode + explain/publish/pull-back + outline-sync.py (docs-agent 3.2.0); Changed — hub-architect targets the docs repo. Mirror to `docs/changelog.md`.
+- [x] **Step 3: Final verification**
 
 Run:
 ```bash
