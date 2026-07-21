@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, mcp__plugin_atlassian_atlassian__searchJiraIssuesUsingJql, mcp__plugin_atlassian_atlassian__atlassianUserInfo
+allowed-tools: Bash, Read
 description: Show your Jira assignments and suggest the next task to pick up
 ---
 
@@ -15,24 +15,20 @@ Show the user their current Jira workload and suggest what to pick up next.
 
 ### 1. Verify setup
 
-If `~/.claude/ws/config.yaml` is missing, abort and tell the user to run `/ws-init` first.
+If `~/.claude/ws/config.yaml` is missing, abort and tell the user to run `/ws-init` first. If `jira me` fails, same — `/ws-init` walks them through jira-cli setup.
 
-Read `account_id`, `cloud_id`, and (if present) the project binding from `./.claude/ws-project.yaml`.
+Read the project binding (if present) from `./.claude/ws-project.yaml`.
 
 ### 2. Fetch assignments
 
-Run `mcp__plugin_atlassian_atlassian__searchJiraIssuesUsingJql` with:
+Run jira-cli:
 
+```bash
+jira issue list -q 'assignee = currentUser() AND statusCategory != Done ORDER BY priority DESC, updated DESC' \
+  --plain --no-headers --columns KEY,TYPE,STATUS,PRIORITY,SUMMARY --paginate 0:50
 ```
-assignee = currentUser() AND statusCategory != Done
-ORDER BY priority DESC, updated DESC
-```
 
-If a project binding exists, scope it: `AND project = <KEY>`.
-
-Request fields: `summary, status, priority, issuetype, sprint, updated, parent`.
-
-Limit to 50.
+If a project binding exists, scope the JQL: `AND project = <KEY>`. If the plain columns prove insufficient (e.g. sprint info needed), use `--raw` and parse the JSON instead.
 
 ### 3. Render compact dashboard
 
@@ -78,6 +74,6 @@ For "Suggested next":
 
 ### 5. Cache
 
-After rendering, cache the result to `~/.cache/ws-hub/status.txt` with a timestamp header so the SessionStart hook can show a stale snapshot quickly without an MCP roundtrip.
+After rendering, cache the result to `~/.cache/ws-hub/status.txt` with a timestamp header so the SessionStart hook can show a stale snapshot quickly without a Jira roundtrip.
 
 Read-only — no Jira writes.

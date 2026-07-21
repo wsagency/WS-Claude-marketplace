@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Write, Edit, AskUserQuestion, mcp__plugin_atlassian_atlassian__getJiraIssue, mcp__plugin_atlassian_atlassian__getTransitionsForJiraIssue, mcp__plugin_atlassian_atlassian__transitionJiraIssue
+allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 description: Commit (Jira-aware), update CHANGELOG, push, and open a PR with the Jira ticket linked
 ---
 
@@ -126,11 +126,10 @@ Construct the Jira link from `site` in `~/.claude/ws/config.yaml`. If no ticket,
 ### 7. Transition the ticket (if applicable)
 
 If a ticket exists and `defaults.pr_transition` is set in global config (default: `in-review`):
-- Call `mcp__plugin_atlassian_atlassian__getTransitionsForJiraIssue` to find the matching transition
 - Ask the user (AskUserQuestion):
   - **Transition to <target>** (e.g. In Review) — recommended
   - **Skip transition**
-- If confirmed, call `mcp__plugin_atlassian_atlassian__transitionJiraIssue`
+- If confirmed, run `jira issue move <TICKET> "<target state>"` (jira-cli lists valid states if the name doesn't match). If the call fails, report it — the PR stands; the user can transition manually.
 
 ### 8. Report
 

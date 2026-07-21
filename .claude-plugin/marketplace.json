@@ -20,25 +20,14 @@
     },
     {
       "name": "ws-commit-commands",
-      "description": "Jira-aware git workflows: Conventional Commits with ticket suffix, Smart Commit worklogs, automatic Keep-a-Changelog updates, PR creation via tea (Gitea), and Jira OAuth onboarding",
-      "version": "2.1.0",
+      "description": "Jira-aware git workflows via jira-cli: Conventional Commits with ticket suffix, worklogs and transitions, ticket writing (/ws-ticket), automatic Keep-a-Changelog updates, and PR creation via tea (Gitea)",
+      "version": "3.0.0",
       "source": "./plugins/ws-commit-commands",
       "category": "development",
       "author": {
         "name": "WS Agency"
       },
-      "tags": ["git", "commit", "pr", "jira", "conventional-commits", "smart-commits", "atlassian", "oauth"]
-    },
-    {
-      "name": "ws-jira-enhancer",
-      "description": "Transform brief task descriptions into well-structured Jira tickets",
-      "version": "1.0.0",
-      "source": "./plugins/ws-jira-enhancer",
-      "category": "development",
-      "author": {
-        "name": "WS Agency"
-      },
-      "tags": ["jira", "ticket", "task-management"]
+      "tags": ["git", "commit", "pr", "jira", "jira-cli", "conventional-commits", "ticket"]
     },
     {
       "name": "ws-project-hub",

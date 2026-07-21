@@ -1,7 +1,0 @@
-{
-  "name": "ws-jira-enhancer",
-  "description": "Transform brief task descriptions into well-structured Jira tickets",
-  "author": {
-    "name": "WS Agency"
-  }
-}

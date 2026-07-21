@@ -109,20 +109,20 @@ Add a single entry to the Unreleased section of CHANGELOG.md.
 
 ## ws-commit-commands
 
-Jira-aware git workflows. Detects ticket from branch name, composes Conventional Commits with `(TICKET)` suffix, optionally adds Smart Commit `#time` worklog and transition. PR creation via tea CLI.
+Jira-aware git workflows via [jira-cli](https://github.com/ankitpokhrel/jira-cli). Detects ticket from branch name, composes Conventional Commits with `(TICKET)` suffix, applies worklogs and transitions with explicit jira-cli calls. PR creation via tea CLI.
 
-**Prerequisites:** [tea CLI](https://gitea.com/gitea/tea), Atlassian MCP server (auto via `atlassian` plugin)
+**Prerequisites:** [tea CLI](https://gitea.com/gitea/tea); [jira-cli](https://github.com/ankitpokhrel/jira-cli) (`brew install ankitpokhrel/jira-cli/jira-cli`, `export JIRA_API_TOKEN=<token>`, `jira init`)
 
 ### /ws-init
 
-Connect Jira via OAuth and configure the marketplace for this user. If run inside a git repo, also binds that project to a specific Jira project key.
+Verify jira-cli setup and configure the marketplace for this user. If run inside a git repo, also binds that project to a specific Jira project key.
 
 **Arguments:** None
 
 **Behavior:**
-1. Triggers Atlassian OAuth (interactive — opens browser to authorize)
-2. Stores user account_id, site, and cloud_id in `~/.claude/ws/config.yaml`
-3. If in a git repo, asks which Jira project to bind; writes `./.claude/ws-project.yaml`
+1. Checks the `jira` binary and `jira me`; if missing, prints install/token/`jira init` steps and aborts
+2. Writes `~/.claude/ws/config.yaml` (site host + defaults; auth stays in jira-cli)
+3. If in a git repo, asks which Jira project to bind (`jira project list`); writes `./.claude/ws-project.yaml`
 4. Reports summary and suggests next commands
 
 **Example:**
@@ -149,18 +149,19 @@ Show the user's Jira workload (assigned tickets grouped by status) and suggest t
 
 ### /ws-commit
 
-Jira-aware commit. Detects ticket key from branch name (`WSC-123-feature`), composes Conventional Commits with `(WSC-123)` suffix, optionally adds Smart Commit `#time` worklog and transition.
+Jira-aware commit. Detects ticket key from branch name (`WSC-123-feature`), composes Conventional Commits with `(WSC-123)` suffix, optionally logs a worklog and transitions the ticket via jira-cli.
 
 **Arguments:** None
 
 **Behavior:**
 1. Parses current branch for `^([A-Z]+-\d+)`; if none, asks user for ticket (or proceeds without one)
-2. Fetches ticket title via Atlassian MCP for context
+2. Fetches ticket title via `jira issue view <KEY> --raw` for context
 3. Generates CC message: `<type>(<scope>): <description> (TICKET)` + body + `Refs: TICKET`
 4. Computes elapsed time on the branch as worklog default; asks user to log it, edit, or skip
-5. Asks about transition (To Do → In Progress, etc.) using available Jira transitions
-6. Appends Smart Commit trailer if worklog or transition chosen: `TICKET #time Xh Ym #transition`
+5. Asks about transition (To Do → In Progress, etc.)
+6. Appends the Smart Commit trailer (record only, `smart_commit_trailer: true` default): `TICKET #time Xh Ym #transition`
 7. Shows full message for confirmation, then commits
+8. Applies chosen actions via jira-cli after the commit: `jira issue worklog add`, `jira issue move`, optional `jira issue comment add`
 
 **Commit format:**
 ```
@@ -224,56 +225,27 @@ Clean up git branches marked as [gone] (deleted on remote but exist locally).
 
 ---
 
-## ws-jira-enhancer
+### /ws-ticket
 
-Transform brief task descriptions into well-structured Jira tickets.
-
-### /ws-jira-enhancer
-
-Transform a brief task description into a comprehensive Jira ticket with user story, acceptance criteria, and technical context.
+Turn a brief task description into a comprehensive Jira ticket (user story, Given/When/Then acceptance criteria, technical context from codebase research), optionally creating it in Jira via jira-cli. Replaces the retired `/ws-jira-enhancer`.
 
 **Arguments:**
 | Name | Required | Description |
 |------|----------|-------------|
-| `task` | Yes | Brief task description to enhance |
+| `description` | Yes | Brief task description to enhance |
 
 **Behavior:**
-1. Analyzes the task description
-2. Searches the codebase for relevant context (if applicable)
-3. Generates a structured Jira ticket with:
-   - Summary
-   - User story (As a... I want... so that...)
-   - Background and technical context
-   - Acceptance criteria (Given/When/Then format)
-   - Clarifying questions (if needed)
+1. Applies the `ticket-writing` skill: codebase research where needed, then Summary / User Story / Background / Technical Context / Acceptance Criteria / Questions
+2. If the repo is bound to a Jira project, offers to create the ticket: `jira issue create -t<Type> -s"..." -b"..." -p<PROJECT> --no-input`
+3. Prints the created key and browse URL
 
 **Example:**
 ```
-/ws-jira-enhancer "add dark mode toggle to settings page"
-```
-
-**Output Format:**
-```markdown
-## Summary
-[One clear sentence describing what needs to be done]
-
-## User Story
-As a [role], I want [goal], so that [benefit].
-
-### Background
-[Business context and problem being solved]
-
-### Technical Context
-[Findings from codebase research]
-
-## Acceptance Criteria
-- [ ] Given [precondition], when [action], then [result]
-
-## Questions (if any)
-> [Clarifying questions]
+/ws-ticket "dark mode toggle for the settings screen"
 ```
 
 ---
+
 
 ## ws-project-hub
 
@@ -414,6 +386,7 @@ Skills provide knowledge and templates, loaded on demand.
 | Skill | Trigger Keywords |
 |-------|-----------------|
 | `ws-jira-conventions` | jira, ticket, WSC-, smart commit, conventional commits |
+| `ticket-writing` | jira ticket, user story, acceptance criteria, enhance task |
 
 ### ws-project-hub Skills
 

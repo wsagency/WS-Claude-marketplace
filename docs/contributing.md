@@ -20,8 +20,7 @@ File your report here: https://github.com/wsagency/WS-Claude-marketplace/issues
 Have an idea for a new plugin? Check the existing set first to avoid duplication:
 
 - **docs-agent** — documentation generation, ADRs, changelogs, style guides
-- **ws-commit-commands** — git workflow helpers (status, clean, init, commit with conventions)
-- **ws-jira-enhancer** — Jira ticket bridging and workflow automation
+- **ws-commit-commands** — Jira-aware git workflows via jira-cli (status, commit, PR, ticket writing)
 - **ws-project-hub** — monorepo scanning and project discovery
 
 If your idea is new, please open an issue with:

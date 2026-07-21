@@ -1,6 +1,6 @@
 ---
-allowed-tools: Bash, Read, AskUserQuestion, mcp__plugin_atlassian_atlassian__getJiraIssue, mcp__plugin_atlassian_atlassian__addCommentToJiraIssue, mcp__plugin_atlassian_atlassian__getTransitionsForJiraIssue, mcp__plugin_atlassian_atlassian__transitionJiraIssue
-description: Create a Jira-aware git commit (Conventional Commits + ticket suffix, optional smart-commit worklog and transition)
+allowed-tools: Bash, Read, AskUserQuestion
+description: Create a Jira-aware git commit (Conventional Commits + ticket suffix, optional worklog and transition via jira-cli)
 ---
 
 ## Context
@@ -31,7 +31,7 @@ If no key in branch:
 
 ### 2. If a ticket is in play
 
-Fetch the ticket via `mcp__plugin_atlassian_atlassian__getJiraIssue` (cloud_id from config, issueIdOrKey=`TICKET`). Read its `summary` and `status.name`. Use the summary as additional context for the commit message body if useful.
+Fetch the ticket via `jira issue view TICKET --raw` (JSON; fall back to `--plain` if `--raw` is unavailable). Read its `summary` and `status.name`. Use the summary as additional context for the commit message body if useful. If the key doesn't exist, surface the CLI error and let the user re-enter.
 
 ### 3. Compose Conventional Commits message
 
@@ -72,10 +72,12 @@ If asking, present (AskUserQuestion) the user with the **measured elapsed time**
 Then ask about transition:
 
 > Current status: `<status>`. Transition?
-> - Show transitions available via `getTransitionsForJiraIssue` and offer relevant ones (typical: To Do → In Progress, In Progress → In Review, In Review → Done)
+> - Offer the typical next states (To Do → In Progress, In Progress → In Review, In Review → Done) — `jira issue move` accepts the target state name and lists valid states if it doesn't match
 > - **No transition**
 
-If worklog or transition chosen, append a Smart Commit trailer as the LAST line of the commit body:
+The chosen actions are performed with **explicit jira-cli calls after the commit succeeds** (step 6a) — the CLI call is the source of truth, not the message trailer.
+
+Additionally, if `defaults.smart_commit_trailer` is `true` (default) in `~/.claude/ws/config.yaml`, append the Smart Commit trailer as the LAST line of the commit body — a human-readable record that also works if a Jira dev-connector is ever wired up:
 
 ```
 <TICKET> #time <Xh Ym>[ #<transition-with-hyphens>]
@@ -91,6 +93,8 @@ The Smart Commit line must:
 - Have the ticket key first, then `#commands`
 - Use hyphens in multi-word transitions (e.g. `#start-progress`, `#in-review`)
 
+⚠️ Double-apply guard: if the repo's Jira has an active dev-connector that ingests Smart Commits, the user should set `smart_commit_trailer: false` — otherwise worklogs/transitions would be applied by both the CLI call and the connector.
+
 ### 5. Preview and confirm
 
 Show the user the full commit message. Ask: confirm / edit / cancel.
@@ -100,15 +104,17 @@ Show the user the full commit message. Ask: confirm / edit / cancel.
 - Stage relevant files (specific paths, NOT `git add -A`/`.` to avoid accidentally including secrets)
 - Run `git commit` with the composed message via HEREDOC
 
-### 7. Optional: explicit comment on the Jira issue
+### 6a. Apply Jira actions (after the commit succeeds)
 
-If `defaults.jira_actions` includes commenting and the user opted in, after the commit succeeds:
-- Run `git log -1 --format='%H %s'` to get the new commit SHA + subject
-- Call `mcp__plugin_atlassian_atlassian__addCommentToJiraIssue` with text: `Committed <SHA>: <subject>`
+Perform the actions chosen in step 4 via jira-cli — one call each, in this order:
 
-(This is redundant when the dev connector is wired up — JIRA will auto-link via the issue key in the subject. Only do this if explicitly enabled in config.)
+- worklog → `jira issue worklog add TICKET "<Xh Ym>" --no-input`
+- transition → `jira issue move TICKET "<target state>"`
+- optional comment (only if explicitly enabled in config): `git log -1 --format='%H %s'`, then `jira issue comment add TICKET "Committed <SHA>: <subject>" --no-input`
 
-### 8. Report
+If a jira-cli call fails, report it and continue — the commit stands; the user can retry the Jira action separately.
+
+### 7. Report
 
 One-line summary:
 ```

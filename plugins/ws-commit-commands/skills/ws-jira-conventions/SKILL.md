@@ -55,9 +55,13 @@ Rules:
 - Ticket key uppercase, in parens at end of subject
 - `Refs:` trailer at the end of the body (git-trailers convention)
 
-## Smart Commits (optional automation)
+## Smart Commits (optional record, not the mechanism)
 
-Append a single line to the commit body to trigger Jira actions:
+Since the jira-cli migration, worklogs/transitions/comments are applied by **explicit jira-cli calls** (`jira issue worklog add`, `jira issue move`, `jira issue comment add`) — the trailer below is a human-readable record in the commit body, included when `defaults.smart_commit_trailer: true` (default).
+
+⚠️ If your Jira has an active dev-connector that ingests Smart Commits from this repo, set `smart_commit_trailer: false` in `~/.claude/ws/config.yaml` — otherwise the connector and the CLI would apply worklogs/transitions twice.
+
+The trailer is a single line in the commit body:
 
 ```
 <TICKET-KEY> #time <duration> #<transition>

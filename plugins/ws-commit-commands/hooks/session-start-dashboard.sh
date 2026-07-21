@@ -33,7 +33,7 @@ cat <<EOF
 [ws-marketplace] This project is bound to Jira project: ${project:-unknown}.
 Current branch: ${branch:-(none)}${ticket:+  · ticket: $ticket}
 
-The user likely wants to see their Jira workload. If they don't immediately give a task, run /ws-status to render their assignments and a suggestion for what to pick up next. Use the cached snapshot at $CACHE if it's less than 5 minutes old; otherwise fetch fresh via the Atlassian MCP server.
+The user likely wants to see their Jira workload. If they don't immediately give a task, run /ws-status to render their assignments and a suggestion for what to pick up next. Use the cached snapshot at $CACHE if it's less than 5 minutes old; otherwise fetch fresh via jira-cli (/ws-status does this).
 
 Jira-aware commits: /ws-commit (Conventional Commits + ticket suffix, optional Smart Commit worklog). For PR flow: /ws-commit-push-pr.
 EOF
