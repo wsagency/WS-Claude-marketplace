@@ -14,12 +14,11 @@ You will be invoked from inside a project hub directory. You have access to:
 
 ## What to produce
 
-The hub itself doesn't have a `docs/` directory — docs live in a dedicated sub-repo (typically `<project>-docs`). Detect it from `project.yaml`:
+Output location: if project.yaml registers a repo with `role: docs`, write
+architecture.md, contracts.md, and deployment.md into `<docs-repo>/dev-docs/`.
+Otherwise fall back to the hub's `docs/` as before.
 
-- If a docs sub-repo is registered and accessible locally → write into that repo's appropriate location (e.g. `<docs-repo>/architecture/` or `<docs-repo>/cross-repo/`). Open the docs repo's own CLAUDE.md first to learn its conventions before writing.
-- If no docs repo exists → write into the cross-repo notes section of `<hub>/CLAUDE.md` instead (between hand-written markers). Don't create new files in the hub.
-
-Files to produce (in the docs repo or as a single hub CLAUDE.md section):
+Files to produce (in the docs repo's `dev-docs/` or the hub's `docs/`):
 
 1. **`architecture.md`** — Cross-repo system map:
    - One section per sub-repo with: purpose, primary tech, entry points, public interfaces

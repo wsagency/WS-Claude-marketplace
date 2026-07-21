@@ -47,7 +47,20 @@ For every repo the user selected, ask via AskUserQuestion what to do:
 
 Register each chosen repo in `project.yaml` following the skill's "project.yaml schema" section (fields, path rules) and its "Tech inference" table. Prompt the user for `description` (default `"TODO: describe this repo"`). Add nested (`./`) repos to the `.gitignore` managed block per the skill; sibling (`../`) repos are not added.
 
-### 4. Initialize hub git
+### 4. Product docs repo
+
+Ask (AskUserQuestion): "Create a product docs repo (`<project>-docs`)?"
+- **Yes** → create the subfolder, `git init` it, scaffold the layout defined
+  in the project-hub-conventions skill ("Product docs repo" section): README,
+  CLAUDE.md with the writing rules pointer, docs/ tree with index.md and
+  empty Diátaxis folders + assets/ + release-notes/, dev-docs/ tree
+  (architecture.md placeholder, decisions/, client-materials/, runbooks/).
+  Register it in project.yaml with `role: docs` and add it to the .gitignore
+  managed block. Do NOT create .outline-sync.json (created by the first
+  /ws-docs publish).
+- **No** → skip; note that /ws-hub-add-repo can mark one later.
+
+### 5. Initialize hub git
 
 ```bash
 cd <hub-dir>
@@ -58,7 +71,7 @@ git commit -q -m "chore: initialize <project> hub"
 
 Verify with `git status` that no sub-repo content shows up as untracked (the .gitignore should be filtering them out).
 
-### 5. Generate `CLAUDE.md` repo sections
+### 6. Generate `CLAUDE.md` repo sections
 
 Fill the region between the `ws-hub:repos` markers (replacing the template's placeholder — see "Regenerated region (marker pair)" in the skill) with one block per registered repo:
 
@@ -72,7 +85,7 @@ Fill the region between the `ws-hub:repos` markers (replacing the template's pla
 - url: <url if present>
 ```
 
-### 6. Report back
+### 7. Report back
 
 - Path to created hub
 - Each registered repo: name, where it ended up (nested/sibling/cloned)

@@ -42,6 +42,14 @@ __REPO_SECTIONS__
 - `/ws-hub-add-repo` — register a new sub-repo (clone or adopt)
 - `/ws-hub-describe` — refresh sub-repo descriptions from their READMEs
 
+## Documentation
+
+Product-level documentation lives in the `role: docs` sub-repo (see
+`project.yaml`): user docs (`docs/`, synced to Outline) and cross-repo
+dev docs (`dev-docs/` — product ADRs, architecture, client materials).
+Write product-level docs THERE, not in the hub and not in feature repos.
+Repo-specific dev docs stay in each sub-repo's own `dev-docs/`.
+
 ## Access notes
 
 Sub-repos you don't have git access to will simply be missing from disk and `invoke-ai.sh` will skip them with a warning. The hub itself contains no sensitive code — it's a meta repo, safe to share broadly.

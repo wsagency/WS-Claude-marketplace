@@ -47,6 +47,10 @@ Register one or more sub-repos in the current hub. Without arguments, register a
 For each repo to register:
 
 1. Gather the `project.yaml` entry fields — `name`, `path`, `url` (`git -C <path> config --get remote.origin.url`), `description` (prompt user), `tech` — following the skill's "project.yaml schema" section and "Tech inference" table.
+   - Ask whether this repo is the product docs repo (`role: docs`). Before
+     writing, check project.yaml: if another repo already has `role: docs`,
+     refuse with a message naming it (max one per hub — see the
+     project-hub-conventions skill).
 
 2. Append the entry to `project.yaml` under `repos:` using `Edit` (preserve formatting and comments).
 

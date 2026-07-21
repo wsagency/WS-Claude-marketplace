@@ -13,4 +13,4 @@ Produce or refresh the hub's cross-repo documentation by dispatching the `hub-ar
 
 3. Relay the agent's report to the user: files written, key cross-repo findings, and anything flagged for human attention.
 
-Docs placement note: at v0.2.0 docs land where the agent targets them today (a registered docs sub-repo when one is present and accessible, otherwise the cross-repo notes section of the hub's `CLAUDE.md`). Dedicated docs-repo targeting via `role: docs` in `project.yaml` arrives in v0.3.0.
+Docs placement note: outputs go to the `role: docs` repo's `dev-docs/` when `project.yaml` registers one, otherwise to the hub's `docs/`.
