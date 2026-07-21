@@ -37,17 +37,17 @@ git log v1.0.0..v1.1.0 --pretty=format:"%h|%s|%b---" --no-merges
 
 If the project uses Conventional Commits, map types directly:
 
-| Conventional Commit Type | Changelog Section | SemVer Impact |
-|--------------------------|-------------------|---------------|
-| `feat:` | Added | MINOR |
-| `fix:` | Fixed | PATCH |
-| `perf:` | Changed | PATCH |
-| `refactor:` (user-visible) | Changed | — |
-| `deprecate:` | Deprecated | — |
-| `security:` | Security | PATCH |
-| `BREAKING CHANGE` / `!` | Changed (marked) | MAJOR |
+| Conventional Commit Type | Changelog Section |
+|--------------------------|-------------------|
+| `feat:` | Added |
+| `fix:` | Fixed |
+| `perf:` | Changed |
+| `refactor:` (user-visible) | Changed |
+| `deprecate:` | Deprecated |
+| `security:` | Security |
+| `BREAKING CHANGE` / `!` | Changed (marked) |
 
-Note: `docs:`, `test:`, `build:`, `ci:`, `chore:` commits are typically excluded from changelogs unless they have user impact.
+Note: `docs:`, `test:`, `build:`, `ci:`, `chore:` commits are typically excluded from changelogs unless they have user impact. Each type's SemVer impact is defined in the `conventional-commits` skill — do not restate it.
 
 #### Non-Conventional Commits (Fallback)
 
@@ -144,10 +144,7 @@ When updating an existing CHANGELOG.md:
 
 ## Versioning Strategy
 
-Determine version bumps from commit types (if using Conventional Commits):
-- Any `BREAKING CHANGE` or `!` suffix → MAJOR bump
-- Any `feat:` → MINOR bump (at minimum)
-- Only `fix:`, `perf:` → PATCH bump
+Determine version bumps from commit types using the SemVer mapping in the `conventional-commits` skill.
 
 For SaaS products with continuous deployment, consider **CalVer** (`2026.03.1`) or a hybrid where the API is SemVer-versioned independently from the application.
 

@@ -255,7 +255,7 @@ Agents can spawn sub-agents for specialized tasks:
 ## Sub-agents
 
 For specific tasks, you may spawn:
-- `tutorial-writer` for creating tutorials
+- `diataxis-writer` for tutorials, how-to guides, and explanations
 - `api-documenter` for API docs
 ```
 

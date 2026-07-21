@@ -19,12 +19,7 @@ Transform technical changelog entries or git history into polished, user-facing 
 
 ## The Changelog vs. Release Notes Distinction
 
-| Changelog (CHANGELOG.md) | Release Notes |
-|--------------------------|---------------|
-| Developer-facing | User-facing |
-| Technical, comprehensive | Benefit-driven, curated |
-| Every fix, every dependency | Only changes users care about |
-| "Fix race condition in request handler" | "Issues now load 40% faster" |
+See the `keep-a-changelog` skill for the changelog vs. release notes comparison — you produce the release-notes side: user-facing, benefit-driven, curated.
 
 ## Process
 

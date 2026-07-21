@@ -36,11 +36,7 @@ Only include sections that have entries. Empty sections should be omitted.
 
 ## Version Format
 
-Follow Semantic Versioning (SemVer):
-- **MAJOR.MINOR.PATCH** (e.g., 1.2.3)
-- MAJOR: Incompatible API changes
-- MINOR: Backwards-compatible new functionality
-- PATCH: Backwards-compatible bug fixes
+Versions follow Semantic Versioning (**MAJOR.MINOR.PATCH**, e.g., 1.2.3) — the SemVer impact rules and their mapping from commit types live in the `conventional-commits` skill.
 
 ## The Unreleased Section
 
@@ -77,22 +73,13 @@ These are complementary but different artifacts:
 
 ## Automation with Conventional Commits
 
-When combined with Conventional Commits and release-please:
-
-1. Developer commits with `feat:`, `fix:`, etc.
-2. CI validates commit format (commitlint)
-3. On main merge, release-please creates a Release PR
-4. Release PR includes auto-generated CHANGELOG.md updates
-5. Merging the Release PR creates Git tag + release
-
-This keeps the changelog always up-to-date with zero manual effort.
+The automated changelog pipeline (commit-format enforcement and Release PR generation) is documented in the `conventional-commits` skill.
 
 ## References
 
 - [Keep a Changelog Official Site](https://keepachangelog.com)
 - [Semantic Versioning](https://semver.org)
 - [Conventional Commits](https://www.conventionalcommits.org)
-- [release-please](https://github.com/googleapis/release-please)
 
 See `references/changelog-format.md` for the detailed format specification.
 See `examples/changelog-template.md` for a ready-to-use template.

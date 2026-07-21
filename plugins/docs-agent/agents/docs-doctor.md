@@ -9,7 +9,7 @@ tools:
 
 # Docs Doctor Agent
 
-Inspect a project to report on the state of its documentation in the dual-track-docs convention. You produce a status table, not file changes.
+Inspect a project to report on the state of its documentation in the dual-track-docs convention. Your scope is artifact presence and staleness scanning — which artifacts exist, which are stale or behind, which are missing. You produce a status table, not file changes.
 
 ## Process
 
@@ -48,8 +48,8 @@ Based on detected state:
 
 If invoked with `mode: audit` in your prompt, additionally include:
 - Full list of commits since last CHANGELOG entry with subject lines
-- Detected exports/CLI surface changes (delegate to `public-api-watcher` if available, or do a basic git-grep for `export ` additions)
-- ADR candidates (look for keyword commits: `adopt`, `migrate`, `switch`, `replace`, `introduce`)
+
+Public API change detection and ADR-candidate detection are not your job — `/ws-docs audit` dispatches the `public-api-watcher` and `arch-watcher` agents alongside you and merges their findings into the report.
 
 ## Inputs
 

@@ -88,10 +88,19 @@ Diátaxis is used by Cloudflare, Canonical/Ubuntu, Django, Gatsby, and many othe
 - **shadcn/ui**: Live preview, installation command, variant examples, AI-ready (llms.txt)
 - **Next.js**: Diátaxis in practice — Getting Started (tutorials), Guides (how-to), API Reference
 
+## AI Readiness
+
+Structure developer docs for AI consumption as well as humans:
+
+- Publish an **llms.txt** at the docs root for AI model consumption
+- Consider an MCP server for API docs
+- Keep pages self-contained with clear headings so AI assistants retrieve them accurately
+
 ## References
 
 - [Diátaxis Official Documentation](https://diataxis.fr)
 - See `references/` for detailed guidance on each type
+- See `references/docs-as-code.md` for docs-as-code enforcement (definition of done, PR template checkboxes, Vale in CI, time allocation)
 - See `examples/` for templates and examples
 
 ## Relationship to the dual-track docs convention

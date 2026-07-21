@@ -43,50 +43,7 @@ For each considered option, investigate:
 
 ### 3. Write the ADR
 
-Follow the MADR v4.0.0 format strictly:
-
-```markdown
-# [Title: short description of problem and chosen solution]
-
-## Status
-
-[Proposed | Accepted | Deprecated | Superseded by ADR-XXXX]
-
-## Context and Problem Statement
-
-[2-3 sentences. What forces are at play? Why is this decision needed?]
-
-## Decision Drivers
-
-- [List the criteria used to evaluate options]
-
-## Considered Options
-
-1. [Option 1]
-2. [Option 2]
-3. [Option 3]
-
-## Decision Outcome
-
-Chosen option: "[Option N]", because [justification connecting back to decision drivers].
-
-### Consequences
-
-- Good, because [positive consequence]
-- Bad, because [accepted tradeoff]
-
-## Pros and Cons of the Options
-
-### [Option 1]
-- Good, because [argument]
-- Bad, because [argument]
-
-[Repeat for each option]
-
-## More Information
-
-[Links, related ADRs, meeting notes]
-```
+Load the `adr` skill and follow its MADR v4.0.0 template exactly — do not restate the format here.
 
 ### 4. File and Number the ADR
 

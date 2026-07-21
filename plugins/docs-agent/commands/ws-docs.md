@@ -73,7 +73,7 @@ First-time setup. Dispatch in parallel (Agent tool with `run_in_background: true
 1. `architecture-documenter` → writes `dev-docs/architecture.md`
 2. `contributing-generator` → writes the 3-file CONTRIBUTING set
 3. `changelog-analyzer` → generates root `CHANGELOG.md` from git history (and mirrors)
-4. `tutorial-writer` → writes `docs/tutorials/getting-started.md` if absent
+4. `diataxis-writer` (quadrant: `tutorial`) → writes `docs/tutorials/getting-started.md` if absent
 
 While they run, in the main session:
 - Create directories: `docs/{tutorials,how-to,reference,explanation,release-notes}/` and `dev-docs/{decisions,runbooks,reference,explanation}/`
@@ -88,7 +88,7 @@ Poll the dispatched agents every 3-5 seconds (TaskList / TaskGet) and print a st
 
 ⏳ architecture-documenter   12s   writing dev-docs/architecture.md
 ⏳ contributing-generator    08s   analyzing tooling...
-✓ tutorial-writer           18s   docs/tutorials/getting-started.md
+✓ diataxis-writer           18s   docs/tutorials/getting-started.md
 ⏳ changelog-analyzer        15s   parsed 240/247 commits
 ```
 
@@ -102,10 +102,12 @@ Suggested commit:
 
 ### verb = audit
 
-Verbose dijagnoza. Dispatch foreground (single agent):
-- `docs-doctor` with `mode: audit` — returns the same artifact table plus per-commit details since last CHANGELOG entry, detected public API changes, ADR candidates.
+Verbose dijagnoza. Run 3 agents in parallel (background) — same dispatch pattern as `catchup`:
+1. `docs-doctor` with `mode: audit` — returns the artifact table plus per-commit details since last CHANGELOG entry
+2. `public-api-watcher` — returns detected public API changes needing `docs/reference/` updates
+3. `arch-watcher` — returns ADR candidates (architectural signals)
 
-Render the same table as discovery, then a follow-up section:
+While they run, render the same live status block format. When all complete, merge the three reports: render the same table as discovery (from `docs-doctor`), then a follow-up section combining the watcher findings:
 
 ```
 ─────────────────
@@ -177,12 +179,12 @@ Audience routing:
 Resolve destination from audience + type (see dual-track-docs skill routing table).
 
 Dispatch the matching agent (foreground, single):
-- `tutorial` → `tutorial-writer`
-- `howto` → `tutorial-writer` (it handles both)
+- `tutorial` → `diataxis-writer` with `quadrant: tutorial`
+- `howto` → `diataxis-writer` with `quadrant: howto`
 - `reference` → `api-documenter`
-- `explanation` → `tutorial-writer` (handles explanations too, per existing v2.1.0 behavior)
+- `explanation` → `diataxis-writer` with `quadrant: explanation`
 
-Pass `destination_track` and `destination_path` inputs to the agent. After the agent returns, print a one-line spinner status and a final "✓ wrote `<path>`" line.
+Pass `destination_track` and `destination_path` inputs to the agent (plus `quadrant` for `diataxis-writer`). After the agent returns, print a one-line spinner status and a final "✓ wrote `<path>`" line.
 
 ### verb = adr
 
@@ -241,4 +243,4 @@ docs:
 - Never overwrite files without prompt + confirmation (except in `init` when files are missing).
 - Never push or commit on the user's behalf without explicit verb authorization (only `catchup` commits automatically, and only after user triage).
 - All file paths are relative to the project root unless explicitly noted.
-- Heavy verbs (`init`, `catchup`, `architecture`, `contributing`) use `run_in_background: true`; lightweight verbs (`write`, `adr`, `release-notes`, `changelog`) run foreground.
+- Heavy verbs (`init`, `audit`, `catchup`, `architecture`, `contributing`) use `run_in_background: true`; lightweight verbs (`write`, `adr`, `release-notes`, `changelog`) run foreground.

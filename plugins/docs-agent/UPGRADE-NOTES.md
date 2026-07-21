@@ -110,7 +110,7 @@ This is intentionally manual for PR 1. A `/docs-init` scaffold command (PR 2) an
 - `/release-notes [version]` — Generate user-facing release notes
 
 ### Enhanced Existing Components
-- **docs-architect** — Now checks for 7 required artifacts, includes TSDoc/GraphQL/Storybook guidance, docs-as-code enforcement, AI readiness recommendations
+- **documentation architect agent** (removed in v3.1.0) — Now checks for 7 required artifacts, includes TSDoc/GraphQL/Storybook guidance, docs-as-code enforcement, AI readiness recommendations
 - **api-documenter** — Added TSDoc standard for TypeScript, GraphQL schema documentation with SpectaQL
 - **changelog-analyzer** — Added Conventional Commits integration, versioning strategy, automation pipeline recommendations
 - **diataxis skill** — Added audience-based priority guidance, industry examples (Stripe, Linear, shadcn/ui), docs-as-code reference
