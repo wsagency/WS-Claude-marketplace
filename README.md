@@ -47,7 +47,7 @@ claude plugin uninstall docs-agent@ws-marketplace
 
 ### docs-agent
 
-Dual-track documentation suite (v3.0.0) with a single unified `/ws-docs` entry covering the full docs-as-code lifecycle: Diátaxis framework docs, Keep a Changelog, Architecture Decision Records (MADR v4.0.0), CONTRIBUTING.md, ARCHITECTURE.md, release notes, Conventional Commits, style guide enforcement, and TSDoc/GraphQL API reference. Ships opt-in PreToolUse/Stop hooks and dispatches work to background subagents.
+Dual-track documentation suite with a single unified `/ws-docs` entry covering the full docs-as-code lifecycle: Diátaxis framework docs, Keep a Changelog, Architecture Decision Records (MADR v4.0.0), CONTRIBUTING.md, ARCHITECTURE.md, release notes, Conventional Commits, style guide enforcement, and TSDoc/GraphQL API reference. Ships opt-in PreToolUse/Stop hooks and dispatches work to background subagents.
 
 **Commands** (all via the unified `/ws-docs` entry):
 - `/ws-docs` — Discovery / status (run with no verb to see what exists, what's stale, what's missing)

@@ -46,6 +46,7 @@ This project uses the WS dual-track-docs convention (docs-agent plugin v3.0.0+).
 - After completing a group of code changes, append an entry to `CHANGELOG.md` under `[Unreleased]` using the `keep-a-changelog` skill (auto-loads on the word "changelog"). Map: feat→Added, fix→Fixed, perf/refactor→Changed, security→Security, breaking→**BREAKING:** prefix.
 - When introducing a new architectural pattern, framework choice, or breaking convention, propose `/ws-docs adr "<decision>"` before finishing.
 - When changing public surface (a plugin's commands, agents, or skills), update the matching reference in `docs/reference/` and ensure the plugin's `description` field stays in sync between `plugin.json` and `marketplace.json`.
+- Versioning is lockstep (ADR 0002): all `version` fields in `marketplace.json` equal the repo release version. On release: cut `[Unreleased]` in CHANGELOG.md, mirror to `docs/changelog.md`, set all versions, tag `vX.Y.Z`. Never bump a single plugin independently.
 
 ### On request
 
