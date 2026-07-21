@@ -1,23 +1,20 @@
 ---
-allowed-tools: Bash, Read
+allowed-tools: Bash(git status:*), Bash(git log:*), Bash(git branch:*), Bash(git rev-list:*), Read
 description: Aggregated git status across all registered sub-repos
 ---
 
-## Context
-
-- Hub directory: !`pwd`
-- project.yaml: !`cat ./project.yaml 2>/dev/null || echo "(missing — run /hub-init first)"`
-
 ## Your task
 
-1. Verify `project.yaml` exists. If not, abort with a hint to run `/hub-init`.
+Read-only status sweep across all sub-repos registered in the current hub.
+
+1. Read `./project.yaml` with the Read tool. If it's missing, abort with a hint to run `/ws-hub-init` first.
 
 2. Parse the list of repos.
 
 3. For each accessible repo, gather:
    - Current branch (`git -C <path> branch --show-current`)
    - Ahead/behind upstream (`git -C <path> rev-list --left-right --count HEAD...@{u}` — handle no upstream gracefully)
-   - Uncommitted changes count (`git -C <path> status --porcelain | wc -l`)
+   - Uncommitted changes (`git -C <path> status --porcelain` — count the lines yourself)
    - Last 5 commits (`git -C <path> log --oneline -5`)
 
 4. Render a per-repo report:
@@ -35,5 +32,11 @@ description: Aggregated git status across all registered sub-repos
    ```
 
 5. End with a one-line summary: `N repos checked · M with changes · K skipped`.
+
+6. Finish with the launch hint:
+
+   ```
+   To launch Claude with all sub-repos mounted:  cd <hub> && ./invoke-ai.sh
+   ```
 
 Read-only command. Do not run any pulls, fetches, or modifications.

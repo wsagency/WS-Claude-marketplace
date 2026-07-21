@@ -13,7 +13,7 @@ The actual code lives in subfolders, each its own git repo. The hub's `.gitignor
 
 ```bash
 # Clone all registered sub-repos (skips ones you don't have access to)
-# Run from a /hub-clone-all command inside claude, or manually:
+# Run from a /ws-hub-repos clone command inside claude, or manually:
 #   git clone <url> ./<name>   for each in project.yaml
 
 # Launch Claude across all available sub-repos
@@ -37,4 +37,4 @@ __PROJECT_NAME__-main/
 
 ## Managing the hub
 
-Use the `ws-project-hub` plugin commands: `/hub-clone-all`, `/hub-sync`, `/hub-status`, `/hub-add-repo`, `/hub-scan`, `/hub-describe`.
+Use the `ws-project-hub` plugin commands: `/ws-hub-repos <pull|clone>`, `/ws-hub-status`, `/ws-hub-add-repo [--scan]`, `/ws-hub-describe`.

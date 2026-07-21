@@ -1,6 +1,6 @@
 ---
 name: project-hub-conventions
-description: Conventions for WS Agency multi-repo project hubs (subfolder layout, project.yaml schema, CLAUDE.md cascade, .gitignore managed block, invoke-ai.sh contract). Use when creating, extending, or troubleshooting a `<project>-main` hub repo, or when asked about "project hub", "multi-repo", or `<name>-main` / `<name>-truth` repos.
+description: Conventions for WS Agency multi-repo project hubs (subfolder layout, project.yaml schema, CLAUDE.md cascade, .gitignore managed block, invoke-ai.sh contract). Use when creating, extending, or troubleshooting a `<project>-main` hub repo, or when asked about "project hub", "multi-repo", or `<name>-main` repos.
 ---
 
 # Project Hub Conventions
@@ -37,7 +37,7 @@ project:
 repos:
   - name: <repo-name>           # required, matches directory name
     path: ./<repo-name>         # required, relative to hub; nested by default
-    url: <git-remote-url>       # optional but recommended (enables /hub-clone-all)
+    url: <git-remote-url>       # optional but recommended (enables /ws-hub-repos clone)
     description: <purpose>      # required (may be "TODO" temporarily)
     tech: <stack-keywords>      # optional, e.g. "react-native, typescript"
 ```
@@ -45,7 +45,22 @@ repos:
 Path rules:
 - Nested (recommended): `./<name>` — auto-added to `.gitignore` managed block
 - Sibling (legacy): `../<name>` — not in `.gitignore` (it's outside the hub)
-- `name` matches the directory basename so `/hub-scan` can detect new repos
+- `name` matches the directory basename so `/ws-hub-add-repo --scan` can detect new repos
+
+## Tech inference
+
+The `tech` field is inferred best-effort from manifest files at the repo root:
+
+| Manifest | tech |
+|---|---|
+| `package.json` | node |
+| `pubspec.yaml` | flutter |
+| `requirements.txt` | python |
+| `pyproject.toml` | python |
+| `Cargo.toml` | rust |
+| `go.mod` | go |
+
+If multiple manifests are present, list all matches; if none match, leave `tech` empty (or ask the user).
 
 ## `.gitignore` managed block
 
@@ -61,7 +76,7 @@ The plugin maintains a single block in the hub's `.gitignore`:
 
 Rules:
 - Anything outside the `=== ws-project-hub: ... ===` markers is hand-written and preserved
-- `/hub-add-repo` and `/hub-scan` rewrite only what's between the markers
+- `/ws-hub-add-repo` (with or without `--scan`) rewrites only what's between the markers
 - Sibling-pathed repos (`../X`) are NOT added — they're not in the hub
 - If the block is missing, commands create it at the top of `.gitignore`
 
@@ -86,7 +101,7 @@ The hub CLAUDE.md's "Sub-repos" section is machine-managed between paired marker
 
 Rules:
 - Commands rewrite ONLY the content between the markers; everything outside is hand-written and preserved
-- `/hub-init` fills the region via the template's `__REPO_SECTIONS__` placeholder; later commands regenerate it from `project.yaml`
+- `/ws-hub-init` fills the region via the template's `__REPO_SECTIONS__` placeholder; later commands regenerate it from `project.yaml`
 - If the markers are missing, recreate the pair at the end of the "Sub-repos" section — never guess at a partial match
 
 ## `invoke-ai.sh` contract
@@ -112,21 +127,22 @@ Filesystem presence is the source of truth for access — never check git permis
 
 | Want to... | Use |
 |---|---|
-| Create a new hub | `/hub-init` |
+| Create a new hub | `/ws-hub-init` |
 | Launch Claude across all repos | `cd <hub> && ./invoke-ai.sh` |
-| Bootstrap on a new machine (clone all sub-repos) | `/hub-clone-all` |
-| Update all sub-repos | `/hub-sync` |
-| Check what's changed everywhere | `/hub-status` |
-| Add a new sub-repo | `/hub-add-repo` |
-| Find unregistered sub-repos | `/hub-scan` |
-| Refresh sub-repo descriptions | `/hub-describe` |
+| Bootstrap on a new machine (clone all sub-repos) | `/ws-hub-repos clone` |
+| Update all sub-repos | `/ws-hub-repos pull` |
+| Check what's changed everywhere | `/ws-hub-status` |
+| Add a new sub-repo | `/ws-hub-add-repo` |
+| Find unregistered sub-repos | `/ws-hub-add-repo --scan` |
+| Refresh sub-repo descriptions | `/ws-hub-describe` |
+| Generate cross-repo docs | `/ws-hub-docs` |
 
 ## Access control model
 
 There is no explicit access control. It relies on git permissions of each underlying repo:
 
 - The hub repo (`<project>-main`) is typically broadly accessible — it contains only metadata
-- `/hub-clone-all` tries to clone each registered URL; repos the user can't access fail and are skipped
+- `/ws-hub-repos clone` tries to clone each registered URL; repos the user can't access fail and are skipped
 - `invoke-ai.sh` skips sub-repos missing from disk
 - PO has access to all → sees everything; marketing has only marketing → mounts only marketing
 

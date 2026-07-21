@@ -153,8 +153,9 @@ names `docs-architect`). Also update the stale docs-agent section in
 - WS1: grep shows no `docs/decisions` in adr-writer; one marker pair across all hub files.
 - WS2: no `mcp__plugin_atlassian` string anywhere in the plugin; `/ws-ticket` exists;
   `plugins/ws-jira-enhancer/` gone; marketplace.json valid JSON, no enhancer entry.
-- WS3: exactly 6 command files, all `ws-hub-*`; no `__REPO_SECTIONS__` or bare
-  `AUTO-GENERATED` marker anywhere; skill contains the single schema/marker definitions.
+- WS3: exactly 6 command files, all `ws-hub-*`; no bare `AUTO-GENERATED` marker anywhere
+  (the `__REPO_SECTIONS__` placeholder inside the marker pair is the documented template
+  fill mechanism and stays); skill contains the single schema/marker definitions.
 - WS4: no `docs-architect.md`; docs-doctor contains no watcher keyword/export-diff prose;
   `/ws-docs audit` dispatches both watchers; no MADR template outside the `adr` skill;
   no `tutorial-writer` string anywhere in the plugin or runbooks.
