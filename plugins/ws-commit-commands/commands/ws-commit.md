@@ -14,6 +14,8 @@ description: Create a Jira-aware git commit (Conventional Commits + ticket suffi
 - Time since branch diverged from main: !`base=$(git merge-base HEAD main 2>/dev/null || git merge-base HEAD master 2>/dev/null); if [ -n "$base" ]; then first=$(git log --format=%ct --reverse "$base..HEAD" 2>/dev/null | head -1); if [ -z "$first" ]; then first=$(date +%s); fi; secs=$(( $(date +%s) - first )); printf '%dh %dm\n' $((secs/3600)) $(((secs%3600)/60)); else echo "(no merge-base)"; fi`
 - Time since last commit on this branch: !`last=$(git log -1 --format=%ct HEAD 2>/dev/null); if [ -n "$last" ]; then secs=$(( $(date +%s) - last )); printf '%dh %dm\n' $((secs/3600)) $(((secs%3600)/60)); else echo "(no commits)"; fi`
 
+If any Context value above still shows an unexpanded shell command (an exclamation mark followed by a backtick-quoted command), your runtime does not pre-execute context commands — run each one via bash now, before proceeding.
+
 ## Your task
 
 Create a single git commit with a Jira-aware message. Steps below.
@@ -24,7 +26,7 @@ Parse current branch name. If it starts with a Jira key pattern `^([A-Z]+-\d+)`,
 
 If no key in branch:
 - Read default project from `~/.claude/ws/config.yaml` and project binding from `./.claude/ws-project.yaml`
-- Ask the user (AskUserQuestion):
+- Ask the user (AskUserQuestion (or a plain chat question when that tool is unavailable)):
   - **Use ticket**: enter a ticket key (e.g. `WSC-150`) — most common
   - **No ticket**: proceed without Jira linking (plain Conventional Commits)
   - **Cancel**: abort

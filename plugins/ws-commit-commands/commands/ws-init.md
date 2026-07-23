@@ -12,6 +12,8 @@ description: Bootstrap WS marketplace — verify jira-cli setup and configure pe
 - Existing project config: !`[ -f ./.claude/ws-project.yaml ] && cat ./.claude/ws-project.yaml || echo "(none)"`
 - In a git repo: !`git rev-parse --is-inside-work-tree 2>/dev/null || echo no`
 
+If any Context value above still shows an unexpanded shell command (an exclamation mark followed by a backtick-quoted command), your runtime does not pre-execute context commands — run each one via bash now, before proceeding.
+
 ## Your task
 
 Bootstrap the WS marketplace for this user and (if in a project folder) bind the current project to a Jira project. Jira access goes through [jira-cli](https://github.com/ankitpokhrel/jira-cli) — this command verifies the setup but never drives `jira init` itself (it's an interactive TUI).
@@ -52,7 +54,7 @@ ui:
 
 ### 3. Per-project setup — `<project>/.claude/ws-project.yaml`
 
-If currently in a git repo, ask the user (AskUserQuestion) whether to bind this project to a Jira project.
+If currently in a git repo, ask the user (AskUserQuestion (or a plain chat question when that tool is unavailable)) whether to bind this project to a Jira project.
 
 If yes:
 

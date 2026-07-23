@@ -28,7 +28,8 @@ The distinction is **audience**, not technical complexity. An API reference for 
 ├── README.md                 ← landing, links to both tracks
 ├── CHANGELOG.md              ← single source (Keep-a-Changelog)
 ├── CONTRIBUTING.md           ← thin router → docs/contributing + dev-docs/development
-├── CLAUDE.md                 ← AI instructions (stays at root)
+├── AGENTS.md                 ← agent instructions (canonical, agent-neutral)
+├── CLAUDE.md                 ← thin @AGENTS.md import
 │
 ├── docs/                     ← USER docs (Diátaxis, VitePress-portable)
 │   ├── index.md
@@ -50,6 +51,10 @@ The distinction is **audience**, not technical complexity. An API reference for 
     └── explanation/
 ```
 
+### Why AGENTS.md
+
+`AGENTS.md` is the canonical, agent-neutral context file: omp and Codex read `AGENTS.md` (walk-up from cwd), and omp never reads a root `CLAUDE.md`. `CLAUDE.md` is kept as a thin import containing nothing but `@AGENTS.md` (plus a comment) so Claude Code loads the same content on every version — and it cannot double-load, because the file holds only the import. Sub-repos and projects follow the same pattern: per-repo rules live in that repo's own `AGENTS.md`, with a thin `CLAUDE.md` import beside it.
+
 ## Routing rules for docs-agent
 
 As of v3.0.0, all docs operations route through `/ws-docs <verb>`:
@@ -57,7 +62,7 @@ As of v3.0.0, all docs operations route through `/ws-docs <verb>`:
 | Verb | Destination |
 |---|---|
 | (no verb) | Discovery — prints the artifact status table, no writes |
-| `init` | Scaffolds both tracks, writes `.claude/docs-config.yaml`, appends CLAUDE.md section, generates CHANGELOG.md, 3-file CONTRIBUTING |
+| `init` | Scaffolds both tracks, writes `.claude/docs-config.yaml`, appends the AGENTS.md maintenance section + thin `CLAUDE.md` import (offers migration when a real CLAUDE.md exists), generates CHANGELOG.md, 3-file CONTRIBUTING |
 | `audit` | Verbose dijagnoza; optionally writes `docs-audit-<date>.md` |
 | `catchup` | Proposes CHANGELOG entries, reference updates, ADRs; user triages; one big commit |
 | `repair` | Creates missing artifacts only (never deletes) |

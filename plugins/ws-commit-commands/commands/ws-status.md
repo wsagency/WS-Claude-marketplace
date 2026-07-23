@@ -9,6 +9,8 @@ description: Show your Jira assignments and suggest the next task to pick up
 - Project config: !`cat ./.claude/ws-project.yaml 2>/dev/null || echo "(no project binding)"`
 - Current branch: !`git branch --show-current 2>/dev/null || echo "(not a repo)"`
 
+If any Context value above still shows an unexpanded shell command (an exclamation mark followed by a backtick-quoted command), your runtime does not pre-execute context commands — run each one via bash now, before proceeding.
+
 ## Your task
 
 Show the user their current Jira workload and suggest what to pick up next.

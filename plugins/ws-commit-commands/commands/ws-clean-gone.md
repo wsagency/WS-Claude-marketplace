@@ -8,6 +8,8 @@ description: Clean up git branches marked as [gone] and their worktrees
 - Current branches with remote status: !`git branch -vv`
 - Current worktrees: !`git worktree list`
 
+If any Context value above still shows an unexpanded shell command (an exclamation mark followed by a backtick-quoted command), your runtime does not pre-execute context commands — run each one via bash now, before proceeding.
+
 ## Your task
 
 Clean up all git branches marked as [gone] (branches that have been deleted on the remote but still exist locally):

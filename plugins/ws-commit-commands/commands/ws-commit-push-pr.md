@@ -10,6 +10,8 @@ description: Commit (Jira-aware), update CHANGELOG, push, and open a PR with the
 - Diff: !`git diff HEAD`
 - Project config: !`cat ./.claude/ws-project.yaml 2>/dev/null || echo "(none)"`
 
+If any Context value above still shows an unexpanded shell command (an exclamation mark followed by a backtick-quoted command), your runtime does not pre-execute context commands — run each one via bash now, before proceeding.
+
 ## Your task
 
 End-to-end Jira-aware flow: commit → push → open PR → optionally transition the ticket.
@@ -126,7 +128,7 @@ Construct the Jira link from `site` in `~/.claude/ws/config.yaml`. If no ticket,
 ### 7. Transition the ticket (if applicable)
 
 If a ticket exists and `defaults.pr_transition` is set in global config (default: `in-review`):
-- Ask the user (AskUserQuestion):
+- Ask the user (AskUserQuestion (or a plain chat question when that tool is unavailable)):
   - **Transition to <target>** (e.g. In Review) — recommended
   - **Skip transition**
 - If confirmed, run `jira issue move <TICKET> "<target state>"` (jira-cli lists valid states if the name doesn't match). If the call fails, report it — the PR stands; the user can transition manually.

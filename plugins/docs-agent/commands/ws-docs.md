@@ -63,7 +63,7 @@ Read the verb from `{{ verb }}`. If empty → **discovery** mode. Otherwise disp
 
 ### No verb → Discovery
 
-Run the `docs-doctor` agent (Task tool, foreground — fast). It returns a structured report. Render this exact table format:
+Run the `docs-doctor` agent (Task tool (omp: its task agent), foreground — fast). It returns a structured report. Render this exact table format:
 
 ```
 ws-docs status
@@ -100,8 +100,16 @@ First-time setup. Dispatch in parallel (Agent tool with `run_in_background: true
 While they run, in the main session:
 - Create directories: `docs/{tutorials,how-to,reference,explanation,release-notes}/` and `dev-docs/{decisions,runbooks,reference,explanation}/`
 - Create `index.md` stubs in each subfolder if missing (one line: `# <Subfolder>`)
-- Write `.claude/docs-config.yaml` with defaults (see schema below). Prompt the user via AskUserQuestion if they want to override `default_audience` (ask | user | dev) or `auto.enforce_via_hooks` (true | false).
-- Append the "Documentation maintenance" section to root `CLAUDE.md` (create the file if missing). Do not overwrite existing content; if a previous v2.x maintenance section is detected (`# Documentation maintenance` heading), replace it; otherwise append.
+- Write `.claude/docs-config.yaml` with defaults (see schema below). Prompt the user via AskUserQuestion (or a plain chat question when that tool is unavailable) if they want to override `default_audience` (ask | user | dev) or `auto.enforce_via_hooks` (true | false).
+- Append the "Documentation maintenance" section to root `AGENTS.md` (the canonical, agent-neutral context file; create it if missing). Do not overwrite existing content; if a previous maintenance section is detected in `AGENTS.md` (`# Documentation maintenance` heading), replace it; otherwise append. Never append the maintenance section to `CLAUDE.md`.
+- Ensure root `CLAUDE.md` is the thin import. If it is missing, create it containing exactly:
+
+  ```markdown
+  @AGENTS.md
+  <!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->
+  ```
+
+- If a real (non-thin) `CLAUDE.md` exists (anything beyond the `@AGENTS.md` import — including a v2.x/v3.x `# Documentation maintenance` section), offer migration via AskUserQuestion: move its content into `AGENTS.md` (dropping any old maintenance section there — the fresh one is appended above), then replace `CLAUDE.md` with the two-line import. If the user declines, leave `CLAUDE.md` untouched; the maintenance section still goes to `AGENTS.md`.
 
 Poll the dispatched agents every 3-5 seconds (TaskList / TaskGet) and print a status block per poll like:
 
@@ -118,7 +126,7 @@ When all complete, print a final summary listing every file created. Commit noth
 
 ```
 Suggested commit:
-  git add docs/ dev-docs/ CHANGELOG.md CONTRIBUTING.md CLAUDE.md .claude/docs-config.yaml
+  git add docs/ dev-docs/ CHANGELOG.md CONTRIBUTING.md AGENTS.md CLAUDE.md .claude/docs-config.yaml
   git commit -m "chore(docs): initialize dual-track docs via /ws-docs init"
 ```
 
@@ -184,7 +192,8 @@ Specifically:
 - Missing `dev-docs/` → create directory tree + `index.md` stubs
 - Missing `docs/changelog.md` → copy from root `CHANGELOG.md`
 - Missing `.claude/docs-config.yaml` → write defaults
-- Missing CLAUDE.md `# Documentation maintenance` section → append it
+- Missing AGENTS.md `# Documentation maintenance` section → append it to `AGENTS.md` (create the file if missing). Never append it to `CLAUDE.md`, which stays a thin `@AGENTS.md` import
+- Missing `CLAUDE.md` → create the thin two-line `@AGENTS.md` import (see init)
 
 Print a summary of what was repaired.
 
@@ -256,7 +265,9 @@ before finishing and fix violations.
 ### verb = publish
 
 Push the user track to Outline. Steps: (1) run
-`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/outline-sync.py lint --root <repo>` —
+`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/outline-sync.py lint --root <repo>`
+(if CLAUDE_PLUGIN_ROOT is unset — e.g. in omp — use the plugin's install
+directory: the plugin root containing this command file) —
 abort on violations, listing them per file; (2) run
 `... outline-sync.py push --root <repo>` (add `--dry-run` first and show the
 plan when the user hasn't published before); (3) report created/updated/

@@ -18,7 +18,7 @@ All eleven prior commands are removed. There is no back-compat alias.
 | `/architecture` | `/ws-docs architecture` |
 | `/contributing` | `/ws-docs contributing` |
 | `/changelog [version]` | `/ws-docs changelog [version]` |
-| `/changelog-entry <type> <text>` | removed — handled automatically by /ws-commit-push-pr and the CLAUDE.md maintenance rules added by `/ws-docs init` |
+| `/changelog-entry <type> <text>` | removed — handled automatically by /ws-commit-push-pr and the AGENTS.md maintenance rules added by `/ws-docs init` |
 | `/release-notes [version]` | `/ws-docs release-notes [version]` |
 
 Run `/ws-docs` (no args) to see the discovery report for your project, then `/ws-docs init` if you haven't initialized.
@@ -26,7 +26,7 @@ Run `/ws-docs` (no args) to see the discovery report for your project, then `/ws
 ### New: discovery + automation
 
 - `/ws-docs` with no args returns a per-artifact status table (no writes).
-- `/ws-docs init` writes `.claude/docs-config.yaml` and appends a "Documentation maintenance" section to root `CLAUDE.md`. After init, Claude knows to update CHANGELOG after code changes, propose ADRs for architectural changes, and update `docs/reference/` for public API changes.
+- `/ws-docs init` writes `.claude/docs-config.yaml` and appends a "Documentation maintenance" section to root `AGENTS.md` (since v3.4.0 — root `CLAUDE.md` stays a thin `@AGENTS.md` import). After init, Claude knows to update CHANGELOG after code changes, propose ADRs for architectural changes, and update `docs/reference/` for public API changes.
 - Two opt-in hooks: PreToolUse blocks `git commit` when staged code changes lack a CHANGELOG entry; Stop blocks claude stop when uncommitted code lacks a CHANGELOG entry. Both no-op without `.claude/docs-config.yaml`.
 
 ### New: subagent team for heavy verbs
@@ -44,7 +44,7 @@ Run `/ws-docs` (no args) to see the discovery report for your project, then `/ws
 1. Update the plugin: `/plugin update docs-agent@ws-marketplace`
 2. Run `/ws-docs` in each project to see what's already in place.
 3. Run `/ws-docs init` (idempotent — preserves existing content).
-4. Commit the new `.claude/docs-config.yaml` and CLAUDE.md additions.
+4. Commit the new `.claude/docs-config.yaml` and AGENTS.md additions (plus the thin `CLAUDE.md` import).
 
 If you were using `/changelog-entry` in scripts or muscle-memory: stop. With v3.0.0 you either let `/ws-commit-push-pr` handle it (recommended) or run `/ws-docs changelog` for explicit edits.
 

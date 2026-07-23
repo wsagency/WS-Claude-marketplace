@@ -9,6 +9,8 @@ argument-hint: <brief task description>
 - Project binding: !`cat ./.claude/ws-project.yaml 2>/dev/null || echo "(no project binding)"`
 - Global config: !`cat ~/.claude/ws/config.yaml 2>/dev/null || echo "(none)"`
 
+If any Context value above still shows an unexpanded shell command (an exclamation mark followed by a backtick-quoted command), your runtime does not pre-execute context commands — run each one via bash now, before proceeding.
+
 ## Your task
 
 Turn the user's brief description into a complete Jira ticket, following the **ticket-writing skill** (it defines the rules, the codebase-research step, and the output structure — apply it exactly).
@@ -27,7 +29,7 @@ Render the full ticket (Summary / User Story / Background / Technical Context / 
 
 If `./.claude/ws-project.yaml` has a `jira.project` binding:
 
-Ask (AskUserQuestion): **Create this ticket in Jira?**
+Ask (AskUserQuestion (or a plain chat question when that tool is unavailable)): **Create this ticket in Jira?**
 - **Create** — run the `jira issue create` invocation from the skill's "Creating the ticket in Jira" section (project + default type from the binding; let the user override the type if the content implies Bug/Story)
 - **No, text only**
 
