@@ -191,11 +191,11 @@ Turn a brief task description into a comprehensive Jira ticket (user story, Give
 
 Multi-repo project hubs. A hub is a small meta-repo (`<project>-main`) that registers all sub-repos (mobile app, marketing site, design, docs, etc.) of a project and launches Claude across them with `--add-dir`. Sub-repos live as gitignored subfolders, each with its own independent git history.
 
-Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-hub-status`).
+Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-hub-status`). The launcher opens an interactive agent picker (Claude Code / omp; extensible registry) — bypass with `--agent <name>` or `WS_HUB_AGENT`.
 
 ### /ws-hub-init
 
-Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register. Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml`, `CLAUDE.md`, `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), and vendors `.claude/skills/project-hub-conventions/`. Offers to scaffold a `role: docs` product docs repo (`<project>-docs`). Registration details (schema, managed block, tech inference, docs-repo layout) are defined in the project-hub-conventions skill.
+Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register. Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml`, `AGENTS.md` (+ thin `CLAUDE.md` import), `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), and vendors `.claude/skills/project-hub-conventions/`. Offers to scaffold a `role: docs` product docs repo (`<project>-docs`). Registration details (schema, managed block, tech inference, docs-repo layout) are defined in the project-hub-conventions skill.
 
 **Example:**
 ```
@@ -251,7 +251,7 @@ Register a new sub-repo (clone-URL, adopt-nested, register-sibling, or move-sibl
 
 ### /ws-hub-describe
 
-Refresh `description` and `tech` fields in `project.yaml` by reading each sub-repo's README and manifest files. Shows a diff before writing, then regenerates the CLAUDE.md repos region.
+Refresh `description` and `tech` fields in `project.yaml` by reading each sub-repo's README and manifest files. Shows a diff before writing, then regenerates the AGENTS.md repos region.
 
 **Example:**
 ```

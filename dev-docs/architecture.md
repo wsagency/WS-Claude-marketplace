@@ -104,7 +104,7 @@ JSON-based hook configurations for PreToolUse and Stop callbacks. Enables plugin
 
 Scaffolding and boilerplate for plugin-specific workflows. Used during initialization or project setup.
 
-**Example:** `ws-project-hub/templates/` contains CLAUDE.md templates and hub initialization scripts.
+**Example:** `ws-project-hub/templates/` contains AGENTS.md/CLAUDE.md templates and hub initialization scripts.
 
 ### `scripts/` (Optional)
 

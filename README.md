@@ -10,7 +10,7 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 |--------|-------------|----------|
 | [docs-agent](./plugins/docs-agent) | Dual-track documentation suite with a single `/ws-docs` entry (Diátaxis, ADRs, changelogs, Outline sync) | `/ws-docs <verb>` (init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes, explain, publish, pull-back) |
 | [ws-commit-commands](./plugins/ws-commit-commands) | Jira-aware git workflows via jira-cli: Conventional Commits + ticket suffix, worklogs, ticket writing, PR via tea | `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`, `/ws-ticket`, `/ws-clean-gone` |
-| [ws-project-hub](./plugins/ws-project-hub) | Multi-repo project hubs with auto-generated CLAUDE.md and Claude launcher | `/ws-hub-init`, `/ws-hub-status`, `/ws-hub-repos <pull\|clone>`, `/ws-hub-add-repo [--scan]`, `/ws-hub-describe`, `/ws-hub-docs` |
+| [ws-project-hub](./plugins/ws-project-hub) | Multi-repo project hubs with auto-generated AGENTS.md and an agent-picker launcher (claude / omp) | `/ws-hub-init`, `/ws-hub-status`, `/ws-hub-repos <pull\|clone>`, `/ws-hub-add-repo [--scan]`, `/ws-hub-describe`, `/ws-hub-docs` |
 
 ## Prerequisites
 
@@ -70,7 +70,7 @@ In a multi-repo hub (ws-project-hub) with a `role: docs` sub-repo, `/ws-docs` ro
 
 #### Auto-Applying Documentation Skills
 
-To make Claude Code automatically enforce documentation standards on your projects, add the following to your project's `.claude/CLAUDE.md`:
+To make your agent automatically enforce documentation standards on your projects, add the following to your project's `AGENTS.md` (canonical context file — `CLAUDE.md` should be a thin `@AGENTS.md` import):
 
 ```markdown
 # Documentation Standards
@@ -130,7 +130,7 @@ Jira-aware git workflow commands, powered by [jira-cli](https://github.com/ankit
 
 ### ws-project-hub
 
-Manage multi-repo projects (mobile app, marketing site, design, docs, etc.) through a single hub repo. Generates a `<project>-main` folder with a registry of all sub-repos, an auto-built `CLAUDE.md` project map, and an `invoke-ai.sh` script that launches Claude with every accessible sub-repo mounted via `--add-dir`. Sub-repos live as gitignored subfolders, each with its own independent git.
+Manage multi-repo projects (mobile app, marketing site, design, docs, etc.) through a single hub repo. Generates a `<project>-main` folder with a registry of all sub-repos, an auto-built `AGENTS.md` project map (with a thin `CLAUDE.md` import), and an `invoke-ai.sh` launcher with an interactive agent picker — Claude Code (mounts sub-repos via `--add-dir`) or omp (runs at the hub root). Sub-repos live as gitignored subfolders, each with its own independent git.
 
 **Commands:**
 - `/ws-hub-init` — Initialize a new project hub (interactive)
@@ -192,6 +192,15 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the thin router. Quick links:
 - **Local setup, commit format, code style** → [`dev-docs/development.md`](dev-docs/development.md)
 
 See [`dev-docs/runbooks/create-plugin.md`](dev-docs/runbooks/create-plugin.md) for detailed instructions.
+
+## Using with omp
+
+The marketplace also works in [omp](https://omp.sh) — its plugin system reads this
+repo's Claude-compatible registry natively (commands, skills, agents). Jira and Outline
+flows are CLI/script-based and fully agent-neutral. Context files follow the
+**AGENTS.md convention**: canonical content in `AGENTS.md`, `CLAUDE.md` is a thin
+`@AGENTS.md` import. See [Use the marketplace with omp](docs/how-to/use-with-omp.md)
+for setup and known gaps.
 
 ## Documentation
 

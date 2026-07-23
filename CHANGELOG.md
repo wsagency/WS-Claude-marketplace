@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-07-23
+
+### Added
+
+- Dual-agent support: the marketplace now works in omp (omp.sh) as well as Claude Code — omp reads the Claude-compatible registry natively; commands carry a context-fallback note for runtimes without command pre-execution, plus agent-neutral phrasing for AskUserQuestion/Task and a `CLAUDE_PLUGIN_ROOT` fallback
+- ws-project-hub invoke-ai.sh interactive agent picker: registered agents (claude, omp — extensible registry), ENTER = last-used default, `--agent <name>` / `WS_HUB_AGENT` bypass, per-agent reachability in the summary (sibling paths unreachable in omp)
+- docs/how-to/use-with-omp.md — install, what works, known gaps (SessionStart dashboard, enforcement hooks, sibling repos)
+
+### Changed
+
+- **BREAKING:** AGENTS.md is the canonical context file everywhere (hub templates, sub-repos, product-docs scaffold, `/ws-docs init`/`repair`, this repo); CLAUDE.md becomes a thin `@AGENTS.md` import — omp never reads a root-level CLAUDE.md; hub commands regenerate the repos region in AGENTS.md
+- /ws-docs init offers CLAUDE.md→AGENTS.md migration for existing projects; repair creates the thin import when missing and never appends to CLAUDE.md
+
 ## [3.3.0] - 2026-07-21
 
 ### Added
