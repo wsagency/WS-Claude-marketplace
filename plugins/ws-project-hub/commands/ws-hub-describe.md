@@ -8,6 +8,8 @@ description: Refresh descriptions and tech fields in project.yaml by reading eac
 - Hub directory: !`pwd`
 - project.yaml: !`cat ./project.yaml 2>/dev/null || echo "(missing)"`
 
+> If any Context value above still shows an unexpanded shell command (an exclamation mark followed by a backtick-quoted command), your runtime does not pre-execute context commands — run each one via bash now, before proceeding.
+
 ## Your task
 
 1. Verify `project.yaml` exists.
@@ -21,8 +23,8 @@ description: Refresh descriptions and tech fields in project.yaml by reading eac
 
 4. After confirmation, update `project.yaml` (preserve formatting — use Edit for targeted replacements).
 
-5. Regenerate the `CLAUDE.md` region between `<!-- ws-hub:repos:start -->` and `<!-- ws-hub:repos:end -->` from the updated yaml (see the marker-pair definition in the project-hub-conventions skill).
+5. Regenerate the `AGENTS.md` region between `<!-- ws-hub:repos:start -->` and `<!-- ws-hub:repos:end -->` from the updated yaml (see the marker-pair definition in the project-hub-conventions skill).
 
-6. For projects with 4+ sub-repos, optionally delegate the per-repo analysis to the `hub-architect` agent (Task tool) in parallel to keep it fast.
+6. For projects with 4+ sub-repos, optionally delegate the per-repo analysis to the `hub-architect` agent via the Task tool (omp: its task agent) in parallel to keep it fast.
 
 Be conservative — only overwrite a `description` if the new one is clearly better than the existing one (e.g. existing is `"TODO"` or empty).

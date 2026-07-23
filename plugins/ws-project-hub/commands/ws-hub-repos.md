@@ -10,6 +10,8 @@ argument-hint: <pull|clone>
 - Verb argument: `$ARGUMENTS`
 - project.yaml: !`cat ./project.yaml 2>/dev/null || echo "(missing — run /ws-hub-init first)"`
 
+> If any Context value above still shows an unexpanded shell command (an exclamation mark followed by a backtick-quoted command), your runtime does not pre-execute context commands — run each one via bash now, before proceeding.
+
 ## Your task
 
 One traversal of the registered repos; the verb argument picks the git operation.

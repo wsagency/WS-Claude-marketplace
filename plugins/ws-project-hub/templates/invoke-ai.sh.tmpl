@@ -7,11 +7,70 @@ set -euo pipefail
 HUB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="$HUB_DIR/project.yaml"
 MARKETPLACE_URL="${WS_MARKETPLACE_URL:-https://github.com/wsagency/ws-claude-marketplace.git}"
-MARKETPLACE_CACHE="$HOME/.cache/ws-hub"
+HUB_CACHE="$HOME/.cache/ws-hub"
+LAST_AGENT_FILE="$HUB_CACHE/last-agent"
 ANIM_SECONDS="${WS_HUB_ANIM_SECONDS:-3}"
 
 if [[ ! -f "$CONFIG" ]]; then
   echo "error: $CONFIG not found" >&2
+  exit 1
+fi
+
+# ─── agent registry ────────────────────────────────────────────────────────
+# add new agents here: append the name to REGISTERED_AGENTS and define an
+# agent_cmd_<name>() function that fills AGENT_CMD with the launch command.
+REGISTERED_AGENTS=(claude omp)
+AGENT_CMD=()
+
+agent_cmd_claude() {
+  AGENT_CMD=(claude --dangerously-skip-permissions ${ADD_DIR_ARGS[@]+"${ADD_DIR_ARGS[@]}"})
+}
+
+agent_cmd_omp() {
+  # omp has no add-dir equivalent — plain launch at the hub root.
+  # Sibling-pathed (../) repos are unreachable in omp.
+  AGENT_CMD=(omp)
+}
+
+agent_registered() {
+  local a
+  for a in "${REGISTERED_AGENTS[@]}"; do
+    [[ "$a" == "$1" ]] && return 0
+  done
+  return 1
+}
+
+# ─── argument parsing ──────────────────────────────────────────────────────
+# --agent <name> is parsed and consumed only BEFORE a literal `--`.
+# Everything after `--` is forwarded verbatim to the chosen agent's command
+# and is agent-specific (e.g. `-- --resume` is a claude arg).
+AGENT_CHOICE="${WS_HUB_AGENT:-}"
+FORWARD_ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --)
+      shift
+      FORWARD_ARGS=("$@")
+      break
+      ;;
+    --agent)
+      if [[ $# -lt 2 ]]; then
+        echo "error: --agent requires a name (registered agents: ${REGISTERED_AGENTS[*]})" >&2
+        exit 1
+      fi
+      AGENT_CHOICE="$2"
+      shift 2
+      ;;
+    *)
+      echo "usage: ./invoke-ai.sh [--agent <name>] [-- <agent-specific args>]" >&2
+      echo "error: unknown argument: $1" >&2
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -n "$AGENT_CHOICE" ]] && ! agent_registered "$AGENT_CHOICE"; then
+  echo "error: unknown agent '$AGENT_CHOICE' (registered agents: ${REGISTERED_AGENTS[*]})" >&2
   exit 1
 fi
 
@@ -160,13 +219,65 @@ animate_intro() {
   clear
 }
 
-# ─── post-intro: project + repos summary ───────────────────────────────────
-ADD_DIR_ARGS=()
+# ─── agent pick (runs BEFORE the summary — mounts depend on the agent) ─────
+pick_agent() {
+  local default_agent="claude" pick i name
+  if [[ -f "$LAST_AGENT_FILE" ]]; then
+    default_agent="$(cat "$LAST_AGENT_FILE" 2>/dev/null || true)"
+    agent_registered "$default_agent" || default_agent="claude"
+  fi
 
+  printf '\n  %bAgents:%b\n' "$B" "$R"
+  for ((i=0; i<${#REGISTERED_AGENTS[@]}; i++)); do
+    name="${REGISTERED_AGENTS[$i]}"
+    if [[ "$name" == "$default_agent" ]]; then
+      printf '    %b%d%b) %b%s%b %b(default)%b\n' "$B" "$((i+1))" "$R" "$B" "$name" "$R" "$DIM" "$R"
+    else
+      printf '    %b%d%b) %s\n' "$B" "$((i+1))" "$R" "$name"
+    fi
+  done
+  printf '  %bpick an agent [ENTER = %s]:%b ' "$DIM" "$default_agent" "$R"
+  read -r pick
+  if [[ -z "$pick" ]]; then
+    AGENT_CHOICE="$default_agent"
+  elif [[ "$pick" =~ ^[0-9]+$ ]] && (( pick >= 1 && pick <= ${#REGISTERED_AGENTS[@]} )); then
+    AGENT_CHOICE="${REGISTERED_AGENTS[$((pick-1))]}"
+  elif agent_registered "$pick"; then
+    AGENT_CHOICE="$pick"
+  else
+    echo "error: unknown agent '$pick' (registered agents: ${REGISTERED_AGENTS[*]})" >&2
+    exit 1
+  fi
+}
+
+persist_agent_choice() {
+  mkdir -p "$HUB_CACHE"
+  echo "$AGENT_CHOICE" > "$LAST_AGENT_FILE"
+}
+
+# ─── mounts (decoupled from the summary rendering) ─────────────────────────
+ADD_DIR_ARGS=()
+REPO_ABS=()
+
+build_mounts() {
+  local n=${#REPO_NAMES[@]} i rel abs
+  for ((i=0; i<n; i++)); do
+    rel="${REPO_PATHS[$i]:-}"
+    abs=""
+    [[ -n "$rel" ]] && abs="$(cd "$HUB_DIR" && cd "$rel" 2>/dev/null && pwd || true)"
+    REPO_ABS[$i]="$abs"
+    if [[ -n "$abs" && -d "$abs" ]]; then
+      ADD_DIR_ARGS+=(--add-dir "$abs")
+    fi
+  done
+}
+
+# ─── project + repos summary (reachability per chosen agent) ───────────────
 print_summary() {
   printf '\n  %b%bWS.agency%b %b»%b %bINVOKE AI%b %bfor%b %b%b%s%b\n' \
     "$B" "$CYAN" "$R" "$DIM" "$R" "$B" "$R" "$DIM" "$R" "$B" "$MAG" "$PROJECT_NAME" "$R"
   printf '  %b%s%b\n\n' "$DIM" "$PROJECT_DESC" "$R"
+  printf '  %bAgent:%b %s\n' "$B" "$R" "$AGENT_CHOICE"
   printf '  %bRepositories:%b\n' "$B" "$R"
 
   local n=${#REPO_NAMES[@]} i
@@ -175,13 +286,14 @@ print_summary() {
     local rel="${REPO_PATHS[$i]:-}"
     local desc="${REPO_DESCS[$i]:-}"
     local tech="${REPO_TECHS[$i]:-}"
-    local abs=""
-    [[ -n "$rel" ]] && abs="$(cd "$HUB_DIR" && cd "$rel" 2>/dev/null && pwd || true)"
-    if [[ -n "$abs" && -d "$abs" ]]; then
-      ADD_DIR_ARGS+=(--add-dir "$abs")
-      printf '    %b✓%b %b%-22s%b %b%s%b\n' "$GRN" "$R" "$B" "$name" "$R" "$DIM" "$desc" "$R"
-    else
+    local abs="${REPO_ABS[$i]:-}"
+    if [[ -z "$abs" || ! -d "$abs" ]]; then
       printf '    %b⊘ %-22s %s%b\n' "$DIM" "$name" "$desc" "$R"
+    elif [[ "$AGENT_CHOICE" == "omp" && "$rel" == ../* ]]; then
+      # sibling path — omp cannot mount extra dirs, so it can't reach ../
+      printf '    %b⊘ %-22s unreachable in omp (sibling path)%b\n' "$YEL" "$name" "$R"
+    else
+      printf '    %b✓%b %b%-22s%b %b%s%b\n' "$GRN" "$R" "$B" "$name" "$R" "$DIM" "$desc" "$R"
     fi
     [[ -n "$tech" ]] && printf '      %btech:%b %s\n' "$DIM" "$R" "$tech"
   done
@@ -190,8 +302,8 @@ print_summary() {
 
 # ─── marketplace check ─────────────────────────────────────────────────────
 check_marketplace() {
-  mkdir -p "$MARKETPLACE_CACHE"
-  local seen_file="$MARKETPLACE_CACHE/known-marketplace-sha"
+  mkdir -p "$HUB_CACHE"
+  local seen_file="$HUB_CACHE/known-marketplace-sha"
   local remote_sha=""
   remote_sha="$(git ls-remote "$MARKETPLACE_URL" HEAD 2>/dev/null | awk '{print $1}' || true)"
   if [[ -z "$remote_sha" ]]; then
@@ -201,11 +313,11 @@ check_marketplace() {
   local known_sha=""
   [[ -f "$seen_file" ]] && known_sha="$(cat "$seen_file")"
   if [[ -z "$known_sha" ]]; then
-    printf '  %b!%b first launch — if ws-marketplace is not added yet, run inside claude:\n' "$YEL" "$R"
+    printf '  %b!%b first launch — if ws-marketplace is not added yet, run inside %s:\n' "$YEL" "$R" "$AGENT_CHOICE"
     printf '      %b/plugin marketplace add wsagency/ws-claude-marketplace%b\n' "$B" "$R"
   elif [[ "$known_sha" != "$remote_sha" ]]; then
     printf '  %b↑%b marketplace update available %b(%s → %s)%b\n' "$YEL" "$R" "$DIM" "${known_sha:0:7}" "${remote_sha:0:7}" "$R"
-    printf '      run inside claude: %b/plugin marketplace update ws-marketplace%b\n' "$B" "$R"
+    printf '      run inside %s: %b/plugin marketplace update ws-marketplace%b\n' "$AGENT_CHOICE" "$B" "$R"
   else
     printf '  %b✓%b marketplace up to date %b(%s)%b\n' "$GRN" "$R" "$DIM" "${remote_sha:0:7}" "$R"
   fi
@@ -214,17 +326,19 @@ check_marketplace() {
 
 # ─── tmux handling ─────────────────────────────────────────────────────────
 launch() {
-  local claude_cmd=(claude --dangerously-skip-permissions "${ADD_DIR_ARGS[@]}" "$@")
+  AGENT_CMD=()
+  "agent_cmd_${AGENT_CHOICE}"
+  local agent_cmd=("${AGENT_CMD[@]}" "$@")
 
   if [[ -n "${TMUX:-}" ]]; then
     cd "$HUB_DIR"
-    exec "${claude_cmd[@]}"
+    exec "${agent_cmd[@]}"
   fi
 
   if ! command -v tmux >/dev/null 2>&1; then
     printf '  %btmux not installed — running without persistent session%b\n' "$DIM" "$R"
     cd "$HUB_DIR"
-    exec "${claude_cmd[@]}"
+    exec "${agent_cmd[@]}"
   fi
 
   local session="$TMUX_SESSION"
@@ -244,14 +358,19 @@ launch() {
   fi
 
   local cmd_str
-  cmd_str=$(printf '%q ' "${claude_cmd[@]}")
+  cmd_str=$(printf '%q ' "${agent_cmd[@]}")
   exec tmux new-session -s "$session" -c "$HUB_DIR" "bash -c $(printf '%q' "$cmd_str")"
 }
 
 # ─── main ──────────────────────────────────────────────────────────────────
 animate_intro
+if [[ -z "$AGENT_CHOICE" ]]; then
+  pick_agent
+fi
+persist_agent_choice
+build_mounts
 print_summary
 check_marketplace
-printf '\n  %bpress ENTER to launch Claude…%b ' "$DIM" "$R"
+printf '\n  %bpress ENTER to launch %s…%b ' "$DIM" "$AGENT_CHOICE" "$R"
 read -r _
-launch "$@"
+launch ${FORWARD_ARGS[@]+"${FORWARD_ARGS[@]}"}

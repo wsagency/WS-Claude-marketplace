@@ -3,8 +3,9 @@
 Project hub for **__PROJECT_NAME__**. A small meta-repo that holds:
 
 - `project.yaml` — registry of all sub-repos
-- `CLAUDE.md` — project map for AI-assisted work
-- `invoke-ai.sh` — launches Claude with every sub-repo mounted
+- `AGENTS.md` — project map for AI-assisted work (canonical, agent-neutral)
+- `CLAUDE.md` — thin `@AGENTS.md` import (Claude Code compatibility)
+- `invoke-ai.sh` — agent picker launcher (claude, omp, …) run across the sub-repos
 - `.claude/skills/` — vendored conventions (works without the marketplace plugin)
 
 The actual code lives in subfolders, each its own git repo. The hub's `.gitignore` keeps them out of this repo's history.
@@ -16,7 +17,7 @@ The actual code lives in subfolders, each its own git repo. The hub's `.gitignor
 # Run from a /ws-hub-repos clone command inside claude, or manually:
 #   git clone <url> ./<name>   for each in project.yaml
 
-# Launch Claude across all available sub-repos
+# Pick an agent (claude / omp) and launch across all available sub-repos
 ./invoke-ai.sh
 ```
 
@@ -25,8 +26,9 @@ The actual code lives in subfolders, each its own git repo. The hub's `.gitignor
 ```
 __PROJECT_NAME__-main/
 ├── project.yaml         # repo registry
-├── CLAUDE.md            # AI project map
-├── invoke-ai.sh         # launcher
+├── AGENTS.md            # AI project map (canonical, agent-neutral)
+├── CLAUDE.md            # thin @AGENTS.md import
+├── invoke-ai.sh         # launcher (agent picker)
 ├── README.md
 ├── .gitignore           # managed block ignores sub-repo subfolders
 ├── .claude/skills/      # vendored conventions

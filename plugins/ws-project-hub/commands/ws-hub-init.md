@@ -9,14 +9,17 @@ description: Initialize a new project hub repo with subfolder layout, .gitignore
 - Sibling directories with `.git` (potential sub-repos): !`for d in */; do [ -d "$d/.git" ] && echo "$d"; done 2>/dev/null | sed 's|/$||' && echo '---' && for d in ../*/; do [ -d "$d/.git" ] && echo "$d"; done 2>/dev/null | sed 's|^\.\./||;s|/$||'`
 - Plugin templates: `${CLAUDE_PLUGIN_ROOT}/templates/`
 - Plugin skill: `${CLAUDE_PLUGIN_ROOT}/skills/project-hub-conventions/SKILL.md`
+  (if CLAUDE_PLUGIN_ROOT is unset — e.g. in omp — use the plugin's install directory: the plugin root containing this command file)
+
+> If any Context value above still shows an unexpanded shell command (an exclamation mark followed by a backtick-quoted command), your runtime does not pre-execute context commands — run each one via bash now, before proceeding.
 
 ## Your task
 
 Initialize a new project hub. Sub-repos live as **subfolders of the hub**, each with its own git, kept out of the hub's git via a managed `.gitignore` block.
 
-Read the **project-hub-conventions** skill (path above) before you start — it is the single source for the `project.yaml` schema, path rules, the `.gitignore` managed block, the CLAUDE.md `ws-hub:repos` marker pair, and the tech-inference table. This command defines only the interaction flow; follow the skill for every structural detail.
+Read the **project-hub-conventions** skill (path above) before you start — it is the single source for the `project.yaml` schema, path rules, the `.gitignore` managed block, the AGENTS.md `ws-hub:repos` marker pair, and the tech-inference table. This command defines only the interaction flow; follow the skill for every structural detail.
 
-### 1. Gather project info via AskUserQuestion
+### 1. Gather project info via AskUserQuestion (or a plain chat question when that tool is unavailable)
 
 - Project name (kebab-case, e.g. `acme`) — hub folder will be `<name>-main`
 - One-line description
@@ -30,7 +33,8 @@ Inside `<name>-main/`:
 - `.claude/skills/project-hub-conventions/SKILL.md` — copy from `${CLAUDE_PLUGIN_ROOT}/skills/project-hub-conventions/SKILL.md` (vendored so the hub works without the marketplace plugin)
 - `project.yaml` — from `${CLAUDE_PLUGIN_ROOT}/templates/project.yaml.tmpl` with substitutions
 - `invoke-ai.sh` — copy from template, `chmod +x`
-- `CLAUDE.md` — from template
+- `AGENTS.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/AGENTS.md.tmpl` (the canonical, agent-neutral project map)
+- `CLAUDE.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md.tmpl` (thin `@AGENTS.md` import — never put content here)
 - `README.md` — from template
 - `.gitignore` — standard prelude (`.DS_Store`, `.cache/`) followed by the managed block as defined in the skill's ".gitignore managed block" section
 
@@ -52,7 +56,8 @@ Register each chosen repo in `project.yaml` following the skill's "project.yaml 
 Ask (AskUserQuestion): "Create a product docs repo (`<project>-docs`)?"
 - **Yes** → create the subfolder, `git init` it, scaffold the layout defined
   in the project-hub-conventions skill ("Product docs repo" section): README,
-  CLAUDE.md with the writing rules pointer, docs/ tree with index.md and
+  AGENTS.md with the writing rules pointer (plus a thin CLAUDE.md containing
+  only the `@AGENTS.md` import), docs/ tree with index.md and
   empty Diátaxis folders + assets/ + release-notes/, dev-docs/ tree
   (architecture.md placeholder, decisions/, client-materials/, runbooks/).
   Register it in project.yaml with `role: docs` and add it to the .gitignore
@@ -65,13 +70,13 @@ Ask (AskUserQuestion): "Create a product docs repo (`<project>-docs`)?"
 ```bash
 cd <hub-dir>
 git init -q
-git add .gitignore .claude README.md CLAUDE.md project.yaml invoke-ai.sh
+git add .gitignore .claude README.md AGENTS.md CLAUDE.md project.yaml invoke-ai.sh
 git commit -q -m "chore: initialize <project> hub"
 ```
 
 Verify with `git status` that no sub-repo content shows up as untracked (the .gitignore should be filtering them out).
 
-### 6. Generate `CLAUDE.md` repo sections
+### 6. Generate `AGENTS.md` repo sections
 
 Fill the region between the `ws-hub:repos` markers (replacing the template's placeholder — see "Regenerated region (marker pair)" in the skill) with one block per registered repo:
 
@@ -93,7 +98,7 @@ Fill the region between the `ws-hub:repos` markers (replacing the template's pla
   - `cd <hub> && ./invoke-ai.sh` to launch
   - `/ws-hub-repos clone` if any registered repos aren't on disk
   - `/ws-hub-add-repo` to register more
-  - Each sub-repo can have its own `CLAUDE.md` for repo-specific rules (auto-loaded when mounted via `--add-dir`)
+  - Each sub-repo should keep repo-specific rules in its own `AGENTS.md`, with a thin `CLAUDE.md` containing only `@AGENTS.md` (Claude Code auto-loads it when the repo is mounted via `--add-dir`; omp does not auto-load it — read it when entering the sub-repo)
 
 ### Constraints
 

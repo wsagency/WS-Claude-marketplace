@@ -43,7 +43,7 @@ Files to produce (in the docs repo's `dev-docs/` or the hub's `docs/`):
 ## Constraints
 
 - Do not modify any sub-repo. Read-only.
-- Do not modify hub files outside `docs/` (except `CLAUDE.md` if explicitly requested).
+- Do not modify hub files outside `docs/` (except `AGENTS.md` if explicitly requested).
 - If a sub-repo is large, sample — don't read every file.
 - Be honest about uncertainty. If you can't tell how two repos connect, say so rather than inventing a relationship.
 

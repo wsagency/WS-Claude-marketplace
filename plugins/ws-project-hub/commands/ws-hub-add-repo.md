@@ -12,6 +12,8 @@ argument-hint: [--scan]
 - Nested .git directories: !`for d in */; do [ -d "$d/.git" ] && echo "./$d"; done 2>/dev/null | sed 's|/$||'`
 - Sibling .git directories: !`for d in ../*/; do [ -d "$d/.git" ] && echo "../$d"; done 2>/dev/null | sed 's|/$||'`
 
+> If any Context value above still shows an unexpanded shell command (an exclamation mark followed by a backtick-quoted command), your runtime does not pre-execute context commands — run each one via bash now, before proceeding.
+
 ## Your task
 
 Register one or more sub-repos in the current hub. Without arguments, register a single repo the user points at. With `--scan`, discover unregistered repos first, then feed each selection through the same registration flow below.
@@ -20,7 +22,7 @@ Register one or more sub-repos in the current hub. Without arguments, register a
 
 ### Without `--scan`: pick one repo
 
-2. Ask the user (AskUserQuestion) how to add the new repo:
+2. Ask the user via AskUserQuestion (or a plain chat question when that tool is unavailable) how to add the new repo:
    - **Clone from URL**: prompt for git URL, clone into `./<name>` subfolder
    - **Adopt nested**: pick from detected nested .git directories (already in the hub)
    - **Register sibling**: pick from detected sibling .git directories — register at `../<name>` without moving
@@ -56,7 +58,7 @@ For each repo to register:
 
 3. Update the `.gitignore` managed block as defined in the project-hub-conventions skill: nested (`./`) paths are inserted between the block markers (if the block doesn't exist, create it at the top of `.gitignore`, preserving all other rules); sibling (`../`) paths are not added.
 
-4. Regenerate the `CLAUDE.md` region between `<!-- ws-hub:repos:start -->` and `<!-- ws-hub:repos:end -->` from `project.yaml` (see the marker-pair definition in the project-hub-conventions skill).
+4. Regenerate the `AGENTS.md` region between `<!-- ws-hub:repos:start -->` and `<!-- ws-hub:repos:end -->` from `project.yaml` (see the marker-pair definition in the project-hub-conventions skill).
 
 ### Finish (both modes)
 
@@ -66,5 +68,5 @@ For each repo to register:
 ### Safety rules
 
 - Do not modify sub-repo contents; only `mv` a repo's containing folder when the user chose "move", confirmed first.
-- Only `project.yaml`, `CLAUDE.md`, and `.gitignore` in the hub may be modified.
+- Only `project.yaml`, `AGENTS.md`, `CLAUDE.md`, and `.gitignore` in the hub may be modified.
 - Do not commit hub changes — let the user review and commit themselves.
