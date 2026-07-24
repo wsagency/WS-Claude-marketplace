@@ -38,6 +38,15 @@ already installed by Claude Code via `~/.claude/plugins/installed_plugins.json`.
   The omp option launches at the hub root — nested sub-repos are all reachable under
   the working directory.
 
+## ws-matt in omp
+
+The skill graph runs well in omp: plugin skills load through omp's Claude-compatible
+providers, the worker agents (`ws-matt-reviewer`, `ws-matt-researcher`,
+`ws-matt-tdd-runner`) carry `output` JSON schemas and `autoloadSkills` for omp's task
+system, and `/ws-matt setup` installs the edge-discipline rule (`alwaysApply`) into
+`.omp/rules/` so the two-tier topology (entry nodes never chain into entry nodes) and
+the `DONE|{path}` file-handoff protocol are enforced session-wide.
+
 ## Known gaps in omp
 
 - **SessionStart Jira dashboard** (ws-commit-commands hook) does not run — omp hooks

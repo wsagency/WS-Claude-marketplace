@@ -10,6 +10,7 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 |--------|-------------|----------|
 | [docs-agent](./plugins/docs-agent) | Dual-track documentation suite with a single `/ws-docs` entry (Diátaxis, ADRs, changelogs, Outline sync) | `/ws-docs <verb>` (init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes, explain, publish, pull-back) |
 | [ws-commit-commands](./plugins/ws-commit-commands) | Jira-aware git workflows via jira-cli: Conventional Commits + ticket suffix, worklogs, ticket writing, PR via tea | `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`, `/ws-ticket`, `/ws-clean-gone` |
+| [ws-matt](./plugins/ws-matt) | Matt Pocock's engineering skills (MIT) as a graph-engineered skill set — 19 interlinked `ws-*` skill nodes + worker agents | `/ws-matt` (status, `ask`, `implement`, `spec`, `tickets`, `triage`, `grill`, `architecture`, `wayfinder`, `setup`) |
 | [ws-project-hub](./plugins/ws-project-hub) | Multi-repo project hubs with auto-generated AGENTS.md and an agent-picker launcher (claude / omp) | `/ws-hub-init`, `/ws-hub-status`, `/ws-hub-repos <pull\|clone>`, `/ws-hub-add-repo [--scan]`, `/ws-hub-describe`, `/ws-hub-docs` |
 
 ## Prerequisites
@@ -29,6 +30,7 @@ claude plugin marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
 # Install individual plugins
 claude plugin install docs-agent@ws-marketplace
 claude plugin install ws-commit-commands@ws-marketplace
+claude plugin install ws-matt@ws-marketplace
 claude plugin install ws-project-hub@ws-marketplace
 ```
 
@@ -127,6 +129,16 @@ Jira-aware git workflow commands, powered by [jira-cli](https://github.com/ankit
 **Hooks:** `SessionStart` — when claude opens in a folder bound to a WS project, injects a brief Jira dashboard so the user sees their workload without running `/ws-status` manually. Toggle via `hooks.session_start_dashboard: false` in `.claude/ws-project.yaml`.
 
 **Skills:** `ws-jira-conventions` — branch naming, commit format, Smart Commit syntax; `ticket-writing` — ticket structure, Given/When/Then acceptance criteria, jira-cli creation
+
+### ws-matt
+
+[Matt Pocock's engineering skills](https://github.com/mattpocock/skills) (MIT © Matt Pocock, vendored with attribution) restructured as a **graph-engineered skill set**: 19 interlinked `ws-*` skills where each SKILL.md is a graph node with a declared contract (state it reads, state delta it emits, edges to other nodes). Two tiers per Matt's own design: user-invoked entry nodes (`ws-ask-matt` router, `ws-implement`, `ws-to-spec`, `ws-to-tickets`, `ws-triage`, `ws-grill-with-docs`, `ws-improve-codebase-architecture`, `ws-wayfinder`, `ws-setup-matt-pocock-skills`) and model-invoked worker nodes (`ws-tdd`, `ws-code-review`, `ws-research`, `ws-prototype`, `ws-diagnosing-bugs`, `ws-domain-modeling`, `ws-codebase-design`, `ws-resolving-merge-conflicts`, `ws-grilling`) — entry nodes never chain into other entry nodes. A new `ws-graph-engineering` skill carries the methodology (node/edge/state contract, fan-out/synthesize, `DONE|{path}` file handoff).
+
+**Commands:** `/ws-matt` — graph status; `/ws-matt <entry>` routes to an entry node; `/ws-matt setup` bootstraps a project (and installs the omp edge-discipline rule).
+
+**Agents:** `ws-matt-reviewer` (fan-out code review), `ws-matt-researcher`, `ws-matt-tdd-runner` — with structured-output schemas for omp's task system.
+
+**Graph map:** [plugins/ws-matt/docs/graph.md](./plugins/ws-matt/docs/graph.md) (mermaid). Upstream sync: [plugins/ws-matt/UPSTREAM.md](./plugins/ws-matt/UPSTREAM.md).
 
 ### ws-project-hub
 

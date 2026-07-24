@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-07-24
+
+### Added
+
+- ws-matt plugin: Matt Pocock's 17 engineering skills + the grilling dependency (MIT © Matt Pocock, vendored with LICENSE retained, upstream commit recorded in UPSTREAM.md) renamed to `ws-*` and interlinked as a graph-engineered skill set — every SKILL.md carries a `## Graph node` contract (tier, state read, state delta, edges), per Matt's two-tier design (entry nodes never chain into entry nodes)
+- ws-matt `ws-graph-engineering` foundational skill: node/edge/state contract, dynamic fan-out + reducer fan-in, classify→workers→synthesize reference shape, `DONE|{path}` file-handoff protocol, per-harness execution notes (Claude Code / omp / Codex)
+- ws-matt `/ws-matt` command (graph status, entry routing, project setup) and worker agents `ws-matt-reviewer` / `ws-matt-researcher` / `ws-matt-tdd-runner` with structured-output schemas and `autoloadSkills` for omp's task system
+- ws-matt omp edge-discipline rule (installed into `.omp/rules/` by `/ws-matt setup`)
+- ws-matt graph map at `plugins/ws-matt/docs/graph.md` (mermaid, Outline-safe)
+
 ## [3.4.0] - 2026-07-23
 
 ### Added

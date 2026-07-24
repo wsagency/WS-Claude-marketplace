@@ -187,6 +187,29 @@ Turn a brief task description into a comprehensive Jira ticket (user story, Give
 ---
 
 
+## ws-matt
+
+Matt Pocock's engineering skills (MIT, vendored) as a graph-engineered skill set: 19 `ws-*` skill nodes (18 vendored + ws-graph-engineering) in two tiers (entry orchestrators / worker disciplines), each SKILL.md carrying a `## Graph node` contract. Full graph: `plugins/ws-matt/docs/graph.md`.
+
+### /ws-matt
+
+Single entry for the skill graph.
+
+**Arguments:**
+| Name | Required | Description |
+|------|----------|-------------|
+| `entry` | No | None = graph status; `ask`, `implement`, `spec`, `tickets`, `triage`, `grill`, `architecture`, `wayfinder` route to the matching entry node; `setup` bootstraps the project (issue tracker conventions + omp edge-discipline rule) |
+
+**Examples:**
+```
+/ws-matt
+/ws-matt implement
+/ws-matt setup
+```
+
+---
+
+
 ## ws-project-hub
 
 Multi-repo project hubs. A hub is a small meta-repo (`<project>-main`) that registers all sub-repos (mobile app, marketing site, design, docs, etc.) of a project and launches Claude across them with `--add-dir`. Sub-repos live as gitignored subfolders, each with its own independent git history.
@@ -291,6 +314,14 @@ These agents are spawned via the Task tool, typically by commands.
 | `arch-watcher` | Detects commits that warrant an ADR |
 | `public-api-watcher` | Detects public API surface changes |
 
+### ws-matt Agents
+
+| Agent | Description |
+|-------|-------------|
+| `ws-matt-reviewer` | Reviews one diff slice per ws-code-review; orchestrator fans out N reviewers |
+| `ws-matt-researcher` | Investigates one question per ws-research, sourced summary |
+| `ws-matt-tdd-runner` | Executes one red-green-refactor cycle per ws-tdd |
+
 ### ws-project-hub Agents
 
 | Agent | Description |
@@ -326,6 +357,14 @@ Skills provide knowledge and templates, loaded on demand.
 |-------|-----------------|
 | `ws-jira-conventions` | jira, ticket, WSC-, smart commit, conventional commits |
 | `ticket-writing` | jira ticket, user story, acceptance criteria, enhance task |
+
+### ws-matt Skills
+
+| Skill | Purpose |
+|-------|---------|
+| `ws-graph-engineering` | Node/edge/state contract, fan-out/synthesize, file-handoff protocol |
+| `ws-ask-matt` + 8 entry nodes | User-invoked orchestrators (implement, to-spec, to-tickets, triage, grill-with-docs, improve-codebase-architecture, wayfinder, setup) |
+| `ws-tdd` + 8 worker nodes | Model-invoked disciplines (code-review, research, prototype, diagnosing-bugs, domain-modeling, codebase-design, resolving-merge-conflicts, grilling) |
 
 ### ws-project-hub Skills
 
