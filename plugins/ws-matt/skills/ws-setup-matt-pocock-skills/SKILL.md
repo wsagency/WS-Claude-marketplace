@@ -22,6 +22,7 @@ This is a prompt-driven skill, not a deterministic script. Explore, present what
 Look at the current repo to understand its starting state. Read whatever exists; don't assume:
 
 - `git remote -v` and `.git/config` — is this a GitHub repo? Which one?
+- `.claude/ws-project.yaml` — a WS Jira binding (`jira.project`)? If present, Jira via jira-cli is the natural tracker default for this repo.
 - `AGENTS.md` and `CLAUDE.md` at the repo root — does either exist? Is there already an `## Agent skills` section in either?
 - `CONTEXT.md` and `CONTEXT-MAP.md` at the repo root
 - `docs/adr/` and any `src/*/docs/adr/` directories
@@ -40,14 +41,15 @@ Lead each section with the recommended answer so the user can accept it in a wor
 
 > Explainer: The "issue tracker" is where issues live for this repo. Skills like `ws-to-tickets`, `ws-triage`, `ws-to-spec`, and `qa` read from and write to it — they need to know whether to call `gh issue create`, write a markdown file under `.scratch/`, or follow some other workflow you describe. Pick the place you actually track work for this repo.
 
-Default posture: these skills were designed for GitHub. If a `git remote` points at GitHub, propose that. If a `git remote` points at GitLab (`gitlab.com` or a self-hosted host), propose GitLab. Otherwise (or if the user prefers), offer:
+Default posture: if `.claude/ws-project.yaml` binds a Jira project, propose **Jira (jira-cli)** with the bound key as the one-word-confirmable default. Otherwise these skills were designed for GitHub — if a `git remote` points at GitHub, propose that; a GitLab remote (`gitlab.com` or self-hosted) proposes GitLab. Otherwise (or if the user prefers), offer:
 
 - **GitHub** — issues live in the repo's GitHub Issues (uses the `gh` CLI)
 - **GitLab** — issues live in the repo's GitLab Issues (uses the [`glab`](https://gitlab.com/gitlab-org/cli) CLI)
+- **Jira (jira-cli)** — issues live in a Jira project, driven via the `jira` binary (same auth as `/ws-init`); the template is pre-filled from the binding, or ask for the project key
 - **Local markdown** — issues live as files under `.scratch/<feature>/` in this repo (good for solo projects or repos without a remote)
-- **Other** (Jira, Linear, etc.) — ask the user to describe the workflow in one paragraph; the skill will record it as freeform prose
+- **Other** (Linear, etc.) — ask the user to describe the workflow in one paragraph; the skill will record it as freeform prose
 
-Record the choice in `docs/agents/issue-tracker.md`. The GitHub and GitLab templates carry a "PRs as a request surface" flag, defaulted **off** — leave it off and don't raise it; a user who wants external PRs in the triage queue can flip the flag in the file later.
+Record the choice in `docs/agents/issue-tracker.md` (for Jira, copy `issue-tracker-jira.md` with `<PROJECT-KEY>` substituted). The GitHub, GitLab, and Jira templates carry a "PRs as a request surface" flag, defaulted **off** — leave it off and don't raise it; a user who wants external PRs in the triage queue can flip the flag in the file later.
 
 **Section B — Triage label vocabulary.** Skip this section entirely if the `ws-triage` skill isn't installed (exploration told you) — an uninstalled skill needs no labels.
 

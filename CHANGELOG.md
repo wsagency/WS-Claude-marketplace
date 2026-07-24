@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.5.1] - 2026-07-24
+
+### Added
+
+- ws-matt setup: Jira (jira-cli) offered as a first-class issue-tracker option with a ready template (`issue-tracker-jira.md`, wayfinding via Jira links/JQL) — auto-proposed when `.claude/ws-project.yaml` binds a Jira project, confirmable in a word; freeform "Other" remains. Recorded as a WS-local addition in UPSTREAM.md for sync safety
+
 ## [3.5.0] - 2026-07-24
 
 ### Added

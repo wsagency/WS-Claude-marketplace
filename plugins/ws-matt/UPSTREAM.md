@@ -47,6 +47,12 @@ functions as a skill reference.
 `ws-improve-codebase-architecture` / `ws-ask-matt`, so it ships with the plugin
 and all `/grilling` references are rewritten to `/ws-grilling`.
 
+**WS-local additions (preserve on upstream sync — not present upstream):**
+
+- `ws-setup-matt-pocock-skills/issue-tracker-jira.md` — Jira (jira-cli) tracker
+  template, plus the Jira option and `.claude/ws-project.yaml` detection in that
+  skill's Section A. Re-apply after any upstream refresh of the setup skill.
+
 **Deliberately NOT rewritten:**
 
 - References to upstream skills outside the engineering category (other than
