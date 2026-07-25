@@ -12,8 +12,7 @@ The plugin metadata file that defines a plugin's identity.
 {
   "name": "string (required)",
   "description": "string (required)",
-  "author": "string (optional)",
-  "version": "string (optional)",
+  "author": "object (optional)",
   "repository": "string (optional)"
 }
 ```
@@ -23,10 +22,11 @@ The plugin metadata file that defines a plugin's identity.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Plugin identifier (must match directory name) |
-| `description` | string | Yes | Brief description of the plugin's purpose |
-| `author` | string | No | Author name and email |
-| `version` | string | No | Plugin version (can also be in marketplace.json) |
+| `description` | string | Yes | Brief description of the plugin's purpose (kept in sync with the `marketplace.json` entry) |
+| `author` | object | No | `{ "name": "...", "email": "..." }` |
 | `repository` | string | No | Source repository URL |
+
+**No `version` field.** Per [ADR 0002](../decisions/0002-lockstep-marketplace-versioning.md), `marketplace.json` is the single version authority — every plugin's version is the marketplace release version, and `plugin.json` carries no version at all.
 
 ## Examples
 
@@ -45,9 +45,8 @@ The plugin metadata file that defines a plugin's identity.
 {
   "name": "docs-agent",
   "description": "Documentation generation using the Diataxis framework",
-  "author": "WS Agency <dev@ws.agency>",
-  "version": "1.0.0",
-  "repository": "https://git.wsagency.io/ws-public/WS-Claude-marketplace"
+  "author": { "name": "WS Agency", "email": "dev@ws.agency" },
+  "repository": "https://github.com/wsagency/WS-Claude-marketplace"
 }
 ```
 
@@ -63,19 +62,14 @@ The plugin metadata file that defines a plugin's identity.
 
 - One sentence explaining the plugin's purpose
 - Start with what it does, not "This plugin..."
-- Example: "Git workflows for Gitea using tea CLI"
+- Example: "Jira-aware git workflows via jira-cli"
+- Must stay in sync with the plugin's `description` in `marketplace.json`
 
 ### author
 
-- Format: `Name <email>`
-- Or just: `Name`
-- Team attribution: `WS Agency <dev@ws.agency>`
-
-### version
-
-- Follow semantic versioning if specified
-- Often managed in marketplace.json instead
-- Both locations are valid
+- Object form: `{ "name": "...", "email": "..." }`
+- Email is optional
+- Team attribution: `{ "name": "WS Agency", "email": "dev@ws.agency" }`
 
 ## Plugin Directory Structure
 
@@ -109,16 +103,16 @@ cat plugins/my-plugin/.claude-plugin/plugin.json | jq '.name, .description'
 ## Relationship to marketplace.json
 
 - `plugin.json` defines the plugin's **identity**
-- `marketplace.json` defines how the plugin is **distributed**
+- `marketplace.json` defines how the plugin is **distributed** and carries the **version**
 
-Both files have a `name` field that should match. Version can appear in either or both.
+Both files have a `name` field that must match. The version lives **only** in `marketplace.json` (lockstep, ADR 0002).
 
 ```
 marketplace.json          plugin.json
 ├── name ─────────────── name (must match)
-├── version               version (optional)
+├── version               (no version here)
 ├── source ──────────────→ points to plugin directory
-├── description           description
+├── description ──────── description (kept in sync)
 ├── category              (not in plugin.json)
 └── tags                  (not in plugin.json)
 ```

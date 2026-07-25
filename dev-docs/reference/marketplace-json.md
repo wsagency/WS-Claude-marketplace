@@ -34,11 +34,13 @@ Array of plugin entries.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique plugin identifier |
-| `version` | string | Yes | Semantic version (e.g., "1.0.0") |
+| `version` | string | Yes | The marketplace release version — identical for every entry (lockstep) |
 | `source` | string | Yes | Path to plugin directory relative to marketplace root |
-| `description` | string | No | Brief description of the plugin |
+| `description` | string | No | Brief description of the plugin (kept in sync with `plugin.json`) |
 | `category` | string | No | Plugin category for organization |
 | `tags` | array | No | Keywords for discovery |
+
+**marketplace.json is the single version authority.** Per [ADR 0002](../decisions/0002-lockstep-marketplace-versioning.md), plugins do not carry a version in `plugin.json`; every `version` here equals the marketplace release version, and all entries are set together when a release is cut.
 
 ## Example
 
@@ -47,7 +49,7 @@ Array of plugin entries.
   "plugins": [
     {
       "name": "docs-agent",
-      "version": "1.0.0",
+      "version": "3.5.1",
       "source": "./plugins/docs-agent",
       "description": "Documentation generation using Diataxis framework",
       "category": "documentation",
@@ -55,11 +57,11 @@ Array of plugin entries.
     },
     {
       "name": "ws-commit-commands",
-      "version": "1.0.0",
+      "version": "3.5.1",
       "source": "./plugins/ws-commit-commands",
-      "description": "Git workflows for Gitea using tea CLI",
+      "description": "Jira-aware git workflows via jira-cli",
       "category": "git",
-      "tags": ["git", "commits", "pull-requests", "gitea"]
+      "tags": ["git", "commits", "pull-requests", "jira"]
     }
   ]
 }
@@ -75,10 +77,10 @@ Array of plugin entries.
 
 ### version
 
-- Follow semantic versioning: `MAJOR.MINOR.PATCH`
-- Increment MAJOR for breaking changes
-- Increment MINOR for new features
-- Increment PATCH for bug fixes
+- Semantic versioning (`MAJOR.MINOR.PATCH`), applied **lockstep across the whole marketplace**
+- Every entry carries the same value — the marketplace release version
+- Versions change only when a release is cut (all entries set to the new `X.Y.Z` together, tagged `vX.Y.Z`)
+- Never bump a single plugin's version on its own
 
 ### source
 
@@ -119,11 +121,11 @@ done
 ## Adding a Plugin
 
 1. Create the plugin in `plugins/your-plugin/`
-2. Add entry to the `plugins` array:
+2. Add entry to the `plugins` array, using the **current** marketplace release version (copy it from the existing entries — lockstep, not a fresh `1.0.0`):
    ```json
    {
      "name": "your-plugin",
-     "version": "1.0.0",
+     "version": "3.5.1",
      "source": "./plugins/your-plugin",
      "description": "What your plugin does",
      "category": "appropriate-category",

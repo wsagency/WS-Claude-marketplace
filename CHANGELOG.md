@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-07-25
+
+### Added
+
+- ADR two-tier convention: lightweight (1-3 sentences) default + full MADR v4.0.0 for big decisions, single home `dev-docs/decisions/` — encoded in the adr skill, adr-writer, and ws-matt's domain-modeling/setup skills
+- outline-sync.py: two-pass push (forward links rewritten), documents.list pagination, `--collection-name`, crash-safe incremental state persistence; test suite grown 7 → 22 against an in-memory FakeOutline API
+- /ws-commit-push-pr now applies the chosen worklog via `jira issue worklog add` after the commit (was collected but never logged)
+- /ws-hub-add-repo retro-mark mode: mark an already-registered repo as `role: docs` (max-one enforced); /ws-hub-init asks the role question during registration
+
+### Changed
+
+- **BREAKING (convention):** ws-matt adapted to WS layout — ADRs to `dev-docs/decisions/`, setup outputs to `dev-docs/agents/` (never the publishable `docs/` track), AGENTS.md-first context editing (thin CLAUDE.md never fattened), hub awareness (product decisions go to the `role: docs` repo); all divergences recorded in UPSTREAM.md for sync preservation
+- Changelog timing convention: PR-time is canonical; docs-agent enforce-changelog hook is now opt-in (`changelog_per_commit: false` default) with skip_types fallback to `.claude/ws-project.yaml`
+- ws-matt worker alignment: ws-code-review fans out `ws-matt-reviewer` per axis (not general-purpose), ws-matt-tdd-runner is red-green only (cleanup routes to review), ws-matt-researcher wired into wayfinder, node inventories reconciled to 9 entries + 9 workers everywhere; coexistence rule added (ws-matt authoritative for TDD/review/research over superpowers)
+- AI attribution unified as `WS Agency AI suite <ai@ws.agency>` (commit trailer + PR footer); single definitive commit-message layout in /ws-commit
+- invoke-ai.sh hardening: guarded `clear` (no more aborts on TERM=dumb), tty-gated intro animation, bounded marketplace check with offline skip, per-entry yaml parsing (optional fields stay aligned), per-agent marketplace hints, honest "changed since last launch" wording
+- hub-architect and /ws-hub-docs target `dev-docs/` (docs repo's when registered, else the hub's — never a hub `docs/`); ws-hub-status allowed-tools match real `git -C` invocations
+- /ws-docs frontmatter on house style (`allowed-tools` + `$1`/`$ARGUMENTS`, no mustache); one authoritative background-verbs list; `--force` documented and implemented as conflicts-only (never skips lint)
+- Internal design specs/plans moved `docs/superpowers/` → `dev-docs/superpowers/` (dual-track compliance); docs staleness sweep: GitHub install URL everywhere, jira-cli prerequisites + troubleshooting section, lockstep versioning in dev guides and schema references (ADR 0002), ws-matt visible in architecture/contributing/omp pages
+
+### Fixed
+
+- outline-sync.py: pull now records sync state (pull-back→merge→push cycle no longer dead-ends in conflicts); Outline-authored pulled docs registered in state (no duplicate creation); id/urlId link symmetry both directions; relative link bases computed per destination file; push prints a single JSON report; CommonMark autolinks no longer flagged as HTML; link rewriting leaves code regions untouched; guard against mass-archiving when the docs dir is missing
+- enforce-changelog hook: deny decision now actually delivered (correct exit-0 + hookSpecificOutput protocol; previously blocked with no reason shown)
+- session-start-dashboard hook tolerates trailing whitespace in config toggles
+
 ## [3.5.1] - 2026-07-24
 
 ### Added

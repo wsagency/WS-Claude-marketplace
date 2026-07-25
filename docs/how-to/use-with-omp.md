@@ -11,6 +11,7 @@ omp
 /marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
 /plugin install docs-agent
 /plugin install ws-commit-commands
+/plugin install ws-matt
 /plugin install ws-project-hub
 ```
 

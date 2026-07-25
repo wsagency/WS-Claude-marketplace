@@ -67,6 +67,6 @@ Confirmed by:
 
 ## More Information
 
-- Brainstorming sessions and spec: `docs/superpowers/specs/2026-05-29-dual-track-docs-design.md`, `docs/superpowers/specs/2026-05-29-ws-docs-unified.md`
-- Implementation plans: `docs/superpowers/plans/2026-05-29-dual-track-docs-pr1.md`, `docs/superpowers/plans/2026-05-29-ws-docs-unified-pr2.md`
+- Brainstorming sessions and spec: `dev-docs/superpowers/specs/2026-05-29-dual-track-docs-design.md`, `dev-docs/superpowers/specs/2026-05-29-ws-docs-unified.md`
+- Implementation plans: `dev-docs/superpowers/plans/2026-05-29-dual-track-docs-pr1.md`, `dev-docs/superpowers/plans/2026-05-29-ws-docs-unified-pr2.md`
 - The `dual-track-docs` skill (in docs-agent plugin) is the canonical convention reference

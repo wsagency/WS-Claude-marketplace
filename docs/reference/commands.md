@@ -320,7 +320,7 @@ These agents are spawned via the Task tool, typically by commands.
 |-------|-------------|
 | `ws-matt-reviewer` | Reviews one diff slice per ws-code-review; orchestrator fans out N reviewers |
 | `ws-matt-researcher` | Investigates one question per ws-research, sourced summary |
-| `ws-matt-tdd-runner` | Executes one red-green-refactor cycle per ws-tdd |
+| `ws-matt-tdd-runner` | Executes one red-green cycle per ws-tdd |
 
 ### ws-project-hub Agents
 
@@ -346,15 +346,19 @@ Skills provide knowledge and templates, loaded on demand.
 
 ### docs-agent Skills
 
-| Skill | Trigger Keywords |
-|-------|-----------------|
-| `keep-a-changelog` | changelog format, versioning |
-| `diataxis` | documentation types, tutorials, how-to |
+| Skill | Purpose |
+|-------|---------|
+| `diataxis` | Diátaxis documentation framework (tutorials, how-to, reference, explanation) |
+| `keep-a-changelog` | Keep a Changelog format and versioning practice |
+| `conventional-commits` | Conventional Commits standard for structured commit messages |
+| `style-guide` | Documentation style and prose linting for consistent technical writing |
+| `adr` | Architecture Decision Records |
+| `dual-track-docs` | The `docs/` + `dev-docs/` dual-track convention; where a new doc belongs |
 
 ### ws-commit-commands Skills
 
-| Skill | Trigger Keywords |
-|-------|-----------------|
+| Skill | Triggers on |
+|-------|-------------|
 | `ws-jira-conventions` | jira, ticket, WSC-, smart commit, conventional commits |
 | `ticket-writing` | jira ticket, user story, acceptance criteria, enhance task |
 
@@ -368,10 +372,10 @@ Skills provide knowledge and templates, loaded on demand.
 
 ### ws-project-hub Skills
 
-| Skill | Trigger Keywords |
-|-------|-----------------|
+| Skill | Triggers on |
+|-------|-------------|
 | `project-hub-conventions` | project hub, multi-repo, `<name>-main` |
 
 This skill is also vendored into every hub at init time (`<hub>/.claude/skills/`), so hubs remain self-documenting even when the marketplace plugin isn't installed.
 
-Skills are automatically loaded when relevant keywords appear in the conversation.
+Skill loading is description-based: each SKILL.md declares in its `description` frontmatter what it knows and when it applies, and Claude loads it when the conversation matches.

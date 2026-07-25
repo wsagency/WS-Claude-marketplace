@@ -21,7 +21,8 @@ Have an idea for a new plugin? Check the existing set first to avoid duplication
 
 - **docs-agent** — documentation generation, ADRs, changelogs, style guides
 - **ws-commit-commands** — Jira-aware git workflows via jira-cli (status, commit, PR, ticket writing)
-- **ws-project-hub** — monorepo scanning and project discovery
+- **ws-matt** — Matt Pocock's engineering skills as a graph-engineered skill set (`/ws-matt`)
+- **ws-project-hub** — multi-repo hub management: register sub-repos, aggregate status, generate cross-repo docs, launch agents across them
 
 If your idea is new, please open an issue with:
 
@@ -39,4 +40,4 @@ Have a question about how to use the marketplace or a plugin?
 
 ## License
 
-All contributions are made under the MIT License. See [LICENSE](../../LICENSE) for details.
+All contributions are made under the MIT License. See [LICENSE](../LICENSE) for details.

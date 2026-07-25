@@ -13,6 +13,7 @@ This is the internal documentation for **maintainers and plugin contributors** t
   - [marketplace.json schema](reference/marketplace-json.md)
 - **`decisions/`** — Architecture Decision Records (ADRs)
 - **`explanation/`** — Internal concepts, history, why-patterns
+- **`superpowers/`** — Brainstorming specs and implementation plans (historical design records)
 - **`architecture.md`** — Project architecture overview (created separately)
 - **`development.md`** — Local setup, code style, commit format (created separately)
 

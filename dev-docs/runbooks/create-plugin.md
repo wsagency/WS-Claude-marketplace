@@ -27,9 +27,11 @@ Create the plugin metadata file at `plugins/my-plugin/.claude-plugin/plugin.json
 {
   "name": "my-plugin",
   "description": "Brief description of what the plugin does",
-  "author": "Your Name <your.email@ws.agency>"
+  "author": { "name": "Your Name", "email": "your.email@ws.agency" }
 }
 ```
+
+Note: `plugin.json` carries **no version field** — the marketplace registry is the single version authority (see [ADR 0002](../decisions/0002-lockstep-marketplace-versioning.md)). The `description` here must stay in sync with the plugin's `description` in `marketplace.json`.
 
 See [plugin.json Schema](../reference/plugin-json.md) for all available fields.
 
@@ -74,7 +76,7 @@ Add your plugin to `.claude-plugin/marketplace.json`:
   "plugins": [
     {
       "name": "my-plugin",
-      "version": "1.0.0",
+      "version": "3.5.1",
       "source": "./plugins/my-plugin",
       "category": "utilities",
       "tags": ["tag1", "tag2"],
@@ -83,6 +85,8 @@ Add your plugin to `.claude-plugin/marketplace.json`:
   ]
 }
 ```
+
+**Versioning is lockstep** ([ADR 0002](../decisions/0002-lockstep-marketplace-versioning.md)): a new plugin enters at the **current** marketplace release version (the same `version` every other entry already has — check the existing entries). Do not invent a fresh `1.0.0`. At the next release, all entries are bumped together to the new version. Keep the `description` here in sync with the plugin's `plugin.json`.
 
 See [marketplace.json Schema](../reference/marketplace-json.md) for all fields.
 

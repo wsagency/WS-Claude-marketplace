@@ -13,6 +13,7 @@ The marketplace is a **plugin registry** that distributes Claude Code plugins to
 │  marketplace.json (registry)                │
 │    ├── docs-agent                           │
 │    ├── ws-commit-commands                   │
+│    ├── ws-matt                              │
 │    └── ws-project-hub                       │
 ├─────────────────────────────────────────────┤
 │  plugins/                                   │
@@ -24,6 +25,12 @@ The marketplace is a **plugin registry** that distributes Claude Code plugins to
 │    │   ├── commands/                        │
 │    │   ├── skills/                          │
 │    │   └── hooks/                           │
+│    ├── ws-matt/                             │
+│    │   ├── commands/                        │
+│    │   ├── agents/                          │
+│    │   ├── skills/                          │
+│    │   ├── rules/                           │
+│    │   └── docs/                            │
 │    └── ws-project-hub/                      │
 │        ├── commands/                        │
 │        ├── agents/                          │
@@ -53,7 +60,7 @@ A **command** is a slash-invocable action that runs inline in your Claude Code s
 - Defined in `commands/*.md` files
 
 **Example use cases:**
-- `/changelog` - Generate a changelog
+- `/ws-docs changelog` - Generate a changelog
 - `/ws-commit` - Create a git commit
 
 ### Agents
@@ -89,22 +96,22 @@ A **skill** is a knowledge resource that provides context, templates, or guideli
 
 ```
 1. Add marketplace
-   claude plugin marketplace add git@git.wsagency.io:...
+   claude plugin marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
 
 2. Install plugin
    claude plugin install docs-agent@ws-marketplace
 
 3. Plugin available
-   /docs-tutorial, /changelog, etc.
+   /ws-docs, /ws-docs changelog, etc.
 ```
 
 ### Command Execution
 
-When you invoke `/changelog`:
+When you invoke `/ws-docs`:
 
 ```
 1. Claude Code finds the command
-   plugins/docs-agent/commands/changelog.md
+   plugins/docs-agent/commands/ws-docs.md
 
 2. Reads YAML frontmatter
    - description
@@ -192,16 +199,15 @@ System prompt that defines the agent's behavior and approach.
 ```markdown
 ---
 name: skill-name
-description: What knowledge this skill provides
-trigger-keywords:
-  - keyword1
-  - keyword2
+description: What knowledge this skill provides, and when to use it
 ---
 
 # Skill Title
 
 Reference content, templates, guidelines, and examples.
 ```
+
+Skill loading is **description-based**: Claude Code reads the `description` frontmatter and loads the skill when the conversation matches it. Write the description to say both what the skill knows and when it applies (e.g. "Use when writing or maintaining a changelog").
 
 ## The Marketplace Registry
 
@@ -212,7 +218,7 @@ The `marketplace.json` file serves as the central registry:
   "plugins": [
     {
       "name": "docs-agent",
-      "version": "1.0.0",
+      "version": "3.5.1",
       "source": "./plugins/docs-agent",
       "category": "documentation",
       "tags": ["docs", "changelog"]
@@ -220,6 +226,8 @@ The `marketplace.json` file serves as the central registry:
   ]
 }
 ```
+
+All plugins share a single version — the marketplace release version — so every `version` field in the registry is identical (lockstep versioning).
 
 This enables:
 - **Discovery**: `claude plugin marketplace list`
@@ -282,4 +290,4 @@ To add to the marketplace:
 3. Register in `marketplace.json`
 4. Submit a pull request
 
-See [How to Create a Plugin](../how-to/create-plugin.md) for detailed steps.
+See [Contributing](../contributing.md) for how to get started — it routes plugin authors to the contributor runbook.

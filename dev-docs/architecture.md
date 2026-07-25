@@ -78,13 +78,12 @@ The agent's content is the system prompt. Agents are identified by dotted paths 
 
 ### `skills/skill-name/SKILL.md` (Knowledge bases)
 
-Markdown files providing reference material, templates, or guidelines. Loaded on-demand when trigger keywords match.
+Markdown files providing reference material, templates, or guidelines. Loaded on-demand when the conversation matches the skill's description.
 
 **Frontmatter schema:**
 ```yaml
 name: skill-name
-description: Brief description
-trigger-keywords: [keyword1, keyword2, ...]
+description: What the skill knows and when to use it
 ```
 
 **Structure:** `skills/skill-name/` contains:
@@ -92,13 +91,13 @@ trigger-keywords: [keyword1, keyword2, ...]
 - `references/` - Reference materials (guides, standards)
 - `examples/` - Concrete examples and templates
 
-**Loading model:** Claude Code inspects trigger keywords and loads skills into context when relevant. Unlike commands/agents, skills are passive knowledge resources.
+**Loading model:** Skill triggering is description-based — Claude Code reads each skill's `description` frontmatter and loads the skill into context when the conversation matches it. Unlike commands/agents, skills are passive knowledge resources.
 
 ### `hooks/` (Optional)
 
 JSON-based hook configurations for PreToolUse and Stop callbacks. Enables plugins to intercept tool calls or session state changes.
 
-**Example:** `docs-agent/hooks/hooks.json` registers background watchers (arch-watcher, public-api-watcher) that trigger autonomously on session events.
+**Example:** `docs-agent/hooks/hooks.json` wires `enforce-changelog.sh` (PreToolUse on Bash) and `enforce-stop.sh` (Stop) — opt-in enforcement that blocks commits and session stops when CHANGELOG.md is out of sync. The watcher agents (arch-watcher, public-api-watcher) are not hooks; they are Task-dispatched by `/ws-docs audit`.
 
 ### `templates/` (Optional)
 
@@ -108,9 +107,13 @@ Scaffolding and boilerplate for plugin-specific workflows. Used during initializ
 
 ### `scripts/` (Optional)
 
-Shell scripts for plugin setup, installation, or maintenance tasks.
+Scripts the plugin's commands shell out to for deterministic work.
 
-**Example:** `docs-agent/scripts/` contains initialization and upgrade logic.
+**Example:** `docs-agent/scripts/` holds `outline-sync.py` (Outline publish/pull-back sync), `parse-git-log.sh`, and `validate-changelog.sh`.
+
+### Plugin example: ws-matt
+
+`ws-matt` vendors [Matt Pocock's engineering skills](https://github.com/mattpocock/skills) (MIT, with attribution) as a graph-engineered skill set: 19 interlinked `ws-*` skill nodes in two tiers (user-invoked entry orchestrators, model-invoked worker disciplines), a single `/ws-matt` entry command, and worker agents (`ws-matt-reviewer`, `ws-matt-researcher`, `ws-matt-tdd-runner`). Beyond the standard directories it adds `rules/` (the omp edge-discipline rule installed by `/ws-matt setup`) and `docs/` (`graph.md`, the mermaid graph map; `UPSTREAM.md` tracks upstream sync).
 
 ## Registration Mechanics
 
@@ -138,7 +141,7 @@ The `marketplace.json` at the repository root is the single source of truth for 
 
 **Key constraints:**
 - `name` must be unique within the marketplace
-- `version` follows semantic versioning
+- `version` follows semantic versioning and is **lockstep**: every entry carries the marketplace release version (ADR 0002); `plugin.json` files carry no version
 - `source` is a relative path from the marketplace root
 - `category` and `tags` aid discovery via `claude plugin marketplace list`
 
@@ -174,14 +177,14 @@ After installation, Claude Code discovers components from the cached plugin dire
 
 - **Commands:** Scans `commands/*.md`, registers `/name` with metadata from frontmatter
 - **Agents:** Scans `agents/*.md`, enables spawning via Task tool with `plugin-name:agent-name`
-- **Skills:** Scans `skills/*/SKILL.md`, registers trigger keywords for contextual loading
+- **Skills:** Scans `skills/*/SKILL.md`, registers skill descriptions for contextual loading
 - **Hooks:** Loads `hooks/hooks.json`, configures event listeners
 
 ## Commands vs Agents vs Skills
 
 | Aspect | Command | Agent | Skill |
 |--------|---------|-------|-------|
-| **Invocation** | `/command-name` | Task tool with `plugin-name:agent-name` | Auto-loaded by keyword |
+| **Invocation** | `/command-name` | Task tool with `plugin-name:agent-name` | Auto-loaded by description match |
 | **Execution** | Inline in session | Subprocess (isolated context) | Reference/knowledge only |
 | **Autonomy** | Low (follows instructions) | High (makes decisions) | N/A (passive) |
 | **State** | Shared with session | Isolated | Reference material |
@@ -192,13 +195,13 @@ After installation, Claude Code discovers components from the cached plugin dire
 
 Plugins can reference or depend on capabilities from other plugins:
 
-### MCP Tool References
-- `ws-commit-commands` references Atlassian MCP tools (Jira) in its allowed-tools
-- Commands can invoke MCP servers registered globally
+### External CLI Tools
+- `ws-commit-commands` performs all Jira access through jira-cli (the `jira` binary, called via Bash) — no MCP server involved
+- PR creation goes through the tea CLI (Gitea)
 
 ### Vendored Skills
-- `ws-project-hub` imports the `dual-track-docs` skill from `docs-agent` at init time
-- Enables consistent documentation practices across hub projects
+- `ws-project-hub` vendors its own `project-hub-conventions` skill into each hub (`<hub>/.claude/skills/`) at init time
+- Hubs stay self-documenting even when the marketplace plugin isn't installed
 
 ### Subagent Spawning
 - Commands can spawn agents from any plugin via Task tool
@@ -229,7 +232,7 @@ This structure ensures new maintainers can quickly understand system design and 
 - **Plugin code:** `plugins/<plugin-name>/` - Each plugin is self-contained; start with `commands/` for entry points, then explore `agents/` and `skills/` for complex workflows.
 - **Registry:** `.claude-plugin/marketplace.json` - Canonical list of plugins, versions, and metadata. Update when adding/removing plugins.
 - **Maintainer docs:** `dev-docs/runbooks/` - Step-by-step guides for adding plugins, updating registry, versioning, and releases.
-- **Decisions:** `dev-docs/decisions/` - Why certain architectural choices were made (e.g., why skills use trigger keywords, why hooks are optional).
+- **Decisions:** `dev-docs/decisions/` - Why certain architectural choices were made (e.g., why versioning is lockstep, why hooks are optional).
 
 **Quick start for contributors:** Read `dev-docs/index.md`, then the relevant runbook (e.g., `add-plugin.md` or `update-plugin.md`).
 

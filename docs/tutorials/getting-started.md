@@ -7,8 +7,9 @@ This tutorial walks you through installing the WS Claude Marketplace and using y
 Before starting, ensure you have:
 
 - **Claude Code CLI** installed and configured
-- **Git** with SSH access to `git.wsagency.io`
+- **Git** with SSH access to `github.com`
 - **tea CLI** (required for ws-commit-commands plugin)
+- **jira-cli** (required for ws-commit-commands plugin)
 
 ### Installing Dependencies
 
@@ -31,12 +32,27 @@ brew install tea
 tea login add --url https://git.wsagency.io --token YOUR_TOKEN
 ```
 
+#### jira-cli (for Jira-aware workflows)
+
+The `ws-commit-commands` plugin uses [jira-cli](https://github.com/ankitpokhrel/jira-cli) for all Jira access:
+
+```bash
+# macOS (Homebrew)
+brew install ankitpokhrel/jira-cli/jira-cli
+
+# Export your Jira API token
+export JIRA_API_TOKEN=<your-token>
+
+# Initialize jira-cli with your Jira site
+jira init
+```
+
 ## Step 1: Add the Marketplace
 
 Open a terminal and add the WS marketplace to Claude Code:
 
 ```bash
-claude plugin marketplace add git@git.wsagency.io:ws-public/WS-Claude-marketplace.git
+claude plugin marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
 ```
 
 This registers the marketplace so you can install plugins from it.
@@ -70,10 +86,10 @@ cd /path/to/your/project
 claude
 ```
 
-Inside Claude Code, try generating a changelog entry:
+Inside Claude Code, try updating the changelog:
 
 ```
-/changelog-entry
+/ws-docs changelog
 ```
 
 Claude will analyze recent commits and add an entry to your CHANGELOG.md (or create one if it doesn't exist).
@@ -90,10 +106,18 @@ Now you can use commands like:
 - `/ws-commit` - Create a conventional commit
 - `/ws-commit-push-pr` - Commit, push, and create a PR in one step
 
+Install the ws-matt plugin for Matt Pocock's engineering skill graph:
+
+```bash
+claude plugin install ws-matt@ws-marketplace
+```
+
+Then run `/ws-matt` for a graph status, or `/ws-matt setup` to bootstrap a project.
+
 ## What's Next?
 
 - Browse the [Command Reference](../reference/commands.md) to discover all available commands
-- Learn [How to Create a Plugin](../how-to/create-plugin.md) to contribute your own
+- See [Contributing](../contributing.md) for how to propose or add your own plugin (routes to the contributor runbook)
 - Read about [Plugin Architecture](../explanation/plugin-architecture.md) to understand how it works
 
 ## Troubleshooting
@@ -101,7 +125,8 @@ Now you can use commands like:
 If you encounter issues:
 
 - **Plugin not found**: Run `claude plugin marketplace update ws-marketplace` to refresh
-- **SSH errors**: Verify your SSH key is added to git.wsagency.io
+- **SSH errors**: Verify your SSH key is added to github.com
 - **tea errors**: Run `tea login list` to verify your Gitea authentication
+- **jira errors**: Run `jira me` to verify jira-cli authentication (see `/ws-init`)
 
 See [Troubleshooting](../how-to/troubleshooting.md) for more solutions.

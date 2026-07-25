@@ -33,8 +33,8 @@ See [dev-docs/runbooks/create-plugin.md](runbooks/create-plugin.md) for the comp
 
 The marketplace is markdown and JSON only — no compiled code.
 
-- **Markdown prose** — Follow the [style-guide skill](/docs-agent) for documentation tone, structure, and formatting
-- **Hook scripts** — Bash scripts in `.claude/hooks/` use `set -euo pipefail` at the top and target bash 3.2+ for macOS compatibility (no `mapfile`, no associative arrays)
+- **Markdown prose** — Follow the [style-guide skill](../plugins/docs-agent/skills/style-guide/SKILL.md) for documentation tone, structure, and formatting
+- **Hook scripts** — Bash scripts in `plugins/*/hooks/` use `set -euo pipefail` at the top and target bash 3.2+ for macOS compatibility (no `mapfile`, no associative arrays)
 - **JSON** — Keep `.claude-plugin/marketplace.json` and `plugin.json` files valid and human-readable
 
 ## Commit format
@@ -63,24 +63,19 @@ BREAKING CHANGE: Plugin authors must now include a `version` field in plugin.jso
 
 ## Versioning
 
-Each plugin follows SemVer in its `marketplace.json` entry:
+The marketplace uses **lockstep versioning** ([ADR 0002](decisions/0002-lockstep-marketplace-versioning.md)): every plugin's `version` field in `.claude-plugin/marketplace.json` equals the marketplace release version, and all entries are bumped together at release time.
 
-```json
-{
-  "name": "ws-docs",
-  "version": "1.2.3",
-  "description": "..."
-}
-```
-
-When you modify a plugin, bump its version. Keep the `description` field in `marketplace.json` in sync with the plugin's `plugin.json` description.
+- `marketplace.json` is the **single version authority** — `plugin.json` files carry no version field
+- Never bump a single plugin's version on its own; versions only move as part of a release
+- Day-to-day, record changes in `CHANGELOG.md` under `[Unreleased]`; per-entry **BREAKING:** lines carry the per-plugin breaking-change signal
+- Keep the `description` field in `marketplace.json` in sync with the plugin's `plugin.json` description
 
 ## Documentation
 
 This project follows a dual-track docs convention:
 
 1. After code changes, add an entry to `CHANGELOG.md` under `[Unreleased]`
-2. For architectural decisions, run `/docs-agent adr "<decision>"` to create an ADR
+2. For architectural decisions, run `/ws-docs adr "<decision>"` to create an ADR in `dev-docs/decisions/` (two-tier convention: lightweight ADR by default, full MADR for big decisions)
 
 ## Testing
 
@@ -93,12 +88,20 @@ There is no automated test harness for markdown plugins. Verification is manual:
 
 ## Release / push
 
-Direct commits to `main` are the convention:
+Direct commits to `main` are the convention for day-to-day changes:
 
-1. Bump the plugin version in `marketplace.json` and its `plugin.json` description
-2. Update `CHANGELOG.md`
-3. Push to `main` — no PR review required for small plugin updates, but mention the change to the team
-4. For major plugin additions or restructuring, open a pull request for visibility
+- Record each change in `CHANGELOG.md` under `[Unreleased]` — no version bumps outside a release
+- Push to `main` — no PR review required for small plugin updates, but mention the change to the team
+- For major plugin additions or restructuring, open a pull request for visibility
+
+### Cutting a release (lockstep, per ADR 0002)
+
+1. Cut `[Unreleased]` in `CHANGELOG.md` to a new `[X.Y.Z]` section
+2. Mirror the changelog to `docs/changelog.md`
+3. Set **every** `version` field in `.claude-plugin/marketplace.json` to `X.Y.Z`
+4. Tag the release: `git tag vX.Y.Z`
+
+Never bump a single plugin on its own — all versions move together.
 
 ## Questions?
 

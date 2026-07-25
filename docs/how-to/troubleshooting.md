@@ -35,14 +35,14 @@ Solutions for common issues with the WS Claude Marketplace.
 
 1. Verify SSH access:
    ```bash
-   ssh -T git@git.wsagency.io
+   ssh -T git@github.com
    ```
 
-2. Check your SSH key is added to git.wsagency.io
+2. Check your SSH key is added to your GitHub account
 
 3. Ensure the repository URL is correct:
    ```bash
-   claude plugin marketplace add git@git.wsagency.io:ws-public/WS-Claude-marketplace.git
+   claude plugin marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
    ```
 
 ### Permission denied errors
@@ -59,7 +59,7 @@ Solutions for common issues with the WS Claude Marketplace.
    ssh-add ~/.ssh/id_rsa  # or your key
    ```
 
-2. Verify key is registered on git.wsagency.io
+2. Verify key is registered on your GitHub account
 
 ## Command Issues
 
@@ -146,12 +146,43 @@ Solutions for common issues with the WS Claude Marketplace.
 
 3. Verify you have push access to the repository
 
+### jira-cli not working
+
+**Symptoms:**
+- `jira me` fails or hangs
+- Commands report "jira: command not found"
+- Worklogs or transitions are not applied
+
+**Solutions:**
+
+1. Install jira-cli:
+   ```bash
+   brew install ankitpokhrel/jira-cli/jira-cli
+   ```
+
+2. Ensure your API token is exported:
+   ```bash
+   export JIRA_API_TOKEN=<your-token>
+   ```
+
+3. Run the interactive setup if you haven't yet:
+   ```bash
+   jira init
+   ```
+
+4. Verify authentication:
+   ```bash
+   jira me
+   ```
+
+5. Run `/ws-init` inside Claude Code — it checks the `jira` binary and `jira me`, prints the exact install/token/`jira init` steps if anything is missing, and binds the current project to a Jira project
+
 ## docs-agent Issues
 
 ### Changelog generation fails
 
 **Symptoms:**
-- `/changelog` produces no output
+- `/ws-docs changelog` produces no output
 - Error reading git history
 
 **Solutions:**
@@ -176,11 +207,9 @@ Solutions for common issues with the WS Claude Marketplace.
 
 **Solutions:**
 
-1. Specify output directory explicitly when invoking command
+1. Verify you're in the expected working directory (the project root with `docs/` and `dev-docs/`)
 
-2. Check command arguments for `output-dir` parameter
-
-3. Verify you're in the expected working directory
+2. Run `/ws-docs` with no verb to see where each artifact lives and what state it's in
 
 ## Plugin Development Issues
 

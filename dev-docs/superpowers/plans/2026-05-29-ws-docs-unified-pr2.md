@@ -1203,8 +1203,8 @@ New:
 - Opt-in PreToolUse and Stop hooks gated by .claude/docs-config.yaml
 - Background subagent dispatch with live status surface
 
-Refs: docs/superpowers/specs/2026-05-29-ws-docs-unified.md
-Refs: docs/superpowers/plans/2026-05-29-ws-docs-unified-pr2.md
+Refs: dev-docs/superpowers/specs/2026-05-29-ws-docs-unified.md
+Refs: dev-docs/superpowers/plans/2026-05-29-ws-docs-unified-pr2.md
 
 Co-Authored-By: WS Agency AI suite <ai@ws.agency>
 EOF

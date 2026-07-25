@@ -914,8 +914,8 @@ to UPGRADE-NOTES.md describing the new dual-track-docs skill, revised
 existing skills, revised commands, and the destination_track input
 on agents.
 
-Refs: docs/superpowers/specs/2026-05-29-dual-track-docs-design.md
-Refs: docs/superpowers/plans/2026-05-29-dual-track-docs-pr1.md
+Refs: dev-docs/superpowers/specs/2026-05-29-dual-track-docs-design.md
+Refs: dev-docs/superpowers/plans/2026-05-29-dual-track-docs-pr1.md
 
 Co-Authored-By: WS Agency AI suite <ai@ws.agency>
 EOF

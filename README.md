@@ -19,6 +19,7 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 - [Git](https://git-scm.com/)
 - [tea CLI](https://gitea.com/gitea/tea) (required for ws-commit-commands) — `brew install tea`
 - [jira-cli](https://github.com/ankitpokhrel/jira-cli) (required for ws-commit-commands) — `brew install ankitpokhrel/jira-cli/jira-cli`, then `export JIRA_API_TOKEN=<token>` and `jira init`
+- ws-matt issue trackers: `gh` (GitHub, default) / `glab` (GitLab) / jira-cli (Jira) depending on the tracker chosen in `/ws-matt setup`
 - [Python 3](https://python.org/) (required for `/ws-docs publish` / `pull-back` — Outline sync) with `OUTLINE_API_TOKEN` exported or stored in `~/.config/ws-docs/outline-token`
 
 ## Installation
@@ -81,7 +82,7 @@ Always apply these docs-agent standards when working on this project:
 
 - **Commits**: Follow Conventional Commits format (`type(scope): description`)
 - **Code changes**: Update CHANGELOG.md for user-facing changes
-- **New features**: Check if an ADR is needed in docs/decisions/
+- **New features**: Check if an ADR is needed in dev-docs/decisions/
 - **TypeScript**: Use TSDoc comments on all public APIs
 - **GraphQL**: Add descriptions to every type, field, and argument in the schema
 - **Writing**: Follow Google style guide (active voice, present tense, second person)
@@ -178,12 +179,12 @@ ws-claude-marketplace/
 │   ├── reference/
 │   ├── explanation/
 │   ├── changelog.md         # mirror of root CHANGELOG.md
-│   ├── contributing.md      # how to report bugs / propose plugins
-│   └── superpowers/         # brainstorming specs and plans
+│   └── contributing.md      # how to report bugs / propose plugins
 ├── dev-docs/                # INTERNAL docs (maintainers / plugin authors)
 │   ├── runbooks/            # create-plugin, add-command, add-agent
 │   ├── reference/           # plugin.json + marketplace.json schemas
 │   ├── decisions/           # ADRs
+│   ├── superpowers/         # brainstorming specs and plans
 │   ├── architecture.md
 │   └── development.md       # local setup, code style, commits
 ├── CHANGELOG.md             # single source (Keep a Changelog)
@@ -191,6 +192,7 @@ ws-claude-marketplace/
 └── plugins/
     ├── docs-agent/
     ├── ws-commit-commands/
+    ├── ws-matt/
     └── ws-project-hub/
 ```
 

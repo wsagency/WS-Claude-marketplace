@@ -660,7 +660,7 @@ Expected: >= 3
 - Modify: `README.md` (docs-agent verbs list += explain/publish/pull-back; prerequisites += Python 3 for publish/pull-back; ws-project-hub section notes `role: docs`)
 - Modify: `docs/reference/commands.md` (/ws-docs verb table += 3 verbs; /ws-hub-init and /ws-hub-add-repo notes; /ws-hub-docs targeting note)
 - Modify: `CHANGELOG.md` + mirror `docs/changelog.md`
-- Modify: `docs/superpowers/specs/2026-07-18-product-docs-outline-design.md` (amendment note under Decisions: state file is `.outline-sync.json` — stdlib has no YAML parser; `--normalize` and attachment upload deferred)
+- Modify: `dev-docs/superpowers/specs/2026-07-18-product-docs-outline-design.md` (amendment note under Decisions: state file is `.outline-sync.json` — stdlib has no YAML parser; `--normalize` and attachment upload deferred)
 
 - [x] **Step 1: Apply all metadata/docs edits above** (exact wording follows the established README/reference formats).
 - [x] **Step 2: CHANGELOG entries** under `[Unreleased]`: Added — `role: docs` convention + scaffold (ws-project-hub 0.3.0), /ws-docs hub mode + explain/publish/pull-back + outline-sync.py (docs-agent 3.2.0); Changed — hub-architect targets the docs repo. Mirror to `docs/changelog.md`.

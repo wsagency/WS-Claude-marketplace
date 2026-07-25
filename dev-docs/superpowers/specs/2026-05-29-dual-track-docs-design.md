@@ -167,7 +167,7 @@ The ws-claude-marketplace itself becomes the reference example.
 ### Untouched
 
 - `plugins/*` (each plugin has internally-consistent docs of its own)
-- `docs/superpowers/specs/` (brainstorming output, not production docs)
+- `dev-docs/superpowers/specs/` (brainstorming output, not production docs)
 
 ## Rollout — three PRs
 

@@ -164,7 +164,7 @@ names `docs-architect`). Also update the stale docs-agent section in
   `hub-add-repo`, `hub-clone-all`, `hub-sync`, `hub-status`, `docs-architect`,
   `tutorial-writer`) across README, docs/, dev-docs/, plugins/ **including
   `plugins/ws-project-hub/templates/`** returns hits only in CHANGELOG history and
-  `docs/superpowers/specs/` (historical design records).
+  `dev-docs/superpowers/specs/` (historical design records).
 - All: `python3 -c "import json; json.load(open('.claude-plugin/marketplace.json'))"`.
 
 ## Rollout order
