@@ -51,7 +51,7 @@ This project uses the WS dual-track-docs convention (docs-agent plugin v3.0.0+).
 - Design specs and implementation plans live in `dev-docs/superpowers/` (internal track), not `docs/`.
 - When changing public surface (a plugin's commands, agents, or skills), update the matching reference in `docs/reference/` and ensure the plugin's `description` field stays in sync between `plugin.json` and `marketplace.json`.
 - Versioning is lockstep (ADR 0002): all `version` fields in `marketplace.json` equal the repo release version. On release: cut `[Unreleased]` in CHANGELOG.md, mirror to `docs/changelog.md`, set all versions, tag `vX.Y.Z`. Never bump a single plugin independently.
-- Context files follow the AGENTS.md convention (this file): canonical content in `AGENTS.md`, `CLAUDE.md` is only the `@AGENTS.md` import. Never add content to `CLAUDE.md` directly.
+- Context files follow the AGENTS.md convention (this file): canonical content in `AGENTS.md`, `CLAUDE.md` is only the `@AGENTS.md` import. Never add content to `CLAUDE.md` directly. Exception: tool-managed marker blocks (e.g. OpenWiki's `<!-- OPENWIKI:START/END -->`) are owned by their tool and left alone.
 
 ### On request
 

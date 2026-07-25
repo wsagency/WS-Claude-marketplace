@@ -218,7 +218,7 @@ Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-h
 
 ### /ws-hub-init
 
-Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register. Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml`, `AGENTS.md` (+ thin `CLAUDE.md` import), `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), and vendors `.claude/skills/project-hub-conventions/`. Offers to scaffold a `role: docs` product docs repo (`<project>-docs`). Registration details (schema, managed block, tech inference, docs-repo layout) are defined in the project-hub-conventions skill.
+Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register. Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml`, `AGENTS.md` (+ thin `CLAUDE.md` import), `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), and vendors `.claude/skills/project-hub-conventions/`. Offers to scaffold a `role: docs` product docs repo (`<project>-docs`), initialize a hub-level OpenWiki knowledge wiki (with pointers written into every sub-repo's AGENTS.md), and set up herdr (global skill install). Registration details (schema, managed block, tech inference, docs-repo layout) are defined in the project-hub-conventions skill.
 
 **Example:**
 ```
@@ -285,7 +285,7 @@ Refresh `description` and `tech` fields in `project.yaml` by reading each sub-re
 
 ### /ws-hub-docs
 
-Generate cross-repo documentation (architecture, contracts, deployment topology) via the `hub-architect` agent. Targets the `role: docs` repo's `dev-docs/` when one is registered, else the hub's `docs/`.
+Generate cross-repo documentation (architecture, contracts, deployment topology) via the `hub-architect` agent. When the hub has an OpenWiki (`<hub>/openwiki/`), offers a prompted wiki refresh afterwards (sub-repo commits are invisible to hub git, so the refresh names the sub-repos explicitly). Targets the `role: docs` repo's `dev-docs/` when one is registered, else the hub's `docs/`.
 
 **Example:**
 ```

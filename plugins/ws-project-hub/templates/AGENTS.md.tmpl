@@ -52,6 +52,32 @@ dev docs (`dev-docs/` — product ADRs, architecture, client materials).
 Write product-level docs THERE, not in the hub and not in feature repos.
 Repo-specific dev docs stay in each sub-repo's own `dev-docs/`.
 
+## Knowledge wiki (OpenWiki)
+
+<!-- Prune this section if the hub was initialized without OpenWiki. -->
+
+This hub maintains an OpenWiki at `openwiki/` — the knowledge repository for the
+WHOLE product (all sub-repos). Entry point: `openwiki/quickstart.md`. **Consult it
+before exploring code or answering cross-repo questions**; every sub-repo's
+AGENTS.md points here too.
+
+Refreshing: sub-repo commits are invisible to the hub's git, so OpenWiki's
+change detection cannot see them. Always refresh with an explicit prompt —
+`openwiki --update "Refresh; re-scan sub-repos: <name>, <name>, ..."` —
+or run `/ws-hub-docs`, which offers this. Do not hand-edit generated pages;
+the `<!-- OPENWIKI:START/END -->` blocks in AGENTS.md/CLAUDE.md are
+tool-managed (a permitted exception to the thin-CLAUDE.md rule).
+
+## Herdr
+
+<!-- Prune this section if the hub was initialized without herdr. -->
+
+Agent fleets for this hub run under [herdr](https://herdr.dev). If `HERDR_ENV=1`
+is set you are inside a herdr-managed pane — the globally installed `herdr`
+skill governs fleet control. Hub pattern: one workspace per sub-repo
+(`herdr workspace create --cwd <hub>/<repo> --label <repo>`); worktrees via
+`herdr worktree create`. Works with both Claude Code and omp agent kinds.
+
 ## Access notes
 
 Sub-repos you don't have git access to will simply be missing from disk and `invoke-ai.sh` will skip them with a warning. The hub itself contains no sensitive code — it's a meta repo, safe to share broadly.

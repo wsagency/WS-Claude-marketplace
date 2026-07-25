@@ -4,6 +4,14 @@ description: Register a sub-repo in the current hub (clone, adopt nested, or reg
 argument-hint: [--scan]
 ---
 
+## OpenWiki pointer (when the hub has one)
+
+If `<hub>/openwiki/` exists, every newly registered sub-repo's `AGENTS.md` gets
+the "Hub knowledge wiki" pointer section (same text `/ws-hub-init` step 5a
+writes — pointing at `../openwiki/quickstart.md`, path adjusted for sibling
+repos; create AGENTS.md + a thin CLAUDE.md if the repo has neither). Apply this
+in the registration flow below after the repo lands in `project.yaml`.
+
 ## Context
 
 - Hub directory: !`pwd`

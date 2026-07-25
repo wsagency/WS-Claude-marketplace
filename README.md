@@ -153,7 +153,7 @@ Manage multi-repo projects (mobile app, marketing site, design, docs, etc.) thro
 - `/ws-hub-describe` — Refresh sub-repo descriptions from their READMEs
 - `/ws-hub-docs` — Generate cross-repo architecture/contracts/deployment docs (hub-architect agent; targets the `role: docs` repo's `dev-docs/` when one is registered)
 
-One sub-repo per hub can be marked `role: docs` — the product docs repo (`<project>-docs`), single source of truth for user docs (synced to Outline via `/ws-docs publish`) and cross-repo dev docs. `/ws-hub-init` offers to scaffold it.
+One sub-repo per hub can be marked `role: docs` — the product docs repo (`<project>-docs`), single source of truth for user docs (synced to Outline via `/ws-docs publish`) and cross-repo dev docs. `/ws-hub-init` offers to scaffold it — plus optional hub-level [OpenWiki](https://github.com/langchain-ai/openwiki) (one knowledge wiki for all sub-repos, referenced from every sub-repo's AGENTS.md, refreshed via `/ws-hub-docs`) and [herdr](https://herdr.dev) fleet setup (global skill install; works with Claude Code and omp).
 
 Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-hub-status`).
 

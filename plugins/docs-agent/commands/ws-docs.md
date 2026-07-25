@@ -84,7 +84,7 @@ While they run, in the main session:
 - Create directories: `docs/{tutorials,how-to,reference,explanation,release-notes}/` and `dev-docs/{decisions,runbooks,reference,explanation}/`
 - Create `index.md` stubs in each subfolder if missing (one line: `# <Subfolder>`)
 - Write `.claude/docs-config.yaml` with defaults (see schema below). Prompt the user via AskUserQuestion (or a plain chat question when that tool is unavailable) if they want to override `default_audience` (ask | user | dev) or `auto.enforce_via_hooks` (true | false).
-- Append the "Documentation maintenance" section to root `AGENTS.md` (the canonical, agent-neutral context file; create it if missing). Do not overwrite existing content; if a previous maintenance section is detected in `AGENTS.md` (`# Documentation maintenance` heading), replace it; otherwise append. Never append the maintenance section to `CLAUDE.md`.
+- Append the "Documentation maintenance" section to root `AGENTS.md` (the canonical, agent-neutral context file; create it if missing). Do not overwrite existing content; if a previous maintenance section is detected in `AGENTS.md` (`# Documentation maintenance` heading), replace it; otherwise append. Never append the maintenance section to `CLAUDE.md`. (Tool-managed marker blocks in a thin `CLAUDE.md` — e.g. OpenWiki's `<!-- OPENWIKI:START/END -->` — are a permitted exception owned by their tool: leave them alone, and do not treat a thin import that carries one as "fat".)
 - Ensure root `CLAUDE.md` is the thin import. If it is missing, create it containing exactly:
 
   ```markdown

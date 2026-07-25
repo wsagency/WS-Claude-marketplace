@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.7.0] - 2026-07-25
+
+### Added
+
+- ws-project-hub OpenWiki integration: `/ws-hub-init` offers a hub-level OpenWiki (`openwiki --init` at the hub root — one knowledge wiki for all sub-repos); every sub-repo's AGENTS.md gets a "Hub knowledge wiki" pointer (also written by `/ws-hub-add-repo` for new repos); `/ws-hub-docs` offers a prompted refresh (`openwiki --update "re-scan sub-repos: ..."` — sub-repo commits are invisible to hub git); detection is filesystem presence of `<hub>/openwiki/`
+- ws-project-hub herdr integration: `/ws-hub-init` offers herdr fleet setup — one global skill install (`npx skills add ogulcancelik/herdr --skill herdr -g`, covers Claude Code and omp); hub AGENTS.md template documents the workspace-per-subrepo pattern and `HERDR_ENV` detection
+
+### Changed
+
+- Thin-CLAUDE.md convention gains one exception: tool-managed marker blocks (e.g. OpenWiki's `OPENWIKI:START/END`) are owned by their tool and left alone — encoded in AGENTS.md, the project-hub-conventions skill, /ws-docs repair guard, and ws-matt's setup skill
+
 ## [3.6.0] - 2026-07-25
 
 ### Added

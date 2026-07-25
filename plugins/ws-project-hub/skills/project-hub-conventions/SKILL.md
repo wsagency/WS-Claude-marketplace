@@ -116,7 +116,20 @@ Rules:
 
 ## Context-file cascade
 
-`AGENTS.md` is the canonical, agent-neutral context file at every level — hub and sub-repos alike. Each `CLAUDE.md` is a thin import containing only `@AGENTS.md` plus one comment line, kept because Claude Code always reads `CLAUDE.md` and the `@import` guarantees the same content loads everywhere. Why AGENTS.md is canonical: omp finds `AGENTS.md` by walking up from the cwd but **never reads a root-level `CLAUDE.md`** — content left in a fat CLAUDE.md is invisible to omp. Keep all content in `AGENTS.md`; never fatten the thin `CLAUDE.md`.
+`AGENTS.md` is the canonical, agent-neutral context file at every level — hub and sub-repos alike. Each `CLAUDE.md` is a thin import containing only `@AGENTS.md` plus one comment line, kept because Claude Code always reads `CLAUDE.md` and the `@import` guarantees the same content loads everywhere. Why AGENTS.md is canonical: omp finds `AGENTS.md` by walking up from the cwd but **never reads a root-level `CLAUDE.md`** — content left in a fat CLAUDE.md is invisible to omp. Keep all content in `AGENTS.md`; never fatten the thin `CLAUDE.md`. One permitted exception: **tool-managed marker blocks** (e.g. OpenWiki's `<!-- OPENWIKI:START/END -->`) that a tool rewrites idempotently on its own runs — leave those alone in both files.
+
+## Knowledge wiki (OpenWiki) — hub level
+
+A hub MAY carry an [OpenWiki](https://github.com/langchain-ai/openwiki) at `<hub>/openwiki/` — the knowledge repository for the whole product. Detection is filesystem presence (no config flag). Conventions:
+
+- Initialized once at the hub root (`openwiki --init`; `/ws-hub-init` step 5a offers it, and the same flow retrofits an existing hub).
+- Every sub-repo's `AGENTS.md` carries a "Hub knowledge wiki" pointer section at `../openwiki/quickstart.md` — consult the wiki BEFORE exploring code or answering cross-repo questions. `/ws-hub-add-repo` writes the pointer for new repos.
+- **Refresh is always prompted**: sub-repo commits are invisible to the hub's git, so run `openwiki --update "Refresh; re-scan sub-repos: <list>"` (plain `--update` would skip as "no changes"). `/ws-hub-docs` offers this after generating cross-repo docs.
+- Generated pages are never hand-edited; the wiki is internal (not part of the `docs/` Outline track).
+
+## Herdr — agent fleets
+
+Hubs pair well with [herdr](https://herdr.dev) (terminal agent multiplexer; supports claude and omp agent kinds). Setup is one **global** skill install per machine — `npx skills add ogulcancelik/herdr --skill herdr -g` — which covers every repo and agent reading `~/.claude/skills/`; nothing is written per sub-repo. Hub pattern: one herdr workspace per sub-repo (`herdr workspace create --cwd <hub>/<repo> --label <repo>`); `HERDR_ENV=1` marks a herdr-managed pane. The hub AGENTS.md keeps a short Herdr section when in use.
 
 The cascade:
 

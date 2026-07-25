@@ -5,6 +5,14 @@ description: Generate cross-repo architecture, contracts, and deployment docs vi
 
 ## Your task
 
+After the cross-repo docs are generated: if `<hub>/openwiki/` exists, offer to
+refresh the hub knowledge wiki. Refresh MUST use an explicit prompt (sub-repo
+commits are invisible to hub git, so plain `--update` would skip as "no
+changes"): build the sub-repo list from `project.yaml` and run
+`openwiki --update "Refresh the wiki; re-scan these sub-repos for changes: <name>, <name>, ..."`.
+Report what OpenWiki changed (it prints its own summary) and remind that the
+`<!-- OPENWIKI:START/END -->` context-file blocks are tool-managed.
+
 Produce or refresh the hub's cross-repo documentation by dispatching the `hub-architect` agent.
 
 1. Read `./project.yaml` with the Read tool. If it's missing, abort with a hint to run `/ws-hub-init` first.

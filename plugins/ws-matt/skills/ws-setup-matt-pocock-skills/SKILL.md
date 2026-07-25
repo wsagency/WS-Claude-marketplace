@@ -80,7 +80,7 @@ Let them edit before writing.
 **Pick the file to edit:**
 
 - Edit `AGENTS.md` — create it if missing. `AGENTS.md` is canonical (WS convention).
-- A `CLAUDE.md` that is a thin `@AGENTS.md` import means "AGENTS.md is canonical" — NEVER add content to a thin `CLAUDE.md` (WS convention: `CLAUDE.md` is only the import line).
+- A `CLAUDE.md` that is a thin `@AGENTS.md` import means "AGENTS.md is canonical" — NEVER add content to a thin `CLAUDE.md` (WS convention: `CLAUDE.md` is only the import line; tool-managed marker blocks such as OpenWiki's `<!-- OPENWIKI:START/END -->` may also be present — leave them alone, they don't make it "fat").
 - Only if a legacy fat `CLAUDE.md` exists with no `AGENTS.md`: add the section there, but recommend migrating to `AGENTS.md` with a thin `@AGENTS.md` import left in `CLAUDE.md`.
 
 If an `## Agent skills` block already exists in the chosen file, update its contents in-place rather than appending a duplicate. Don't overwrite user edits to the surrounding sections.

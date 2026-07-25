@@ -67,18 +67,42 @@ Ask (AskUserQuestion): "Create a product docs repo (`<project>-docs`)?"
   /ws-docs publish).
 - **No** → skip; note that `/ws-hub-add-repo` can later register a docs repo or retro-mark an already-registered repo as `role: docs`. Also prune or adapt the generated `AGENTS.md` "Documentation" section — the template presumes a `role: docs` repo exists, and it must not point at a repo that isn't there.
 
-### 5. Initialize hub git
+### 5. Knowledge & fleet tooling (optional)
+
+**5a — OpenWiki (hub-level knowledge wiki).** Ask (AskUserQuestion): "Initialize OpenWiki at the hub level — one knowledge wiki covering ALL sub-repos?"
+
+- **Yes** → verify `command -v openwiki` (missing → print `npm install -g openwiki` and let the user install first). Run `openwiki --init` at the hub root — it is interactive (provider/model onboarding); let the user drive it. It generates `openwiki/` and maintains its own `<!-- OPENWIKI:START/END -->` block in the hub's `AGENTS.md` AND `CLAUDE.md` — the CLAUDE.md block is a permitted tool-managed exception to the thin-import rule (see the skill's "Context-file cascade"). Then, for EVERY registered sub-repo, append this pointer to the sub-repo's `AGENTS.md` (creating it, plus a thin `CLAUDE.md`, if missing; adjust the relative path for sibling repos):
+
+  ```markdown
+  ## Hub knowledge wiki
+
+  The parent hub maintains an OpenWiki for the whole product at `../openwiki/`
+  (entry point: `../openwiki/quickstart.md`). Consult it BEFORE exploring other
+  sub-repos or answering cross-repo questions — it covers every repo in this hub.
+  Refresh happens at hub level (`/ws-hub-docs` offers it).
+  ```
+
+  Keep the template's "Knowledge wiki (OpenWiki)" section in the hub AGENTS.md (it documents the prompted-refresh pattern — sub-repo commits are invisible to hub git, so refresh is always `openwiki --update "Refresh; re-scan sub-repos: <list>"`).
+- **No** → prune the template's "Knowledge wiki (OpenWiki)" section from the hub AGENTS.md; the flow can be re-run later (documented in the skill — detection is simply the presence of `<hub>/openwiki/`).
+
+**5b — herdr (agent fleet multiplexer).** Ask: "Set up herdr for this hub?"
+
+- **Yes** → the recommended setup is one GLOBAL skill install per machine (covers every repo and every agent that reads `~/.claude/skills/` — Claude Code and omp): `npx skills add ogulcancelik/herdr --skill herdr -g`. Verify `command -v herdr`; if the binary is missing print the install options (`curl -fsSL https://herdr.dev/install.sh | sh`, or `brew install herdr`). Keep the template's "Herdr" section in the hub AGENTS.md (workspace-per-subrepo pattern).
+- **No** → prune the template's "Herdr" section from the hub AGENTS.md.
+
+### 6. Initialize hub git
 
 ```bash
 cd <hub-dir>
 git init -q
 git add .gitignore .claude README.md AGENTS.md CLAUDE.md project.yaml invoke-ai.sh
+git add openwiki .github 2>/dev/null || true   # present only if step 5a ran
 git commit -q -m "chore: initialize <project> hub"
 ```
 
 Verify with `git status` that no sub-repo content shows up as untracked (the .gitignore should be filtering them out).
 
-### 6. Generate `AGENTS.md` repo sections
+### 7. Generate `AGENTS.md` repo sections
 
 Fill the region between the `ws-hub:repos` markers (replacing the template's placeholder — see "Regenerated region (marker pair)" in the skill) with one block per registered repo:
 
@@ -92,14 +116,16 @@ Fill the region between the `ws-hub:repos` markers (replacing the template's pla
 - url: <url if present>
 ```
 
-### 7. Report back
+### 8. Report back
 
 - Path to created hub
 - Each registered repo: name, where it ended up (nested/sibling/cloned)
+- OpenWiki / herdr status (initialized / skipped)
 - Next steps:
   - `cd <hub> && ./invoke-ai.sh` to launch
   - `/ws-hub-repos clone` if any registered repos aren't on disk
   - `/ws-hub-add-repo` to register more
+  - `/ws-hub-docs` to generate cross-repo docs (and refresh OpenWiki when initialized)
   - Each sub-repo should keep repo-specific rules in its own `AGENTS.md`, with a thin `CLAUDE.md` containing only `@AGENTS.md` (Claude Code auto-loads it when the repo is mounted via `--add-dir`; omp does not auto-load it — read it when entering the sub-repo)
 
 ### Constraints
