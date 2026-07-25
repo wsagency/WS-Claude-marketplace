@@ -4,8 +4,9 @@
 Subcommands: lint | push | pull.  Stdlib only.  State: .outline-sync.json
 at --root (committed).  Auth: OUTLINE_API_TOKEN env var, or the file
 ~/.config/ws-docs/outline-token.  Git stays authoritative: push refuses
-files changed on both sides (see --force), pull only writes working-tree
-files for a reviewed PR.
+files changed on both sides (--force bypasses ONLY those revision
+conflicts, never lint violations), pull only writes working-tree files
+for a reviewed PR.
 
 TODO(v-next): --normalize (auto-rewrite of profile violations) and
 image/attachment upload from docs/assets/ are deferred.
@@ -17,18 +18,27 @@ STATE_FILE = ".outline-sync.json"
 TOKEN_FILE = os.path.expanduser("~/.config/ws-docs/outline-token")
 
 HTML_TAG = re.compile(r"<(?!!--)/?[a-zA-Z][^>]*>")
+AUTOLINK = re.compile(  # CommonMark autolinks: <scheme://...> and <user@host>
+    r"<[A-Za-z][A-Za-z0-9+.\-]*://[^<>\s]+>|<[^<>\s@]+@[^<>\s@]+\.[^<>\s@]+>")
 FOOTNOTE = re.compile(r"\[\^[^\]]+\]")
 HIGHLIGHT = re.compile(r"==[^=\n]+==")
 HEADING_ID = re.compile(r"^#{1,6} .*\{#[-\w]+\}\s*$", re.M)
-FENCE = re.compile(r"(?ms)^ {0,3}```.*?^ {0,3}```[^\n]*$")
-INLINE_CODE = re.compile(r"`[^`\n]*(?:\n[^`\n]*)?`")
+FENCE_PAT = r"^ {0,3}```.*?^ {0,3}```[^\n]*$"
+INLINE_CODE_PAT = r"`[^`\n]*(?:\n[^`\n]*)?`"
+FENCE = re.compile("(?ms)" + FENCE_PAT)
+INLINE_CODE = re.compile(INLINE_CODE_PAT)
+CODE_REGION = re.compile("(?ms)" + FENCE_PAT + "|" + INLINE_CODE_PAT)
+
+
+class SyncError(Exception):
+    """Outline API request failed."""
 
 
 def lint_markdown(text):
     """Outline-safe profile check. Returns [] when clean."""
     stripped = INLINE_CODE.sub("", FENCE.sub("", text))  # code may contain anything
     violations = []
-    if HTML_TAG.search(stripped):
+    if HTML_TAG.search(AUTOLINK.sub("", stripped)):  # autolinks are not HTML
         violations.append("raw HTML element (Outline has no HTML support)")
     if FOOTNOTE.search(stripped):
         violations.append("footnote syntax [^..] (unsupported)")
@@ -93,6 +103,25 @@ def walk_docs(root, docs_dir):
     return files
 
 
+def read_tree(root, docs_dir):
+    """Single snapshot of the docs tree: ordered {relpath: text}."""
+    texts = {}
+    for p in walk_docs(root, docs_dir):
+        with open(os.path.join(root, p)) as f:
+            texts[p] = f.read()
+    return texts
+
+
+def lint_files(texts):
+    """{path: violations} for every file that fails the profile check."""
+    failures = {}
+    for path, text in texts.items():
+        v = lint_markdown(text)
+        if v:
+            failures[path] = v
+    return failures
+
+
 def parent_of(path, docs_dir):
     folder = os.path.dirname(path).replace(os.sep, "/")
     if os.path.basename(path) == "index.md":
@@ -106,29 +135,52 @@ def parent_of(path, docs_dir):
     return f"{folder}/index.md"
 
 
+def split_fragment(target):
+    if "#" in target:
+        path, frag = target.split("#", 1)
+        return path, "#" + frag
+    return target, ""
+
+
+def sub_links_outside_code(text, repl):
+    """Apply LINK.sub(repl) only outside fenced blocks and inline code."""
+    out, last = [], 0
+    for m in CODE_REGION.finditer(text):
+        out.append(LINK.sub(repl, text[last:m.start()]))
+        out.append(m.group(0))
+        last = m.end()
+    out.append(LINK.sub(repl, text[last:]))
+    return "".join(out)
+
+
 def rewrite_links_to_outline(text, path, url_map):
+    """Rewrite relative .md links to /doc/<urlId>. Code regions untouched."""
     base = os.path.dirname(path)
 
     def repl(m):
-        target = m.group(2)
-        if target.startswith(("http://", "https://", "/", "#", "mailto:")):
+        target, frag = split_fragment(m.group(2))
+        if not target or target.startswith(("http://", "https://", "/", "mailto:")):
             return m.group(0)
         resolved = os.path.normpath(os.path.join(base, target)).replace(os.sep, "/")
         if resolved in url_map:
-            return f"{m.group(1)}/doc/{url_map[resolved]}{m.group(3)}"
+            return f"{m.group(1)}/doc/{url_map[resolved]}{frag}{m.group(3)}"
         return m.group(0)
-    return LINK.sub(repl, text)
+    return sub_links_outside_code(text, repl)
 
 
-def rewrite_links_to_local(text, reverse_map):
+def rewrite_links_to_local(text, reverse_map, dest_path):
+    """Rewrite /doc/<urlId-or-id> links to paths relative to dest_path's dir."""
+    base = os.path.dirname(dest_path)
+
     def repl(m):
-        target = m.group(2)
+        target, frag = split_fragment(m.group(2))
         if target.startswith("/doc/"):
-            url_id = target[len("/doc/"):]
-            if url_id in reverse_map:
-                return f"{m.group(1)}{os.path.relpath(reverse_map[url_id], 'docs/tutorials').replace(os.sep, '/')}{m.group(3)}"
+            key = target[len("/doc/"):]
+            if key in reverse_map:
+                rel = os.path.relpath(reverse_map[key], base).replace(os.sep, "/")
+                return f"{m.group(1)}{rel}{frag}{m.group(3)}"
         return m.group(0)
-    return LINK.sub(repl, text)
+    return sub_links_outside_code(text, repl)
 
 
 def plan_push(files, read_text, state):
@@ -160,87 +212,153 @@ class OutlineAPI:
             with urllib.request.urlopen(req) as resp:
                 return json.load(resp)["data"]
         except urllib.error.HTTPError as e:
-            raise SystemExit(f"Outline API {endpoint} failed: {e.code} {e.read().decode()[:300]}")
+            raise SyncError(f"Outline API {endpoint} failed: {e.code} {e.read().decode()[:300]}")
+        except urllib.error.URLError as e:
+            raise SyncError(f"Outline API {endpoint} failed: {e.reason}")
+
+
+def list_documents(api, collection_id, page_size=100):
+    """All documents in a collection (documents.list is paginated)."""
+    docs, offset = [], 0
+    while True:
+        batch = api.call("documents.list", collectionId=collection_id,
+                         limit=page_size, offset=offset)
+        docs.extend(batch)
+        if len(batch) < page_size:
+            return docs
+        offset += page_size
 
 
 def cmd_lint(root, state):
-    failures = {}
-    for path in walk_docs(root, state["docs_dir"]):
-        v = lint_markdown(open(os.path.join(root, path)).read())
-        if v:
-            failures[path] = v
+    failures = lint_files(read_tree(root, state["docs_dir"]))
     print(json.dumps({"clean": not failures, "violations": failures}, indent=2))
     return 1 if failures else 0
 
 
-def cmd_push(root, state, dry_run, force):
-    if cmd_lint(root, state) and not force:
-        sys.exit("push refused: profile violations above (fix or --force)")
-    api = None if dry_run else OutlineAPI(state["outline"]["url"], read_token())
-    if not state["outline"]["collection_id"] and not dry_run:
-        name = os.path.basename(os.path.abspath(root))
-        state["outline"]["collection_id"] = api.call("collections.create", name=name)["id"]
-    files = walk_docs(root, state["docs_dir"])
-    read = lambda p: open(os.path.join(root, p)).read()
-    plan = plan_push(files, read, state)
-    url_map = {p: e["id"] for p, e in state["documents"].items() if "id" in e}
-    report = {"created": [], "updated": [], "skipped": [], "conflicts": [], "archived": []}
-    for path in files:
-        action = plan[path]
-        if action == "skip":
-            report["skipped"].append(path); continue
-        text = rewrite_links_to_outline(read(path), path, url_map)
-        title = doc_title(read(path), path)
-        if dry_run:
-            report[action + "d"].append(path); continue
-        if action == "update":
+def cmd_push(root, state, dry_run, force, collection_name=None):
+    docs_dir = state["docs_dir"]
+    texts = read_tree(root, docs_dir)  # one read per file: hash + title + render
+    files = list(texts)
+    if not files and state["documents"]:
+        sys.exit(f"push refused: no markdown files under {docs_dir}/ in {root} "
+                 f"but state tracks {len(state['documents'])} documents "
+                 "(wrong --root? deleted docs dir?)")
+    failures = lint_files(texts)
+    report = {"lint": {"clean": not failures, "violations": failures},
+              "created": [], "updated": [], "skipped": [], "conflicts": [],
+              "link_fixups": [], "archived": []}
+    if failures:  # never bypassed: --force only covers revision conflicts
+        report["error"] = "push refused: profile violations (fix them first)"
+        print(json.dumps(report, indent=2))
+        return 1
+    plan = plan_push(files, lambda p: texts[p], state)
+    stale = [p for p in state["documents"] if p not in files]
+    if dry_run:
+        for path in files:
+            report["skipped" if plan[path] == "skip" else plan[path] + "d"].append(path)
+        report["archived"] = stale
+        print(json.dumps(report, indent=2))
+        return 0
+    api = OutlineAPI(state["outline"]["url"], read_token())
+    url_map = {p: e.get("url_id") or e["id"]
+               for p, e in state["documents"].items() if "id" in e}
+    sent, pushed = {}, []
+    try:
+        if not state["outline"]["collection_id"]:
+            name = (collection_name or state["outline"].get("collection_name")
+                    or os.path.basename(os.path.abspath(root)))
+            state["outline"]["collection_id"] = api.call("collections.create", name=name)["id"]
+            state["outline"]["collection_name"] = name
+            save_state(root, state)
+        for path in files:  # pass 1: create/update, building the full url map
+            action = plan[path]
+            if action == "skip":
+                report["skipped"].append(path); continue
+            raw = texts[path]
+            body = rewrite_links_to_outline(raw, path, url_map)
+            title = doc_title(raw, path)
+            if action == "update":
+                entry = state["documents"][path]
+                info = api.call("documents.info", id=entry["id"])
+                if info.get("revision") != entry.get("last_synced_revision") and not force:
+                    report["conflicts"].append(path); continue
+                doc = api.call("documents.update", id=entry["id"], title=title, text=body)
+            else:
+                parent = parent_of(path, docs_dir)
+                parent_id = state["documents"].get(parent, {}).get("id") if parent else None
+                doc = api.call("documents.create", title=title, text=body, publish=True,
+                               collectionId=state["outline"]["collection_id"],
+                               **({"parentDocumentId": parent_id} if parent_id else {}))
+            state["documents"][path] = {"id": doc["id"],
+                                        "url_id": doc.get("urlId") or doc["id"],
+                                        "last_synced_hash": content_hash(raw),
+                                        "last_synced_revision": doc.get("revision")}
+            save_state(root, state)
+            url_map[path] = doc.get("urlId") or doc["id"]
+            sent[path] = body
+            pushed.append(path)
+            report[action + "d"].append(path)
+        for path in pushed:  # pass 2: re-render with the complete url map
+            final = rewrite_links_to_outline(texts[path], path, url_map)
+            if final == sent[path]:
+                continue
             entry = state["documents"][path]
-            info = api.call("documents.info", id=entry["id"])
-            if info.get("revision") != entry.get("last_synced_revision") and not force:
-                report["conflicts"].append(path); continue
-            doc = api.call("documents.update", id=entry["id"], title=title, text=text)
-        else:
-            parent = parent_of(path, state["docs_dir"])
-            parent_id = state["documents"].get(parent, {}).get("id") if parent else None
-            doc = api.call("documents.create", title=title, text=text, publish=True,
-                           collectionId=state["outline"]["collection_id"],
-                           **({"parentDocumentId": parent_id} if parent_id else {}))
-        state["documents"][path] = {"id": doc["id"], "url_id": doc.get("urlId", doc["id"]),
-                                    "last_synced_hash": content_hash(read(path)),
-                                    "last_synced_revision": doc.get("revision")}
-        url_map[path] = doc["id"]
-        report[action + "d"].append(path)
-    for path in [p for p in state["documents"] if p not in files]:
-        if not dry_run:
+            doc = api.call("documents.update", id=entry["id"],
+                           title=doc_title(texts[path], path), text=final)
+            entry["last_synced_revision"] = doc.get("revision")
+            save_state(root, state)
+            report["link_fixups"].append(path)
+        for path in stale:
             api.call("documents.archive", id=state["documents"][path]["id"])
             del state["documents"][path]
-        report["archived"].append(path)
-    if not dry_run:
-        save_state(root, state)
+            save_state(root, state)
+            report["archived"].append(path)
+    except Exception as e:  # partial push: state was saved after each mutation
+        report["error"] = f"push aborted: {e}"
+        print(json.dumps(report, indent=2))
+        return 1
     print(json.dumps(report, indent=2))
     return 2 if report["conflicts"] else 0
 
 
 def cmd_pull(root, state):
     api = OutlineAPI(state["outline"]["url"], read_token())
-    reverse = {e["id"]: p for p, e in state["documents"].items()}
+    link_map = {}  # both urlId and id resolve back to the local path
+    for p, e in state["documents"].items():
+        link_map[e["id"]] = p
+        if e.get("url_id"):
+            link_map[e["url_id"]] = p
+    known_ids = {e["id"] for e in state["documents"].values()}
     report = {"pulled": [], "new_from_outline": [], "unchanged": []}
     for path, entry in state["documents"].items():
         info = api.call("documents.info", id=entry["id"])
         if info.get("revision") == entry.get("last_synced_revision"):
             report["unchanged"].append(path); continue
-        text = rewrite_links_to_local(info["text"], {e.get("url_id", e["id"]): p
-                                                    for p, e in state["documents"].items()})
-        os.makedirs(os.path.dirname(os.path.join(root, path)), exist_ok=True)
-        open(os.path.join(root, path), "w").write(text)
+        text = rewrite_links_to_local(info["text"], link_map, path)
+        dest = os.path.join(root, path)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "w") as f:
+            f.write(text)
+        entry["last_synced_revision"] = info.get("revision")
+        entry["last_synced_hash"] = content_hash(text)
+        save_state(root, state)
         report["pulled"].append(path)
-    listing = api.call("documents.list", collectionId=state["outline"]["collection_id"], limit=100)
-    for doc in listing:
-        if doc["id"] not in reverse:
-            new_path = f'{state["docs_dir"]}/from-outline/{doc["id"]}.md'
-            os.makedirs(os.path.dirname(os.path.join(root, new_path)), exist_ok=True)
-            open(os.path.join(root, new_path), "w").write(f'# {doc["title"]}\n\n{doc.get("text", "")}')
-            report["new_from_outline"].append(new_path)
+    for doc in list_documents(api, state["outline"]["collection_id"]):
+        if doc["id"] in known_ids:
+            continue
+        new_path = f'{state["docs_dir"]}/from-outline/{doc["id"]}.md'
+        text = f'# {doc["title"]}\n\n{doc.get("text", "")}'
+        dest = os.path.join(root, new_path)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with open(dest, "w") as f:
+            f.write(text)
+        state["documents"][new_path] = {  # registered so the next push updates
+            "id": doc["id"], "url_id": doc.get("urlId") or doc["id"],
+            "last_synced_hash": content_hash(text),
+            "last_synced_revision": doc.get("revision")}
+        save_state(root, state)
+        report["new_from_outline"].append(new_path)
+    save_state(root, state)
     print(json.dumps(report, indent=2))
     return 0
 
@@ -251,13 +369,20 @@ def main():
     ap.add_argument("--root", default=".")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--collection-name",
+                    help="Outline collection to create on first push "
+                         "(default: basename of --root)")
     args = ap.parse_args()
     state = load_state(args.root)
-    if args.command == "lint":
-        sys.exit(cmd_lint(args.root, state))
-    if args.command == "push":
-        sys.exit(cmd_push(args.root, state, args.dry_run, args.force))
-    sys.exit(cmd_pull(args.root, state))
+    try:
+        if args.command == "lint":
+            sys.exit(cmd_lint(args.root, state))
+        if args.command == "push":
+            sys.exit(cmd_push(args.root, state, args.dry_run, args.force,
+                              collection_name=args.collection_name))
+        sys.exit(cmd_pull(args.root, state))
+    except SyncError as e:
+        sys.exit(str(e))
 
 
 if __name__ == "__main__":

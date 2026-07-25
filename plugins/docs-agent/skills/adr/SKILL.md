@@ -26,6 +26,26 @@ ADRs capture the "why" behind technical choices. They prevent teams from re-argu
 - Changing a significant convention
 - Any decision that would be questioned 6 months later
 
+## Two-Tier Rule: Lightweight by Default, Full MADR for Big Decisions
+
+Not every decision deserves a full MADR document. Use two tiers:
+
+**Lightweight (the default).** A Matt-style micro-ADR: a title plus 1-3 sentences covering what we're deciding, why, and what would make us revisit it. Use this for every decision unless the full-MADR criteria below are met.
+
+```markdown
+# NNNN — [Title of the decision]
+
+[1-3 sentences: what we're deciding + why + what would trigger revisiting it.]
+```
+
+**Full MADR v4.0.0 (big decisions only).** Required when the decision meets any of these criteria:
+
+- **Breaking** — it changes a public contract, convention, or behavior others depend on
+- **Costly to undo** — reversing it later would take significant rework or migration
+- **Multiple serious options** — there were real alternatives whose tradeoffs deserve a written comparison
+
+Both tiers live in the same home (`dev-docs/decisions/`) and share one sequential numbering — a lightweight ADR and a full MADR are peers in the same `NNNN` sequence. A lightweight ADR can later be superseded by a full one (and vice versa) using the normal supersede flow.
+
 ## MADR v4.0.0 Format
 
 ```markdown
@@ -89,7 +109,7 @@ Chosen option: "[Option N]", because [justification].
 
 ## File Organization
 
-Store ADRs in `dev-docs/decisions/` numbered sequentially:
+Store ADRs in `dev-docs/decisions/` numbered sequentially (lightweight and full MADR share the same sequence):
 
 ```
 dev-docs/decisions/
@@ -126,4 +146,4 @@ Add to your pull request template:
 
 ## Destination in the dual-track convention
 
-ADRs are internal contributor documentation. They live in `dev-docs/decisions/`, never in user-facing `docs/`. The `/adr` command always writes there.
+ADRs are internal contributor documentation. They live in `dev-docs/decisions/`, never in user-facing `docs/`. `/ws-docs adr` always writes there.

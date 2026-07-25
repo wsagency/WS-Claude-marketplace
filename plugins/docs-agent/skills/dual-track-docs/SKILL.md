@@ -120,7 +120,7 @@ If the config file exists and `default_audience` is `user` or `dev`, skip the pr
 
 ## Changelog mirror
 
-The canonical changelog lives at the repo root (`CHANGELOG.md`) for GitHub's auto-detection. The user-facing site needs the same content under `docs/`. Commands that touch the changelog (`/changelog`, `/changelog-entry`) always update both:
+The canonical changelog lives at the repo root (`CHANGELOG.md`) for GitHub's auto-detection. The user-facing site needs the same content under `docs/`. `/ws-docs changelog` always updates both:
 
 1. Write or edit `CHANGELOG.md` at the root
 2. Copy the full contents to `docs/changelog.md` (overwrites — single source remains root)

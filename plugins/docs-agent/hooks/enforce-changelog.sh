@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # docs-agent PreToolUse hook
 # Blocks `git commit` when staged code changes lack a CHANGELOG.md entry.
+# Per-commit enforcement is opt-in, NOT default: PR-time is canonical
+# (entries land via /ws-commit-push-pr). This hook only enforces when
+# .claude/docs-config.yaml sets auto.changelog_per_commit: true.
 # No-op when .claude/docs-config.yaml is missing in the project.
 
 set -euo pipefail
@@ -37,18 +40,39 @@ enforce=$(awk '
 ' .claude/docs-config.yaml)
 [[ "$enforce" == "false" ]] && exit 0
 
-# Detect skip-types from config (comma-list inside [...]); default skip set
-skip_types_default="docs chore test style build ci"
-skip_types=$(awk '
-  /^[[:space:]]*changelog:/ {incl=1; next}
-  incl && /^[^[:space:]]/ {incl=0}
-  incl && /skip_types:/ {
-    sub(/^[[:space:]]*skip_types:[[:space:]]*/,"")
-    gsub(/[\[\]"'\'']/,"")
-    gsub(/,/," ")
+# Timing decision: per-commit enforcement is opt-in. PR-time is canonical
+# (/ws-commit-push-pr adds the entry). Only enforce when docs-config.yaml
+# has auto.changelog_per_commit: true; absent or false → no-op.
+per_commit=$(awk '
+  /^[[:space:]]*auto:/ {inauto=1; next}
+  inauto && /^[^[:space:]]/ {inauto=0}
+  inauto && /changelog_per_commit:/ {
+    sub(/^[[:space:]]*changelog_per_commit:[[:space:]]*/,"")
+    sub(/[[:space:]]+#.*$/,"")
     print; exit
   }
 ' .claude/docs-config.yaml)
+[[ "$per_commit" == "true" ]] || exit 0
+
+# Detect skip-types (comma-list inside [...]): docs-config.yaml
+# changelog.skip_types, falling back to .claude/ws-project.yaml
+# changelog.skip_types, then the default set.
+skip_types_default="docs chore test style build ci"
+read_skip_types() {
+  [[ -f "$1" ]] || return 0
+  awk '
+    /^[[:space:]]*changelog:/ {incl=1; next}
+    incl && /^[^[:space:]]/ {incl=0}
+    incl && /skip_types:/ {
+      sub(/^[[:space:]]*skip_types:[[:space:]]*/,"")
+      gsub(/[\[\]"'\'']/,"")
+      gsub(/,/," ")
+      print; exit
+    }
+  ' "$1"
+}
+skip_types=$(read_skip_types .claude/docs-config.yaml || true)
+[[ -z "$skip_types" ]] && skip_types=$(read_skip_types .claude/ws-project.yaml || true)
 skip_types="${skip_types:-$skip_types_default}"
 
 # Inspect staged diff: any code changes outside docs/, dev-docs/, *.md?
@@ -83,13 +107,9 @@ if [[ -n "$commit_type" ]]; then
   done
 fi
 
-# Block
-cat <<JSON
-{
-  "hookSpecificOutput": {
-    "permissionDecision": "deny"
-  },
-  "systemMessage": "Code changes staged without a CHANGELOG.md entry. Add an entry under [Unreleased] via /ws-docs changelog, or stage CHANGELOG.md manually. To bypass once, prefix the commit with a skip type (docs:, chore:, test:, style:, build:, ci:)."
-}
+# Block: print the complete hookSpecificOutput JSON on stdout and exit 0.
+# (exit 2 would make the harness read stderr only and ignore this JSON.)
+cat <<'JSON'
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Code changes staged without a CHANGELOG.md entry. Add an entry under [Unreleased] via /ws-docs changelog, or stage CHANGELOG.md manually. To bypass once, prefix the commit with a skip type (docs:, chore:, test:, style:, build:, ci:)."}}
 JSON
-exit 2
+exit 0

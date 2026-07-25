@@ -61,8 +61,32 @@ The invoking command may pass these structured inputs in your prompt:
 
 Return a structured markdown report with two sections:
 
-1. The artifact table (use exactly the format shown in the `/ws-docs` command file)
-2. The "Suggested:" list of recommended next verbs
+1. The artifact table, in exactly this format:
+
+```
+ws-docs status
+─────────────────────────────────────────────────────────────────
+Artifact                  Status      Notes
+─────────────────────────────────────────────────────────────────
+docs/                     <state>     <note>
+  docs/index.md           <state>     <note>
+  docs/tutorials/         <state>     <note>
+  docs/how-to/            <state>     <note>
+  docs/reference/         <state>     <note>
+  docs/explanation/       <state>     <note>
+dev-docs/                 <state>     <note>
+CHANGELOG.md              <state>     <note>
+docs/changelog.md         <state>     <note>
+CONTRIBUTING.md           <state>     <note>
+.claude/docs-config.yaml  <state>     <note>
+
+Suggested:
+  <recommended verbs>
+```
+
+State icons: `✓ present`, `⚠ stale|behind|empty`, `✗ missing`.
+
+2. The "Suggested:" list of recommended next verbs (as shown at the bottom of the table)
 
 Do NOT write any files. Read-only operation.
 

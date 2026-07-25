@@ -1,24 +1,7 @@
 ---
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, AskUserQuestion
 description: "Unified docs entry: discovery, init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes, explain, publish, pull-back"
-arguments:
-  - name: verb
-    description: "Verb: init | audit | catchup | repair | write | adr | architecture | contributing | changelog | release-notes | explain | publish | pull-back (omit for discovery; publish/pull-back require Python 3 + OUTLINE_API_TOKEN)"
-    required: false
-  - name: arg1
-    description: "Verb-specific arg 1: write <type>; adr <decision>; changelog <version>; release-notes <version>"
-    required: false
-  - name: arg2
-    description: "Verb-specific arg 2: write <topic>"
-    required: false
-allowed_tools:
-  - Bash
-  - Read
-  - Write
-  - Edit
-  - Glob
-  - Grep
-  - Task
-  - AskUserQuestion
+argument-hint: "[init | audit | catchup | repair | write | adr | architecture | contributing | changelog | release-notes | explain | publish | pull-back] [verb args...]"
 ---
 
 # /ws-docs — Unified Documentation Entry
@@ -59,7 +42,7 @@ The scope answer may be cached in `.claude/docs-config.yaml` as
 
 ## Routing
 
-Read the verb from `{{ verb }}`. If empty → **discovery** mode. Otherwise dispatch the verb.
+The verb is `$1` (the first word of `$ARGUMENTS`). If empty → **discovery** mode. Otherwise dispatch the verb.
 
 ### No verb → Discovery
 
@@ -111,15 +94,15 @@ While they run, in the main session:
 
 - If a real (non-thin) `CLAUDE.md` exists (anything beyond the `@AGENTS.md` import — including a v2.x/v3.x `# Documentation maintenance` section), offer migration via AskUserQuestion: move its content into `AGENTS.md` (dropping any old maintenance section there — the fresh one is appended above), then replace `CLAUDE.md` with the two-line import. If the user declines, leave `CLAUDE.md` untouched; the maintenance section still goes to `AGENTS.md`.
 
-Poll the dispatched agents every 3-5 seconds (TaskList / TaskGet) and print a status block per poll like:
+Wait for the background agents' completion notifications; summarize when all report. As agents finish, you may print a status block like:
 
 ```
 /ws-docs init  —  4 subagents
 
-⏳ architecture-documenter   12s   writing dev-docs/architecture.md
-⏳ contributing-generator    08s   analyzing tooling...
-✓ diataxis-writer           18s   docs/tutorials/getting-started.md
-⏳ changelog-analyzer        15s   parsed 240/247 commits
+⏳ architecture-documenter   running   writing dev-docs/architecture.md
+⏳ contributing-generator    running   analyzing tooling...
+✓ diataxis-writer           done      docs/tutorials/getting-started.md
+⏳ changelog-analyzer        running   parsing commits
 ```
 
 When all complete, print a final summary listing every file created. Commit nothing automatically — print the suggested commit message:
@@ -137,7 +120,7 @@ Verbose dijagnoza. Run 3 agents in parallel (background) — same dispatch patte
 2. `public-api-watcher` — returns detected public API changes needing `docs/reference/` updates
 3. `arch-watcher` — returns ADR candidates (architectural signals)
 
-While they run, render the same live status block format. When all complete, merge the three reports: render the same table as discovery (from `docs-doctor`), then a follow-up section combining the watcher findings:
+Wait for the background agents' completion notifications; summarize when all report. Then merge the three reports: render the same table as discovery (from `docs-doctor`), then a follow-up section combining the watcher findings:
 
 ```
 ─────────────────
@@ -164,7 +147,7 @@ Run 3 agents in parallel (background):
 2. `public-api-watcher` — returns reference files needing update
 3. `arch-watcher` — returns ADR candidates
 
-While they run, render the same live status block format. When all complete, present an interactive triage:
+Wait for the background agents' completion notifications; summarize when all report. Then present an interactive triage:
 
 ```
 ─────────────────
@@ -199,7 +182,7 @@ Print a summary of what was repaired.
 
 ### verb = write
 
-`{{ arg1 }}` = type (`tutorial | howto | reference | explanation`), `{{ arg2 }}` = topic.
+`$2` = type (`tutorial | howto | reference | explanation`), `$3` = topic.
 
 If type is missing or invalid → AskUserQuestion to pick from the 4 options. If topic is missing → AskUserQuestion for it.
 
@@ -219,24 +202,24 @@ Pass `destination_track` and `destination_path` inputs to the agent (plus `quadr
 
 ### verb = adr
 
-`{{ arg1 }}` = decision text (required; AskUserQuestion if missing).
+`$2` = decision text (required; AskUserQuestion if missing).
 
 1. Scan `dev-docs/decisions/` for the highest existing number; new number = highest + 1, zero-padded to 4 digits.
 2. Slug the decision text to kebab-case for the filename: `dev-docs/decisions/<NNNN>-<slug>.md`
-3. Dispatch `adr-writer` foreground with the decision, target path, and project context.
+3. Dispatch `adr-writer` foreground with the decision, target path, and project context. Two-tier rule (see the `adr` skill): the lightweight template (`# NNNN — Title` + 1-3 sentences) is the default; full MADR v4.0.0 only for big decisions (breaking / costly to undo / multiple serious options). Both tiers share the same home and numbering.
 4. Print "✓ wrote `<path>`".
 
 ### verb = architecture
 
-Dispatch `architecture-documenter` foreground. Before writing, show a diff vs current `dev-docs/architecture.md` (if it exists) and AskUserQuestion: proceed | cancel. On proceed, write the new version.
+Dispatch `architecture-documenter` in the background (`run_in_background: true`) and wait for its completion notification. Before writing, show a diff vs current `dev-docs/architecture.md` (if it exists) and AskUserQuestion: proceed | cancel. On proceed, write the new version.
 
 ### verb = contributing
 
-Dispatch `contributing-generator` foreground. It will produce 3 file contents (root router, `docs/contributing.md`, `dev-docs/development.md`). Before writing, show a diff per file vs current content and AskUserQuestion per file: write | skip. Write only the confirmed files.
+Dispatch `contributing-generator` in the background (`run_in_background: true`) and wait for its completion notification. It will produce 3 file contents (root router, `docs/contributing.md`, `dev-docs/development.md`). Before writing, show a diff per file vs current content and AskUserQuestion per file: write | skip. Write only the confirmed files.
 
 ### verb = changelog
 
-`{{ arg1 }}` = optional version (e.g. `v1.3.0`).
+`$2` = optional version (e.g. `v1.3.0`).
 
 Dispatch `changelog-analyzer` foreground:
 - No version → update `[Unreleased]` section with new entries from commits since last entry
@@ -246,7 +229,7 @@ After the agent updates `CHANGELOG.md`, mirror it to `docs/changelog.md` (Read +
 
 ### verb = release-notes
 
-`{{ arg1 }}` = version (e.g. `v1.3.0`). If missing, use the most recent git tag; if no tags, AskUserQuestion.
+`$2` = version (e.g. `v1.3.0`). If missing, use the most recent git tag; if no tags, AskUserQuestion.
 
 Dispatch `release-notes-writer` foreground. Write to `docs/release-notes/<version>.md` in Linear style with screenshot placeholders (`![screenshot](TODO)`).
 
@@ -272,7 +255,8 @@ abort on violations, listing them per file; (2) run
 `... outline-sync.py push --root <repo>` (add `--dry-run` first and show the
 plan when the user hasn't published before); (3) report created/updated/
 skipped/conflicts/archived from the JSON; conflicts mean the doc changed in
-Outline too — resolve via `pull-back`, or `--force` to overwrite; (4) commit
+Outline too — resolve via `pull-back`, or `--force`, which overwrites
+conflicting docs (revision mismatch); it does NOT skip the lint gate; (4) commit
 `.outline-sync.json` if it changed.
 
 Requires Python 3 + `OUTLINE_API_TOKEN` (or `~/.config/ws-docs/outline-token`);
@@ -303,8 +287,12 @@ docs:
   user_track: docs
   dev_track: dev-docs
   default_audience: ask
+  changelog:
+    # Commit types that never require a CHANGELOG entry.
+    # Falls back to .claude/ws-project.yaml changelog.skip_types, then this default.
+    skip_types: [docs, chore, test, style, build, ci]
   auto:
-    changelog_per_commit: true
+    changelog_per_commit: false  # PR-time is canonical (ws-commit-push-pr); set true only for repos without the PR flow
     adr_for_arch_changes: true
     enforce_via_hooks: true
   surface:
@@ -316,4 +304,4 @@ docs:
 - Never overwrite files without prompt + confirmation (except in `init` when files are missing).
 - Never push or commit on the user's behalf without explicit verb authorization (only `catchup` commits automatically after user triage; `publish` commits `.outline-sync.json`; `pull-back` commits to its review branch).
 - All file paths are relative to the project root unless explicitly noted.
-- Heavy verbs (`init`, `audit`, `catchup`, `architecture`, `contributing`) use `run_in_background: true`; lightweight verbs (`write`, `adr`, `release-notes`, `changelog`, `explain`, `publish`, `pull-back`) run foreground.
+- Background verbs (`init`, `audit`, `catchup`, `architecture`, `contributing`) dispatch agents with `run_in_background: true`; all other verbs (`repair`, `write`, `adr`, `changelog`, `release-notes`, `explain`, `publish`, `pull-back`) run foreground. This is the single authoritative list — the per-verb sections above follow it.

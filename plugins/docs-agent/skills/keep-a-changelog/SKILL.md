@@ -86,4 +86,4 @@ See `examples/changelog-template.md` for a ready-to-use template.
 
 ## Single source + mirror
 
-In the dual-track-docs convention, the canonical `CHANGELOG.md` lives at the repo root for GitHub's auto-detection. A copy is mirrored to `docs/changelog.md` for inclusion in the VitePress user-facing site. The `/changelog` and `/changelog-entry` commands always update both — the root file is the source of truth, the mirror is a build artifact.
+In the dual-track-docs convention, the canonical `CHANGELOG.md` lives at the repo root for GitHub's auto-detection. A copy is mirrored to `docs/changelog.md` for inclusion in the VitePress user-facing site. `/ws-docs changelog` always updates both — the root file is the source of truth, the mirror is a build artifact.

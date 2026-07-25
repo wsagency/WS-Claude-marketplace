@@ -1,3 +1,43 @@
+# docs-agent v3.6.0 — ADR two-tier, PR-time changelog canon, hook protocol fix
+
+## What Changed in v3.6.0
+
+- **ADR two-tier rule** — Lightweight ADRs (`# NNNN — Title` + 1-3 sentences: deciding + why + revisit trigger) are now the default. Full MADR v4.0.0 is required only for big decisions: breaking, costly to undo, or multiple serious options. Both tiers live in `dev-docs/decisions/` and share one numbering sequence. The `adr` skill, `adr-writer` agent, and `/ws-docs adr` all follow the rule.
+- **PR-time changelog is canonical** — CHANGELOG entries land via `/ws-commit-push-pr`. Per-commit enforcement is now opt-in: `auto.changelog_per_commit` defaults to `false` in `.claude/docs-config.yaml`; set it to `true` only for repos without the PR flow. The PreToolUse hook no-ops unless it is explicitly `true`.
+- **Hook protocol fix** — `enforce-changelog.sh` now emits the complete `hookSpecificOutput` JSON (`hookEventName`, `permissionDecision: "deny"`, `permissionDecisionReason`) on stdout and exits 0 on the deny path (previously exit 2, which made the harness ignore the stdout JSON). It also reads `skip_types` from docs-config.yaml `changelog.skip_types`, falling back to `.claude/ws-project.yaml` `changelog.skip_types`, then defaults.
+- `/ws-docs` housekeeping — frontmatter moved to repo house style (`allowed-tools` string + `argument-hint`), positional `$1`/`$2` args replace mustache placeholders, and one authoritative background-verbs list (init, audit, catchup, architecture, contributing; everything else foreground).
+
+No migration needed. If you relied on per-commit changelog blocking, set `auto.changelog_per_commit: true` in `.claude/docs-config.yaml`.
+
+---
+
+# docs-agent v3.5.x — ws-matt sibling plugin
+
+## What Changed in v3.5.x
+
+- The Matt-style product-thinking workflows ship as the sibling `ws-matt` plugin (`/ws-matt` entry: ask, implement, spec, tickets, triage, grill, architecture, wayfinder, setup). docs-agent stays focused on documentation; install `ws-matt` from the marketplace for the skill graph.
+
+---
+
+# docs-agent v3.4.0 — AGENTS.md canonical (BREAKING)
+
+## What Changed in v3.4.0
+
+### Breaking
+- **AGENTS.md is the canonical, agent-neutral context file.** `/ws-docs init` and `repair` now append the "Documentation maintenance" section to root `AGENTS.md` (never `CLAUDE.md`). Root `CLAUDE.md` becomes a thin two-line `@AGENTS.md` import.
+- Existing projects with a real `CLAUDE.md`: `init` offers migration — move content into `AGENTS.md`, replace `CLAUDE.md` with the thin import. Declining leaves `CLAUDE.md` untouched, but the maintenance section still goes to `AGENTS.md`.
+
+---
+
+# docs-agent v3.2.0 — Hub mode + Outline sync
+
+## What Changed in v3.2.0
+
+- **Hub mode** — When a `project.yaml` registers a sub-repo with `role: docs`, `/ws-docs` routes product-level writes to that repo (`DOCS_REPO`): user-audience `write` always goes there; dev `write`, `adr`, and `architecture` ask repo vs product scope (cacheable as `default_scope` in `.claude/docs-config.yaml`).
+- **New verbs** — `explain` (regenerates `docs/explained.md`, an Outline-safe product onboarding page), `publish` (lint + push `docs/` to Outline via `outline-sync.py`), `pull-back` (pull Outline edits into a review PR). `publish`/`pull-back` require Python 3 + `OUTLINE_API_TOKEN`.
+
+---
+
 # docs-agent v3.0.0 — Unified /ws-docs entry (BREAKING)
 
 ## What Changed in v3.0.0
