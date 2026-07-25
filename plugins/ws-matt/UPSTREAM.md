@@ -32,6 +32,7 @@ sections. The upstream MIT license is retained verbatim in [LICENSE](LICENSE).
 | codebase-design | ws-codebase-design |
 | code-review | ws-code-review |
 | resolving-merge-conflicts | ws-resolving-merge-conflicts |
+| grilling (upstream `skills/productivity/grilling`) | ws-grilling |
 
 Cross-references between vendored skills are rewritten to the ws- names, in both
 slash form (`/tdd` → `/ws-tdd`, `/code-review` → `/ws-code-review`, `/ask-matt` →
@@ -52,6 +53,37 @@ and all `/grilling` references are rewritten to `/ws-grilling`.
 - `ws-setup-matt-pocock-skills/issue-tracker-jira.md` — Jira (jira-cli) tracker
   template, plus the Jira option and `.claude/ws-project.yaml` detection in that
   skill's Section A. Re-apply after any upstream refresh of the setup skill.
+- **ADR home + two-tier format** — ADRs live in `dev-docs/decisions/` (single
+  home, single numbering), not upstream's `docs/adr/`. The Matt-style lightweight
+  template (1-3 sentences) stays the default; big decisions (breaking, expensive
+  to undo, or multiple serious options) get the full MADR v4.0.0 template from
+  the docs-agent `adr` skill (`/ws-docs adr`). Applied in
+  `ws-domain-modeling/ADR-FORMAT.md` and `SKILL.md`, `ws-grill-with-docs`,
+  `ws-improve-codebase-architecture`, `ws-setup-matt-pocock-skills` (Section C,
+  exploration, Graph node), and the setup skill's `domain.md` template.
+  `CONTEXT.md` stays at the repo root.
+- **Setup output relocation** — the setup skill writes `dev-docs/agents/`
+  (`issue-tracker.md`, `domain.md`, `triage-labels.md`) instead of upstream's
+  `docs/agents/`: internal agent config never goes under `docs/` (the
+  publishable user track). All path references updated in `ws-code-review`,
+  `ws-triage`, `ws-to-spec`, and the setup skill.
+- **CLAUDE.md precedence flip** — setup step 4 edits `AGENTS.md` (creating it if
+  missing; WS convention: AGENTS.md is canonical). A `CLAUDE.md` that is a thin
+  `@AGENTS.md` import means "AGENTS.md is canonical" and never receives content.
+  Only a legacy fat `CLAUDE.md` with no `AGENTS.md` gets the block, with a
+  migration recommendation. Upstream prefers `CLAUDE.md` — invert on sync.
+- **Hub awareness** — setup exploration also checks for a WS project-hub
+  `project.yaml` with a `role: docs` repo (alongside the `.claude/ws-project.yaml`
+  check); in a hub sub-repo, PRODUCT-level decisions belong in the docs repo's
+  `dev-docs/decisions/` and only repo-specific ones stay local.
+- **Worker alignment** — `ws-code-review` names `ws-matt-reviewer` for both axis
+  reviewers (not `general-purpose`); `agents/ws-matt-reviewer.md` scopes to one
+  review assignment (a single axis over the whole diff, or a single slice);
+  `agents/ws-matt-tdd-runner.md` runs red-green only (no in-cycle refactor, no
+  `refactored` output field — cleanup routes to `ws-code-review` per ws-tdd's
+  rule); `ws-graph-engineering` describes the `ws-implement` tdd-runner fan-out
+  as optional; `ws-wayfinder` names `ws-matt-researcher` as the Claude Code
+  research vehicle.
 
 **Deliberately NOT rewritten:**
 
@@ -62,7 +94,7 @@ and all `/grilling` references are rewritten to `/ws-grilling`.
   names; the referenced skills are not part of this plugin.
 - Strings that merely contain a skill word: tracker label vocabulary
   (`needs-triage`, `wayfinder:map`, `wayfinder:<type>`), branch conventions
-  (`research/<name>`), file paths (`docs/agents/triage-labels.md`,
+  (`research/<name>`), file paths (`dev-docs/agents/triage-labels.md`,
   `./triage-labels.md`), example paths/CLIs in `ws-triage/AGENT-BRIEF.md`
   (`src/triage/handler.ts`, `triage list --json`), and the throwaway-route
   example `/prototype/<name>` in `ws-prototype/UI.md` (a URL path, not a skill

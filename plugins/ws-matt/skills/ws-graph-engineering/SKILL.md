@@ -62,7 +62,8 @@ The canonical ws-matt workflow:
    artifact paths it needs, and produces the final output.
 
 `ws-code-review` fanning out `ws-matt-reviewer` workers is the archetype;
-[[ws-implement]] uses the same shape with `ws-matt-tdd-runner` per agreed seam.
+[[ws-implement]] can optionally fan out `ws-matt-tdd-runner` workers per agreed
+seam, using the same shape.
 
 ## File-handoff protocol
 
@@ -88,7 +89,7 @@ The graph has two tiers:
   [[ws-setup-matt-pocock-skills]].
 - **Worker nodes** (model-invoked disciplines): ws-tdd, ws-code-review, ws-research,
   ws-prototype, ws-diagnosing-bugs, ws-domain-modeling, ws-codebase-design,
-  ws-resolving-merge-conflicts — plus the three worker agents.
+  ws-resolving-merge-conflicts, ws-grilling — plus the three worker agents.
 
 **The rule: an entry node may invoke worker nodes, never another entry node.**
 Entry → entry chaining stacks orchestrators, doubles context, and loses the state
@@ -114,3 +115,12 @@ project's `.omp/rules/`.
 **Codex** — skills follow the Agent Skills SKILL.md standard; the model orchestrates
 exactly as in Claude Code, minus Task-based workers (run workers inline, still
 honoring the file-handoff protocol).
+
+## Coexistence
+
+In WS projects the ws-matt discipline skills are **authoritative** for TDD
+(`ws-tdd`), code review (`ws-code-review`), and research (`ws-research`) flows —
+when the superpowers plugin is also installed, route those activities through the
+ws-matt nodes. The superpowers process skills (brainstorming, systematic
+debugging, and the like) remain complementary for activities the ws-matt graph
+does not cover.

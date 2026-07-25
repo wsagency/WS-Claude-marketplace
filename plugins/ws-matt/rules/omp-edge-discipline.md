@@ -7,7 +7,7 @@ alwaysApply: true
 
 When executing any ws-matt graph node (ws-ask-matt, ws-implement, ws-to-spec,
 ws-to-tickets, ws-triage, ws-grill-with-docs, ws-improve-codebase-architecture,
-ws-wayfinder) or spawning ws-matt-* worker agents:
+ws-wayfinder, ws-setup-matt-pocock-skills) or spawning ws-matt-* worker agents:
 
 - **Never chain entry → entry.** An entry (user-invoked) node may invoke worker
   (model-invoked) nodes and worker agents only. When an entry node's output should
@@ -15,7 +15,8 @@ ws-wayfinder) or spawning ws-matt-* worker agents:
   — the handoff travels through state (files), never through a nested invocation.
 - **Workers return state deltas.** A worker reads shared state and returns only what
   it adds (findings, sources, cycle result). It never mutates artifacts owned by
-  other nodes and never spawns further workers.
+  other nodes. Worker AGENTS are leaves — they never spawn further workers; worker
+  skills may fan out agents.
 - **File-handoff protocol.** Workers write large outputs to the scratch directory
   named in their prompt and return `DONE|{path}` plus a summary of at most a few
   lines. Never paste large artifacts into the conversation.

@@ -113,7 +113,7 @@ User invokes with a loose idea.
 2. **Map the frontier.** Grill again, **breadth-first** this time: fan out across the whole space rather than deep on any one thread, surfacing the open decisions and the first steps takeable now. **If this surfaces no fog** — the way to the destination is already clear, the whole journey small enough for one session — you don't need a map. Stop and ask the user how they'd like to proceed.
 3. **Create the map** (label `wayfinder:map`): Destination and Notes filled in, Decisions-so-far empty, the fog sketched into **Not yet specified**.
 4. **Create the tickets you can specify now** as child issues of the map — then wire blocking edges in a **second pass** (issues need ids before they can reference each other). Wiring sorts them into the frontier and the blocked; everything you can't yet specify stays in the fog — the **Not yet specified** section.
-5. **Fire the research subagents.** For each `research` ticket you just created, spin up a `/ws-research` subagent to resolve it in parallel, capturing its findings on a throwaway `research/<name>` branch with a context pointer from the ticket.
+5. **Fire the research subagents.** For each `research` ticket you just created, spin up a `/ws-research` subagent (in Claude Code: a `ws-matt-researcher` agent) to resolve it in parallel, capturing its findings on a throwaway `research/<name>` branch with a context pointer from the ticket.
 6. Stop — charting is one session's work; it hand-resolves nothing.
 
 ### Work through the map
@@ -134,7 +134,7 @@ The user may run unblocked tickets in parallel, so expect other sessions to be e
 - **Reads:** charting — the loose idea; working — the map issue (`wayfinder:map`) at low resolution, the frontier of open, unblocked, unclaimed child tickets, and the tracker config's "Wayfinding operations"
 - **Emits:** the map issue; decision tickets as child issues with native blocking edges; at most one resolution per session (resolution comment + close + a Decisions-so-far pointer on the map); graduated fog; out-of-scope rulings
 - **Edges:**
-  - fan-out: for each `research` ticket spawn ws-research (schema: a cited findings file on a throwaway `research/<name>` branch + a context pointer on the ticket)
+  - fan-out: for each `research` ticket spawn ws-research — in Claude Code, via a ws-matt-researcher agent (schema: a cited findings file on a throwaway `research/<name>` branch + a context pointer on the ticket)
   - when ticket type = prototype → ws-prototype (HITL — a concrete artifact to react to)
   - when ticket type = grilling → ws-domain-modeling, driven with /ws-grilling (HITL, the default type)
   - when the map is clear → hand off to ws-to-spec, which collapses the linked decisions into a buildable plan (user-mediated — wayfinder hands off, it never builds)

@@ -111,7 +111,7 @@ In either form, avoid specific file paths or code snippets — they go stale fas
 - **Reads:** the plan/spec/conversation (or a passed spec path / issue reference with its comments), the codebase, `CONTEXT.md`, ADRs, the tracker config
 - **Emits:** one ticket per tracer-bullet vertical slice, each declaring its **blocking edges** — the tickets are graph edges as data. Local tracker: `.scratch/<feature-slug>/issues/<NN>-<slug>.md` in dependency order; real tracker: one issue per ticket with native blocking links, labelled `ready-for-agent`
 - **Edges:**
-  - then → ws-implement per frontier ticket (user-mediated: any ticket whose blockers are all done is grabbable; clear context between tickets)
+  - when done, recommend → ws-implement per frontier ticket (user-mediated: any ticket whose blockers are all done is grabbable; clear context between tickets)
   - the emitted blocking edges define the runtime frontier that later ws-implement sessions walk (blockers-first; expand–contract sequences for wide refactors)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** the tickets are the state — reference them by file path or issue id; never carry ticket bodies forward in conversation (DONE|{.scratch/<feature>/issues/ or tracker links}).

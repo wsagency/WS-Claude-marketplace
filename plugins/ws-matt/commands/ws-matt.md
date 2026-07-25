@@ -19,7 +19,7 @@ $ARGUMENTS
      ws-setup-matt-pocock-skills
    - **Worker (model-invoked):** ws-tdd, ws-code-review, ws-research, ws-prototype,
      ws-diagnosing-bugs, ws-domain-modeling, ws-codebase-design,
-     ws-resolving-merge-conflicts
+     ws-resolving-merge-conflicts, ws-grilling
    - **Foundation:** ws-graph-engineering (the node/edge/state contract)
    - **Worker agents:** ws-matt-reviewer, ws-matt-researcher, ws-matt-tdd-runner —
      fanned out via the Task tool (omp: its task agent)
@@ -30,7 +30,7 @@ $ARGUMENTS
    flowchart LR
      U([user]) --> R[ws-ask-matt]
      R --> E[8 more entry nodes]
-     E --> W[8 worker skills]
+     E --> W[9 worker skills]
      W -. fan-out .-> A[[3 worker agents]]
    ```
 

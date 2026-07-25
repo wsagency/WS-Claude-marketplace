@@ -18,7 +18,7 @@ Do not act on it until I confirm we have reached a shared understanding.
 - **Emits:** resolved decisions recorded one at a time; a shared-understanding confirmation before any action
 - **Edges:**
   - then → ws-domain-modeling (runs alongside every grilling session, keeping glossary/ADRs current)
-  - invoked by: ws-grill-with-docs, ws-triage (step 4), ws-wayfinder (HITL grilling tickets)
+  - invoked by: ws-grill-with-docs, ws-triage (step 4), ws-improve-codebase-architecture (grilling loop), ws-wayfinder (HITL grilling tickets)
 - **Handoff protocol:** decisions land in the project docs (CONTEXT.md/ADRs) as they are made; no large artifacts — the conversation is the work.
 
 > Vendored from upstream `skills/productivity/grilling` as a runtime dependency of the engineering set (see UPSTREAM.md).

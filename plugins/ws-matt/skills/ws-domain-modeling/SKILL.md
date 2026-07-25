@@ -14,8 +14,8 @@ Most repos have a single context:
 ```
 /
 ├── CONTEXT.md
-├── docs/
-│   └── adr/
+├── dev-docs/
+│   └── decisions/
 │       ├── 0001-event-sourced-orders.md
 │       └── 0002-postgres-for-write-model.md
 └── src/
@@ -26,18 +26,18 @@ If a `CONTEXT-MAP.md` exists at the root, the repo has multiple contexts. The ma
 ```
 /
 ├── CONTEXT-MAP.md
-├── docs/
-│   └── adr/                          ← system-wide decisions
+├── dev-docs/
+│   └── decisions/                    ← system-wide decisions
 ├── src/
 │   ├── ordering/
 │   │   ├── CONTEXT.md
-│   │   └── docs/adr/                 ← context-specific decisions
+│   │   └── dev-docs/decisions/       ← context-specific decisions
 │   └── billing/
 │       ├── CONTEXT.md
-│       └── docs/adr/
+│       └── dev-docs/decisions/
 ```
 
-Create files lazily — only when you have something to write. If no `CONTEXT.md` exists, create one when the first term is resolved. If no `docs/adr/` exists, create it when the first ADR is needed.
+Create files lazily — only when you have something to write. If no `CONTEXT.md` exists, create one when the first term is resolved. If no `dev-docs/decisions/` exists, create it when the first ADR is needed.
 
 ## During the session
 
@@ -76,8 +76,8 @@ If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](
 ## Graph node
 
 - **Tier:** model-invoked (worker)
-- **Reads:** `CONTEXT.md` (or `CONTEXT-MAP.md` plus per-context files), `docs/adr/`, the terms used live in the conversation, the code (to cross-reference claims against reality)
+- **Reads:** `CONTEXT.md` (or `CONTEXT-MAP.md` plus per-context files), `dev-docs/decisions/`, the terms used live in the conversation, the code (to cross-reference claims against reality)
 - **Emits:** inline `CONTEXT.md` glossary updates the moment a term resolves (glossary only — never implementation details); an ADR only when the decision is hard to reverse, surprising without context, and a real trade-off
 - **Edges:**
   - then → return to the driving node — this skill runs beneath ws-grill-with-docs, ws-triage, ws-improve-codebase-architecture and ws-wayfinder rather than continuing anywhere itself
-- **Handoff protocol:** updates are written directly to `CONTEXT.md` / `docs/adr/` as they crystallise and referenced by path — never batched up in conversation (DONE|{CONTEXT.md, docs/adr/NNNN-*.md}).
+- **Handoff protocol:** updates are written directly to `CONTEXT.md` / `dev-docs/decisions/` as they crystallise and referenced by path — never batched up in conversation (DONE|{CONTEXT.md, dev-docs/decisions/NNNN-*.md}).

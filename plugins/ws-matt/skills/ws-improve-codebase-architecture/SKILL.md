@@ -12,7 +12,7 @@ Surface architectural friction and propose **deepening opportunities** — refac
 This command is _informed_ by the project's domain model and built on a shared design vocabulary:
 
 - Run the `/ws-codebase-design` skill for the architecture vocabulary (**module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**) and its principles (the deletion test, "the interface is the test surface", "one adapter = hypothetical seam, two = real"). Use these terms exactly in every suggestion — don't drift into "component," "service," "API," or "boundary."
-- The domain language in `CONTEXT.md` gives names to good seams; ADRs in `docs/adr/` record decisions this command should not re-litigate.
+- The domain language in `CONTEXT.md` gives names to good seams; ADRs in `dev-docs/decisions/` record decisions this command should not re-litigate.
 
 ## Process
 
@@ -78,6 +78,7 @@ Side effects happen inline as decisions crystallize — run the `/ws-domain-mode
 - **Emits:** a self-contained HTML report of deepening candidates at `<tmpdir>/architecture-review-<timestamp>.html`; then, per picked candidate: `CONTEXT.md` updates and sparing ADRs from the grilling loop
 - **Edges:**
   - then → ws-codebase-design (the vocabulary every suggestion is written in; its design-it-twice pattern for alternative interfaces)
+  - then → ws-grilling (walks the picked candidate's decision tree in the grilling loop)
   - then → ws-domain-modeling (inline `CONTEXT.md`/ADR upkeep as decisions crystallise)
   - fan-out: an Explore sub-agent walks the codebase (schema: friction notes — shallow modules, missing locality, untestable seams)
   - when the user picks a candidate → the pick generates an idea; hand off to ws-grill-with-docs on the main flow (user-mediated)

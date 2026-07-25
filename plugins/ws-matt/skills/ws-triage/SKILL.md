@@ -115,9 +115,10 @@ If prior triage notes exist on the issue or PR, read them, check whether the rep
 ## Graph node
 
 - **Tier:** user-invoked (entry)
-- **Reads:** the issue tracker (issues and external PRs, per `docs/agents/issue-tracker.md`); prior triage notes; `.out-of-scope/*.md`; the codebase via the domain glossary and ADRs; the label vocabulary in `docs/agents/triage-labels.md`
+- **Reads:** the issue tracker (issues and external PRs, per `dev-docs/agents/issue-tracker.md`); prior triage notes; `.out-of-scope/*.md`; the codebase via the domain glossary and ADRs; the label vocabulary in `dev-docs/agents/triage-labels.md`
 - **Emits:** category/state roles applied, agent briefs ([AGENT-BRIEF.md](AGENT-BRIEF.md)), triage-notes comments, `.out-of-scope/` entries, closed issues — the state delta lives entirely on the tracker
 - **Edges:**
+  - when a request needs fleshing out → ws-grilling (step 4 — drives the interview one question at a time)
   - when a request needs fleshing out → ws-domain-modeling (grilled one question at a time, decisions captured inline)
   - then (data edge) → issues this node marks `ready-for-agent` become the input ws-implement picks up in a later session (user-mediated pickup)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).

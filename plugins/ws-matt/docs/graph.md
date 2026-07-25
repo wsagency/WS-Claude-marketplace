@@ -1,7 +1,8 @@
 # ws-matt skill graph
 
 The full 19-node graph of the ws-matt plugin: 18 skills vendored from Matt
-Pocock's engineering set plus the foundational `ws-graph-engineering` skill that
+Pocock's skills repo — 17 engineering skills + the grilling productivity skill —
+plus the foundational `ws-graph-engineering` skill that
 carries the node/edge/state contract every node follows. Each node's precise
 contract (reads, emits, edges, handoff protocol) lives in the `## Graph node`
 section at the end of its SKILL.md; this page is the map.
@@ -68,6 +69,7 @@ graph TD
   TRIAGE -. "ready-for-agent issues" .-> IMPL
 
   ICA -->|"design vocabulary"| CBD
+  ICA -->|"grilling loop"| GRILLING
   ICA -->|"inline updates"| DM
   ICA -. "picked candidate = new idea" .-> GRILL
 

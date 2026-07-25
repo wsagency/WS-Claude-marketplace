@@ -33,7 +33,7 @@ Run `jira issue view <KEY> --raw`.
 
 Used by `/ws-wayfinder`. The **map** is a single issue with **child** issues as tickets.
 
-- **Map**: a single issue labelled `wayfinder-map` (Jira labels don't allow `:` — use `-`), holding the Notes / Decisions-so-far / Fog body.
+- **Map**: a single issue labelled `wayfinder-map` (colons are unreliable in Jira labels — use `-`), holding the Notes / Decisions-so-far / Fog body.
 - **Child ticket**: an issue linked to the map (`jira issue link <MAP> <CHILD> "Relates"` — or as a Jira sub-task via `-tSub-task` where the project allows). Labels: `wayfinder-research` / `wayfinder-prototype` / `wayfinder-grilling` / `wayfinder-task`. Once claimed, assign the driving dev.
 - **Blocking**: Jira issue links — `jira issue link <BLOCKER> <CHILD> "Blocks"`. A ticket is unblocked when every linked blocker is Done.
 - **Frontier query**: `jira issue list -q 'project = <PROJECT-KEY> AND labels in (wayfinder-research, wayfinder-prototype, wayfinder-grilling, wayfinder-task) AND statusCategory != Done AND assignee is EMPTY ORDER BY created ASC' --raw`, then drop any with an open "is blocked by" link (from each issue's `--raw` links).
