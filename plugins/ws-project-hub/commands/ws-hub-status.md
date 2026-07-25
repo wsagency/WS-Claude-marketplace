@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash(git status:*), Bash(git log:*), Bash(git branch:*), Bash(git rev-list:*), Read
+allowed-tools: Bash(git -C * branch --show-current), Bash(git -C * rev-list *), Bash(git -C * status --porcelain), Bash(git -C * log *), Bash(git status:*), Bash(git log:*), Bash(git branch:*), Bash(git rev-list:*), Read
 description: Aggregated git status across all registered sub-repos
 ---
 

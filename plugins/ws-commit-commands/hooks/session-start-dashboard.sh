@@ -16,9 +16,9 @@ CACHE="$HOME/.cache/ws-hub/status.txt"
 [[ -f "$GLOBAL_CONFIG" ]] || exit 0
 
 # Honor the per-project / global toggle (default on)
-toggle=$(awk '/^hooks:/{inh=1; next} inh && /^[^[:space:]]/{inh=0} inh && /session_start_dashboard:/{sub(/^[[:space:]]*session_start_dashboard:[[:space:]]*/,""); gsub(/[[:space:]]+#.*$/,""); print; exit}' "$PROJECT_CONFIG")
+toggle=$(awk '/^hooks:/{inh=1; next} inh && /^[^[:space:]]/{inh=0} inh && /session_start_dashboard:/{sub(/^[[:space:]]*session_start_dashboard:[[:space:]]*/,""); gsub(/[[:space:]]+#.*$/,""); gsub(/[[:space:]]+$/,""); print; exit}' "$PROJECT_CONFIG")
 if [[ -z "$toggle" ]]; then
-  toggle=$(awk '/^ui:/{inu=1; next} inu && /^[^[:space:]]/{inu=0} inu && /session_start_dashboard:/{sub(/^[[:space:]]*session_start_dashboard:[[:space:]]*/,""); gsub(/[[:space:]]+#.*$/,""); print; exit}' "$GLOBAL_CONFIG")
+  toggle=$(awk '/^ui:/{inu=1; next} inu && /^[^[:space:]]/{inu=0} inu && /session_start_dashboard:/{sub(/^[[:space:]]*session_start_dashboard:[[:space:]]*/,""); gsub(/[[:space:]]+#.*$/,""); gsub(/[[:space:]]+$/,""); print; exit}' "$GLOBAL_CONFIG")
 fi
 [[ "$toggle" == "false" ]] && exit 0
 

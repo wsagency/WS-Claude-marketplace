@@ -90,6 +90,14 @@ Stage the relevant code files AND `CHANGELOG.md`, then commit with the message c
 
 If the working tree was clean in step 3 (changelog-only change), commit just `CHANGELOG.md` with message `docs(changelog): summarize <TICKET> for release`.
 
+### 4a. Apply Jira actions (after the commit succeeds)
+
+Mirrors `/ws-commit` step 6a. If the user opted into a worklog in step 2, apply it now via jira-cli:
+
+- worklog → `jira issue worklog add <TICKET> "<Xh Ym>" --no-input`
+
+The transition is NOT applied here — it happens in step 7, after the PR is opened. If the jira-cli call fails, report it and continue — the commit stands; the user can retry the worklog separately.
+
 ### 5. Push
 
 `git push -u origin <branch>` (set upstream on first push).
@@ -118,10 +126,12 @@ tea pr create --title "feat(auth): add OTP screen (WSC-142)" --description "$(ca
 - [ ] Expired code rejection
 - [ ] Resend after timeout
 
-🤖 Generated with [Claude Code](https://claude.ai/code)
+🤖 Generated with WS Agency AI suite
 EOF
 )" --base main
 ```
+
+The PR body always ends with the `🤖 Generated with WS Agency AI suite` footer. The commit itself already carries the `Co-Authored-By: WS Agency AI suite <ai@ws.agency>` trailer per `/ws-commit` — do not repeat it in the PR body.
 
 Construct the Jira link from `site` in `~/.claude/ws/config.yaml`. If no ticket, omit the Jira section.
 
@@ -137,6 +147,7 @@ If a ticket exists and `defaults.pr_transition` is set in global config (default
 
 ```
 ✓ Committed abc1234: feat(auth): add OTP screen (WSC-142)
+  worklog: 2h 30m logged (skipped if the user declined in step 2)
 ✓ CHANGELOG.md: +1 entry under Added
 ✓ Pushed to origin/WSC-142-otp-screen
 ✓ PR opened: https://gitea.ws.agency/wsagency/acme-app/pulls/231

@@ -13,4 +13,4 @@ Produce or refresh the hub's cross-repo documentation by dispatching the `hub-ar
 
 3. Relay the agent's report to the user: files written, key cross-repo findings, and anything flagged for human attention.
 
-Docs placement note: outputs go to the `role: docs` repo's `dev-docs/` when `project.yaml` registers one, otherwise to the hub's `docs/`.
+Docs placement note: outputs go to the `role: docs` repo's `dev-docs/` when `project.yaml` registers one, otherwise to the hub's `dev-docs/` (never a hub `docs/` — hubs must not have one).

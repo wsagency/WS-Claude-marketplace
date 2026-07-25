@@ -37,7 +37,7 @@ Fetch the ticket via `jira issue view TICKET --raw` (JSON; fall back to `--plain
 
 ### 3. Compose Conventional Commits message
 
-Analyze the staged + unstaged diff. Build a CC message:
+Analyze the staged + unstaged diff. Build a CC message. This is the **single definitive layout** — every other step refers back to it:
 
 ```
 <type>(<scope>): <imperative description> (TICKET)
@@ -45,17 +45,22 @@ Analyze the staged + unstaged diff. Build a CC message:
 - bullet of what changed
 - another bullet
 
+<TICKET> #time <Xh Ym> #<transition>
+
 Refs: TICKET
+Co-Authored-By: WS Agency AI suite <ai@ws.agency>
 ```
+
+Top to bottom: subject → blank line → body bullets → blank line → Smart Commit line (only when step 4 produces one) → blank line → trailer block (`Refs: TICKET`, then `Co-Authored-By: WS Agency AI suite <ai@ws.agency>`). When an optional part is omitted, its preceding blank line goes with it.
 
 Rules:
 - `type`: feat, fix, refactor, chore, docs, test, perf, style, build, ci
 - `scope`: short module/file/feature scope
 - Subject ≤ 72 chars including the ` (TICKET)` suffix
 - Body bullets — only if multiple distinct changes; for single-line changes, skip body
-- `Refs: TICKET` trailer at end (git-trailers convention)
+- The trailer block always closes the message (git-trailers convention): `Refs:` only when a ticket is in play; `Co-Authored-By` always
 
-If no ticket, drop the ` (TICKET)` suffix and `Refs:` trailer.
+If no ticket, drop the ` (TICKET)` suffix, the Smart Commit line, and the `Refs:` trailer (the `Co-Authored-By` trailer stays).
 
 ### 4. Smart Commit additions (only if ticket present)
 
@@ -79,7 +84,7 @@ Then ask about transition:
 
 The chosen actions are performed with **explicit jira-cli calls after the commit succeeds** (step 6a) — the CLI call is the source of truth, not the message trailer.
 
-Additionally, if `defaults.smart_commit_trailer` is `true` (default) in `~/.claude/ws/config.yaml`, append the Smart Commit trailer as the LAST line of the commit body — a human-readable record that also works if a Jira dev-connector is ever wired up:
+Additionally, if `defaults.smart_commit_trailer` is `true` (default) in `~/.claude/ws/config.yaml`, include the Smart Commit line at its slot in the step 3 layout (after the body bullets, before the trailer block) — a human-readable record that also works if a Jira dev-connector is ever wired up:
 
 ```
 <TICKET> #time <Xh Ym>[ #<transition-with-hyphens>]
@@ -127,6 +132,6 @@ One-line summary:
 ### Constraints
 
 - Use `git commit -m "$(cat <<'EOF' … EOF)"` HEREDOC for multi-line messages
-- Co-Authored-By footer: `Co-Authored-By: WS Agency AI suite <ai@ws.agency>`
+- The message follows the step 3 layout exactly — `Co-Authored-By: WS Agency AI suite <ai@ws.agency>` is the final trailer line
 - Don't include sensitive files (`.env`, credentials, tokens) — warn instead
 - All tool calls for the commit happen in a single response after user confirmation

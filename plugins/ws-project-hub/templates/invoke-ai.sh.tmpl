@@ -89,19 +89,25 @@ yaml_scalar() {
   ' "$CONFIG"
 }
 
+# Emits exactly ONE line per repo entry (empty when the key is absent), so the
+# by-index arrays below stay aligned even when optional fields are missing.
+# Entries are split on `- ` boundaries (the `- name:` line starts a new entry).
 yaml_repos_field() {
   awk -v key="$1" '
+    function emit() { if (started) print val }
     /^repos:/ {inrepos=1; next}
-    inrepos && /^[^[:space:]-]/ {inrepos=0}
-    inrepos {
+    inrepos && /^[^[:space:]-]/ {emit(); started=0; inrepos=0}
+    !inrepos {next}
+    /^[[:space:]]*-([[:space:]]|$)/ {emit(); started=1; val=""}
+    started {
       if (match($0, "^[[:space:]]*-?[[:space:]]*" key ":[[:space:]]*")) {
         val = substr($0, RSTART + RLENGTH)
         sub(/[[:space:]]+#.*$/, "", val)
         gsub(/^"|"$/, "", val)
         gsub(/^'\''|'\''$/, "", val)
-        print val
       }
     }
+    END {emit()}
   ' "$CONFIG"
 }
 
@@ -202,7 +208,7 @@ animate_intro() {
   tput civis 2>/dev/null || true
   trap 'tput cnorm 2>/dev/null || true; clear 2>/dev/null || true' EXIT INT TERM
 
-  clear
+  clear 2>/dev/null || true
   printf '\n  '
   typewriter "${B}${CYAN}WS.agency${R} ${DIM}»${R} ${B}INVOKE AI${R} ${DIM}for${R} ${B}${MAG}${PROJECT_NAME}${R}"
 
@@ -216,7 +222,7 @@ animate_intro() {
   done
   tput cnorm 2>/dev/null || true
   trap - EXIT INT TERM
-  clear
+  clear 2>/dev/null || true
 }
 
 # ─── agent pick (runs BEFORE the summary — mounts depend on the agent) ─────
@@ -301,25 +307,51 @@ print_summary() {
 }
 
 # ─── marketplace check ─────────────────────────────────────────────────────
+# Per-agent hint: claude ships a `claude plugin marketplace` CLI; omp uses its
+# /marketplace command. New agents fall through to a generic pointer.
+print_marketplace_hint() {
+  local action="$1"  # add | update
+  local target="wsagency/ws-claude-marketplace"
+  [[ "$action" == "update" ]] && target="ws-marketplace"
+  case "$AGENT_CHOICE" in
+    claude)
+      printf '      run: %bclaude plugin marketplace %s %s%b\n' "$B" "$action" "$target" "$R"
+      ;;
+    omp)
+      printf '      run inside omp: %b/marketplace %s %s%b\n' "$B" "$action" "$target" "$R"
+      ;;
+    *)
+      printf '      use the %s marketplace command to %s %s\n' "$AGENT_CHOICE" "$action" "$target"
+      ;;
+  esac
+}
+
 check_marketplace() {
   mkdir -p "$HUB_CACHE"
   local seen_file="$HUB_CACHE/known-marketplace-sha"
   local remote_sha=""
-  remote_sha="$(git ls-remote "$MARKETPLACE_URL" HEAD 2>/dev/null | awk '{print $1}' || true)"
+  # Bound the network call so an unreachable remote can't hang the launcher.
+  local timeout_cmd=()
+  if command -v timeout >/dev/null 2>&1; then timeout_cmd=(timeout 5)
+  elif command -v gtimeout >/dev/null 2>&1; then timeout_cmd=(gtimeout 5)
+  fi
+  remote_sha="$(${timeout_cmd[@]+"${timeout_cmd[@]}"} git ls-remote "$MARKETPLACE_URL" HEAD 2>/dev/null | awk '{print $1}' || true)"
   if [[ -z "$remote_sha" ]]; then
-    printf '  %b!%b could not reach marketplace at %b%s%b (offline?)\n' "$YEL" "$R" "$DIM" "$MARKETPLACE_URL" "$R"
+    printf '  %b!%b marketplace check skipped (offline?) — could not reach %b%s%b\n' "$YEL" "$R" "$DIM" "$MARKETPLACE_URL" "$R"
     return
   fi
   local known_sha=""
   [[ -f "$seen_file" ]] && known_sha="$(cat "$seen_file")"
+  # The cached SHA is rewritten on every launch, so the messages below are
+  # relative to the LAST LAUNCH — not to what the agent has installed.
   if [[ -z "$known_sha" ]]; then
-    printf '  %b!%b first launch — if ws-marketplace is not added yet, run inside %s:\n' "$YEL" "$R" "$AGENT_CHOICE"
-    printf '      %b/plugin marketplace add wsagency/ws-claude-marketplace%b\n' "$B" "$R"
+    printf '  %b!%b first launch — if the WS marketplace is not added yet:\n' "$YEL" "$R"
+    print_marketplace_hint add
   elif [[ "$known_sha" != "$remote_sha" ]]; then
-    printf '  %b↑%b marketplace update available %b(%s → %s)%b\n' "$YEL" "$R" "$DIM" "${known_sha:0:7}" "${remote_sha:0:7}" "$R"
-    printf '      run inside %s: %b/plugin marketplace update ws-marketplace%b\n' "$AGENT_CHOICE" "$B" "$R"
+    printf '  %b↑%b marketplace changed since last launch %b(%s → %s)%b\n' "$YEL" "$R" "$DIM" "${known_sha:0:7}" "${remote_sha:0:7}" "$R"
+    print_marketplace_hint update
   else
-    printf '  %b✓%b marketplace up to date %b(%s)%b\n' "$GRN" "$R" "$DIM" "${remote_sha:0:7}" "$R"
+    printf '  %b✓%b no new marketplace changes since last launch %b(%s)%b\n' "$GRN" "$R" "$DIM" "${remote_sha:0:7}" "$R"
   fi
   echo "$remote_sha" > "$seen_file"
 }
@@ -347,7 +379,14 @@ launch() {
     printf '    [%ba%b]ttach  [%bn%b]ew session with suffix  [%bc%b]ancel: ' "$B" "$R" "$B" "$R" "$B" "$R"
     read -r choice
     case "$choice" in
-      a|A|"") exec tmux attach -t "$session" ;;
+      a|A|"")
+        # Attaching resumes the agent already running in the session — args
+        # forwarded after `--` cannot be injected into it.
+        if [[ $# -gt 0 ]]; then
+          printf '  %bnote: forwarded args (%s) are ignored when attaching to an existing session%b\n' "$DIM" "$*" "$R"
+        fi
+        exec tmux attach -t "$session"
+        ;;
       n|N)
         local i=2
         while tmux has-session -t "${session}-${i}" 2>/dev/null; do i=$((i+1)); done
@@ -363,7 +402,9 @@ launch() {
 }
 
 # ─── main ──────────────────────────────────────────────────────────────────
-animate_intro
+if [[ -t 1 ]]; then
+  animate_intro
+fi
 if [[ -z "$AGENT_CHOICE" ]]; then
   pick_agent
 fi

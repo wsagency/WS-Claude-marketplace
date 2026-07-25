@@ -33,9 +33,9 @@ Inside `<name>-main/`:
 - `.claude/skills/project-hub-conventions/SKILL.md` — copy from `${CLAUDE_PLUGIN_ROOT}/skills/project-hub-conventions/SKILL.md` (vendored so the hub works without the marketplace plugin)
 - `project.yaml` — from `${CLAUDE_PLUGIN_ROOT}/templates/project.yaml.tmpl` with substitutions
 - `invoke-ai.sh` — copy from template, `chmod +x`
-- `AGENTS.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/AGENTS.md.tmpl` (the canonical, agent-neutral project map)
+- `AGENTS.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/AGENTS.md.tmpl` with placeholder substitutions (`__PROJECT_NAME__`, `__PROJECT_DESCRIPTION__`; `__REPO_SECTIONS__` is filled in step 6) — the canonical, agent-neutral project map
 - `CLAUDE.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md.tmpl` (thin `@AGENTS.md` import — never put content here)
-- `README.md` — from template
+- `README.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/README.md.tmpl` with placeholder substitutions (`__PROJECT_NAME__`)
 - `.gitignore` — standard prelude (`.DS_Store`, `.cache/`) followed by the managed block as defined in the skill's ".gitignore managed block" section
 
 Do NOT create a `docs/` subdirectory — docs is its own repo registered like any other.
@@ -49,9 +49,11 @@ For every repo the user selected, ask via AskUserQuestion what to do:
 - **Clone fresh into hub**: ask for git URL, `git clone <url> ./<name>`, register with `path: ./<name>`. Use for repos not yet on disk.
 - **Skip**: don't register now.
 
-Register each chosen repo in `project.yaml` following the skill's "project.yaml schema" section (fields, path rules) and its "Tech inference" table. Prompt the user for `description` (default `"TODO: describe this repo"`). Add nested (`./`) repos to the `.gitignore` managed block per the skill; sibling (`../`) repos are not added.
+Register each chosen repo in `project.yaml` following the skill's "project.yaml schema" section (fields, path rules) and its "Tech inference" table. Prompt the user for `description` (default `"TODO: describe this repo"`). Also ask whether the repo is the product docs repo (`role: docs`) — before writing `role: docs`, check `project.yaml`: if another repo already has `role: docs`, refuse with a message naming it (max one per hub — see the project-hub-conventions skill). If the user plans to create a fresh docs repo in step 4, they should answer No here. Add nested (`./`) repos to the `.gitignore` managed block per the skill; sibling (`../`) repos are not added.
 
 ### 4. Product docs repo
+
+Skip this question if a repo registered in step 3 already carries `role: docs` (max one per hub) — just point at it in the report.
 
 Ask (AskUserQuestion): "Create a product docs repo (`<project>-docs`)?"
 - **Yes** → create the subfolder, `git init` it, scaffold the layout defined
@@ -63,7 +65,7 @@ Ask (AskUserQuestion): "Create a product docs repo (`<project>-docs`)?"
   Register it in project.yaml with `role: docs` and add it to the .gitignore
   managed block. Do NOT create .outline-sync.json (created by the first
   /ws-docs publish).
-- **No** → skip; note that /ws-hub-add-repo can mark one later.
+- **No** → skip; note that `/ws-hub-add-repo` can later register a docs repo or retro-mark an already-registered repo as `role: docs`. Also prune or adapt the generated `AGENTS.md` "Documentation" section — the template presumes a `role: docs` repo exists, and it must not point at a repo that isn't there.
 
 ### 5. Initialize hub git
 

@@ -27,8 +27,16 @@ Register one or more sub-repos in the current hub. Without arguments, register a
    - **Adopt nested**: pick from detected nested .git directories (already in the hub)
    - **Register sibling**: pick from detected sibling .git directories — register at `../<name>` without moving
    - **Move sibling in**: pick a sibling, `mv ../<name> ./<name>`, register at `./<name>` (confirm before move)
+   - **Mark existing as docs repo**: retro-mark an ALREADY-registered repo as the product docs repo — see "Retro-mark mode" below (skips the registration flow)
 
-3. Run the **registration flow** below for the chosen repo.
+3. Run the **registration flow** below for the chosen repo (except retro-mark, which has its own steps).
+
+### Retro-mark mode: mark an already-registered repo as `role: docs`
+
+1. List the repos already registered in `project.yaml` and let the user pick one.
+2. Max-one check: if another entry already carries `role: docs`, refuse with a message naming it (max one per hub — see the project-hub-conventions skill).
+3. Add `role: docs` to the chosen entry via `Edit` (preserve formatting), then regenerate the `AGENTS.md` marker region as in registration step 4.
+4. No clone, move, or `.gitignore` change — the repo is already registered. Then run "Finish" below.
 
 ### With `--scan`: discover, then register
 
@@ -68,5 +76,5 @@ For each repo to register:
 ### Safety rules
 
 - Do not modify sub-repo contents; only `mv` a repo's containing folder when the user chose "move", confirmed first.
-- Only `project.yaml`, `AGENTS.md`, `CLAUDE.md`, and `.gitignore` in the hub may be modified.
+- Only `project.yaml`, `AGENTS.md`, and `.gitignore` in the hub may be modified (the thin `CLAUDE.md` import is created by `/ws-hub-init` and never touched here).
 - Do not commit hub changes — let the user review and commit themselves.
