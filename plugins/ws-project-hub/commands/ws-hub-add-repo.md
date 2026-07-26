@@ -9,8 +9,9 @@ argument-hint: [--scan]
 If `<hub>/openwiki/` exists, every newly registered sub-repo's `AGENTS.md` gets
 the "Hub knowledge wiki" pointer section (same text `/ws-hub-init` step 5a
 writes — pointing at `../openwiki/quickstart.md`, path adjusted for sibling
-repos; create AGENTS.md + a thin CLAUDE.md if the repo has neither). Apply this
-in the registration flow below after the repo lands in `project.yaml`.
+repos; create AGENTS.md + a thin CLAUDE.md if the repo has neither), AND the
+repo is added to the coverage-scope list in `openwiki/INSTRUCTIONS.md`. Apply
+this in the registration flow below after the repo lands in `project.yaml`.
 
 ## Context
 

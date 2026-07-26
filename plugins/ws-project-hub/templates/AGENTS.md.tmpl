@@ -61,12 +61,15 @@ WHOLE product (all sub-repos). Entry point: `openwiki/quickstart.md`. **Consult 
 before exploring code or answering cross-repo questions**; every sub-repo's
 AGENTS.md points here too.
 
-Refreshing: sub-repo commits are invisible to the hub's git, so OpenWiki's
-change detection cannot see them. Always refresh with an explicit prompt —
-`openwiki --update "Refresh; re-scan sub-repos: <name>, <name>, ..."` —
-or run `/ws-hub-docs`, which offers this. Do not hand-edit generated pages;
-the `<!-- OPENWIKI:START/END -->` blocks in AGENTS.md/CLAUDE.md are
-tool-managed (a permitted exception to the thin-CLAUDE.md rule).
+Refreshing is **AI-driven — no CI**: agents run it occasionally, BEFORE starting
+major cross-repo work when the wiki is stale (compare `openwiki/.last-update.json`
+against recent sub-repo activity) and AFTER completing major changes. Sub-repo
+commits are invisible to the hub's git, so a refresh is ALWAYS prompted with the
+sub-repo list — `openwiki --update "Refresh; re-scan sub-repos: <name>, <name>, ..."`
+(`/ws-hub-docs` offers this). Coverage scope lives in `openwiki/INSTRUCTIONS.md`.
+Do not hand-edit generated pages; the `<!-- OPENWIKI:START/END -->` blocks in
+AGENTS.md/CLAUDE.md are tool-managed (a permitted exception to the
+thin-CLAUDE.md rule).
 
 ## Herdr
 

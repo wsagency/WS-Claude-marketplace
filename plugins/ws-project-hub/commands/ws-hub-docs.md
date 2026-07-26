@@ -11,7 +11,10 @@ commits are invisible to hub git, so plain `--update` would skip as "no
 changes"): build the sub-repo list from `project.yaml` and run
 `openwiki --update "Refresh the wiki; re-scan these sub-repos for changes: <name>, <name>, ..."`.
 Report what OpenWiki changed (it prints its own summary) and remind that the
-`<!-- OPENWIKI:START/END -->` context-file blocks are tool-managed.
+`<!-- OPENWIKI:START/END -->` context-file blocks are tool-managed. Refresh is
+AI-driven by convention (no CI): also offer it proactively when the wiki is
+stale before major cross-repo work (`openwiki/.last-update.json` vs recent
+sub-repo commits).
 
 Produce or refresh the hub's cross-repo documentation by dispatching the `hub-architect` agent.
 

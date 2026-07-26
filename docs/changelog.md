@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.7.1] - 2026-07-26
+
+### Changed
+
+- OpenWiki refresh convention is AI-driven, not CI: `/ws-hub-init` now deletes the workflow OpenWiki generates, writes the coverage scope (all registered sub-repos) into `openwiki/INSTRUCTIONS.md` — without it OpenWiki documents only the largest repo (observed on a live hub) — and the hub AGENTS.md template/skill instruct agents to refresh before major cross-repo work when stale and after major changes, always with the prompted sub-repo list; `/ws-hub-add-repo` extends the scope for new repos
+- project-hub-conventions skill states the truth hierarchy explicitly: the wiki is a derived index — authored dual-track docs win on disagreement and the wiki regenerates
+
 ## [3.7.0] - 2026-07-25
 
 ### Added

@@ -122,10 +122,10 @@ Rules:
 
 A hub MAY carry an [OpenWiki](https://github.com/langchain-ai/openwiki) at `<hub>/openwiki/` — the knowledge repository for the whole product. Detection is filesystem presence (no config flag). Conventions:
 
-- Initialized once at the hub root (`openwiki --init`; `/ws-hub-init` step 5a offers it, and the same flow retrofits an existing hub).
-- Every sub-repo's `AGENTS.md` carries a "Hub knowledge wiki" pointer section at `../openwiki/quickstart.md` — consult the wiki BEFORE exploring code or answering cross-repo questions. `/ws-hub-add-repo` writes the pointer for new repos.
-- **Refresh is always prompted**: sub-repo commits are invisible to the hub's git, so run `openwiki --update "Refresh; re-scan sub-repos: <list>"` (plain `--update` would skip as "no changes"). `/ws-hub-docs` offers this after generating cross-repo docs.
-- Generated pages are never hand-edited; the wiki is internal (not part of the `docs/` Outline track).
+- Initialized once at the hub root (`openwiki --init`; `/ws-hub-init` step 5a offers it, and the same flow retrofits an existing hub). Init also writes the **coverage scope into `openwiki/INSTRUCTIONS.md`** (all registered sub-repos, each a separate nested git repo — without this OpenWiki tends to document only the largest repo) and **deletes the generated CI workflow**.
+- Every sub-repo's `AGENTS.md` carries a "Hub knowledge wiki" pointer section at `../openwiki/quickstart.md` — consult the wiki BEFORE exploring code or answering cross-repo questions. `/ws-hub-add-repo` writes the pointer for new repos (and adds the repo to the INSTRUCTIONS.md scope).
+- **Refresh is AI-driven — no CI**: agents run it occasionally, before major cross-repo work when the wiki is stale (`openwiki/.last-update.json` vs recent sub-repo activity) and after completing major changes. It is always prompted — `openwiki --update "Refresh; re-scan sub-repos: <list>"` — because sub-repo commits are invisible to the hub's git (plain `--update` would skip as "no changes"). `/ws-hub-docs` offers this after generating cross-repo docs.
+- Generated pages are never hand-edited; the wiki is a DERIVED index, never the source of truth — authored truth lives in the dual-track docs (`role: docs` repo + per-repo `dev-docs/`); when wiki and dev-docs disagree, dev-docs wins and the wiki gets regenerated. The wiki is internal (not part of the `docs/` Outline track).
 
 ## Herdr — agent fleets
 
