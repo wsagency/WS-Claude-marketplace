@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Sync a docs/ tree with an Outline collection (docs.wsagency.io).
+"""Publish a docs/ tree to an Outline collection (docs.wsagency.io).
 
-Subcommands: lint | push | pull.  Stdlib only.  State: .outline-sync.json
+Subcommands: lint | push.  Stdlib only.  State: .outline-sync.json
 at --root (committed).  Auth: OUTLINE_API_TOKEN env var, or the file
-~/.config/ws-docs/outline-token.  Git stays authoritative: push refuses
-files changed on both sides (--force bypasses ONLY those revision
-conflicts, never lint violations), pull only writes working-tree files
-for a reviewed PR.
+~/.config/ws-docs/outline-token.  One-way sync — git is authoritative:
+edits made in Outline are never pulled back; push refuses files changed
+on the Outline side (--force bypasses ONLY those revision conflicts,
+never lint violations).
 
 TODO(v-next): --normalize (auto-rewrite of profile violations) and
 image/attachment upload from docs/assets/ are deferred.
@@ -168,21 +168,6 @@ def rewrite_links_to_outline(text, path, url_map):
     return sub_links_outside_code(text, repl)
 
 
-def rewrite_links_to_local(text, reverse_map, dest_path):
-    """Rewrite /doc/<urlId-or-id> links to paths relative to dest_path's dir."""
-    base = os.path.dirname(dest_path)
-
-    def repl(m):
-        target, frag = split_fragment(m.group(2))
-        if target.startswith("/doc/"):
-            key = target[len("/doc/"):]
-            if key in reverse_map:
-                rel = os.path.relpath(reverse_map[key], base).replace(os.sep, "/")
-                return f"{m.group(1)}{rel}{frag}{m.group(3)}"
-        return m.group(0)
-    return sub_links_outside_code(text, repl)
-
-
 def plan_push(files, read_text, state):
     docs = state.get("documents", {})
     plan = {}
@@ -215,18 +200,6 @@ class OutlineAPI:
             raise SyncError(f"Outline API {endpoint} failed: {e.code} {e.read().decode()[:300]}")
         except urllib.error.URLError as e:
             raise SyncError(f"Outline API {endpoint} failed: {e.reason}")
-
-
-def list_documents(api, collection_id, page_size=100):
-    """All documents in a collection (documents.list is paginated)."""
-    docs, offset = [], 0
-    while True:
-        batch = api.call("documents.list", collectionId=collection_id,
-                         limit=page_size, offset=offset)
-        docs.extend(batch)
-        if len(batch) < page_size:
-            return docs
-        offset += page_size
 
 
 def cmd_lint(root, state):
@@ -321,51 +294,9 @@ def cmd_push(root, state, dry_run, force, collection_name=None):
     return 2 if report["conflicts"] else 0
 
 
-def cmd_pull(root, state):
-    api = OutlineAPI(state["outline"]["url"], read_token())
-    link_map = {}  # both urlId and id resolve back to the local path
-    for p, e in state["documents"].items():
-        link_map[e["id"]] = p
-        if e.get("url_id"):
-            link_map[e["url_id"]] = p
-    known_ids = {e["id"] for e in state["documents"].values()}
-    report = {"pulled": [], "new_from_outline": [], "unchanged": []}
-    for path, entry in state["documents"].items():
-        info = api.call("documents.info", id=entry["id"])
-        if info.get("revision") == entry.get("last_synced_revision"):
-            report["unchanged"].append(path); continue
-        text = rewrite_links_to_local(info["text"], link_map, path)
-        dest = os.path.join(root, path)
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with open(dest, "w") as f:
-            f.write(text)
-        entry["last_synced_revision"] = info.get("revision")
-        entry["last_synced_hash"] = content_hash(text)
-        save_state(root, state)
-        report["pulled"].append(path)
-    for doc in list_documents(api, state["outline"]["collection_id"]):
-        if doc["id"] in known_ids:
-            continue
-        new_path = f'{state["docs_dir"]}/from-outline/{doc["id"]}.md'
-        text = f'# {doc["title"]}\n\n{doc.get("text", "")}'
-        dest = os.path.join(root, new_path)
-        os.makedirs(os.path.dirname(dest), exist_ok=True)
-        with open(dest, "w") as f:
-            f.write(text)
-        state["documents"][new_path] = {  # registered so the next push updates
-            "id": doc["id"], "url_id": doc.get("urlId") or doc["id"],
-            "last_synced_hash": content_hash(text),
-            "last_synced_revision": doc.get("revision")}
-        save_state(root, state)
-        report["new_from_outline"].append(new_path)
-    save_state(root, state)
-    print(json.dumps(report, indent=2))
-    return 0
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("command", choices=["lint", "push", "pull"])
+    ap.add_argument("command", choices=["lint", "push"])
     ap.add_argument("--root", default=".")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--force", action="store_true")
@@ -377,10 +308,8 @@ def main():
     try:
         if args.command == "lint":
             sys.exit(cmd_lint(args.root, state))
-        if args.command == "push":
-            sys.exit(cmd_push(args.root, state, args.dry_run, args.force,
-                              collection_name=args.collection_name))
-        sys.exit(cmd_pull(args.root, state))
+        sys.exit(cmd_push(args.root, state, args.dry_run, args.force,
+                          collection_name=args.collection_name))
     except SyncError as e:
         sys.exit(str(e))
 

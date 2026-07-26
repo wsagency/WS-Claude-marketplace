@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.9.0] - 2026-07-26
+
+### Added
+
+- ws-matt local-first issue tracker: default is `dev-docs/tickets/open|done/` (fastest for agents, fewest tokens; done tickets whose results are coded and dev-docs updated are archive agents never re-read), with a new **Local + Jira sync** option (jira-cli mirror for stakeholder tickets); OpenWiki explicitly excludes the tracker dir (working state, not knowledge)
+- ws-matt ws-implement closes out through WS conventions: Conventional Commits with the ticket reference, PR via /ws-commit-push-pr (which owns the CHANGELOG entry and Jira transition — PR-time canonical)
+- docs/how-to/omp-setup.md — full omp machine-setup checklist (model roles, safety posture, feature toggles, WS wiring, magic keywords); ws-graph-engineering documents omp's verified graph primitives (batched task + outputSchema, hub messaging, agent:// / history://, orchestrate/workflowz, /vibe); dev-docs/omp-integration-backlog.md tracks the remaining integrations
+
+### Removed
+
+- **BREAKING:** /ws-ticket and the ticket-writing skill removed — the flow is grill → to-spec → ws-to-tickets (ADRs capture decisions); the Given/When/Then + user-story guidance for stakeholder-facing tickets moved into the Jira tracker template
+- **BREAKING:** Outline pull-back removed entirely — Outline is a one-way publish target (git authoritative; edits made in Outline are re-applied in git and pushed); outline-sync.py drops the pull subcommand (tests 22 → 19, green)
+
+### Changed
+
+- wsault-style thin architecture applied: dev-docs/architecture.md convention (curated boundaries + contracts + pointer to the OpenWiki map) now demonstrated in the product-docs scaffold guidance
+
 ## [3.8.0] - 2026-07-26
 
 ### Added

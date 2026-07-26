@@ -60,13 +60,6 @@ class FakeOutline:
         self.documents[p["id"]]["archived"] = True
         return dict(self.documents[p["id"]])
 
-    def _documents_list(self, p):
-        docs = [dict(d) for d in self.documents.values()
-                if not d.get("archived")
-                and d.get("collectionId") == p.get("collectionId")]
-        offset, limit = p.get("offset", 0), p.get("limit", 25)
-        return docs[offset:offset + limit]
-
 
 class SyncTestCase(unittest.TestCase):
     """Temp docs root + FakeOutline injected in place of OutlineAPI."""
@@ -106,12 +99,6 @@ class SyncTestCase(unittest.TestCase):
             rc = osync.cmd_push(self.root, state, dry_run, force, **kw)
         return rc, buf.getvalue()
 
-    def run_pull(self, state):
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            rc = osync.cmd_pull(self.root, state)
-        return rc, buf.getvalue()
-
     def disk_state(self):
         with open(os.path.join(self.root, osync.STATE_FILE)) as f:
             return json.load(f)
@@ -148,15 +135,12 @@ class TestMapping(unittest.TestCase):
         self.assertIsNone(osync.parent_of("docs/index.md", "docs"))
         self.assertEqual(osync.parent_of("docs/how-to/index.md", "docs"), "docs/index.md")
 
-    def test_link_rewrite_roundtrip(self):
+    def test_link_rewrite_to_outline(self):
         url_map = {"docs/how-to/setup.md": "abc123"}
         src = "See [setup](../how-to/setup.md) and [ext](https://x.y)."
         out = osync.rewrite_links_to_outline(src, "docs/tutorials/start.md", url_map)
         self.assertIn("(/doc/abc123)", out)
         self.assertIn("https://x.y", out)
-        back = osync.rewrite_links_to_local(out, {"abc123": "docs/how-to/setup.md"},
-                                            "docs/tutorials/start.md")
-        self.assertIn("(../how-to/setup.md)", back)
 
 
 class TestPlanPush(unittest.TestCase):
@@ -185,11 +169,6 @@ class TestRewrite(unittest.TestCase):
         out = osync.rewrite_links_to_outline(src, "docs/tutorials/t.md", url_map)
         self.assertEqual(out.count("(/doc/u-setup)"), 1)
         self.assertEqual(out.count("../how-to/setup.md"), 2)
-        back = osync.rewrite_links_to_local(
-            "```\n[keep](/doc/u-setup)\n```\n[fix](/doc/u-setup)\n",
-            {"u-setup": "docs/how-to/setup.md"}, "docs/tutorials/t.md")
-        self.assertIn("[fix](../how-to/setup.md)", back)
-        self.assertIn("[keep](/doc/u-setup)", back)
 
 
 class TestCrashRecovery(SyncTestCase):
@@ -209,57 +188,6 @@ class TestCrashRecovery(SyncTestCase):
         self.assertNotIn("docs/c.md", saved["documents"])
         entry = saved["documents"]["docs/a.md"]
         self.assertTrue(entry["id"] and entry["url_id"] and entry["last_synced_revision"])
-
-
-class TestPullUpdatesState(SyncTestCase):
-    def test_pull_then_push_cycle_is_conflict_free(self):
-        self.write("docs/index.md", "# Home\n\nhello\n")
-        self.write("docs/guide.md", "# Guide\n\nv1\n")
-        state = self.fresh_state()
-        rc, out = self.run_push(state)
-        self.assertEqual(rc, 0)
-        (col,) = self.fake.collections.values()   # default collection name
-        self.assertEqual(col["name"], os.path.basename(os.path.abspath(self.root)))
-        gid = state["documents"]["docs/guide.md"]["id"]
-        self.fake.documents[gid]["text"] = "# Guide\n\nedited in outline\n"
-        self.fake.documents[gid]["revision"] += 1
-        rc, out = self.run_pull(state)
-        self.assertEqual(rc, 0)
-        self.assertEqual(json.loads(out)["pulled"], ["docs/guide.md"])
-        self.assertIn("edited in outline", self.read("docs/guide.md"))
-        entry = self.disk_state()["documents"]["docs/guide.md"]
-        self.assertEqual(entry["last_synced_revision"], self.fake.documents[gid]["revision"])
-        self.assertEqual(entry["last_synced_hash"], osync.content_hash(self.read("docs/guide.md")))
-        rc, out = self.run_push(state)            # nothing to do, no conflicts
-        report = json.loads(out)
-        self.assertEqual(rc, 0)
-        self.assertEqual(report["conflicts"], [])
-        self.assertEqual(report["updated"], [])
-        self.assertEqual(sorted(report["skipped"]), ["docs/guide.md", "docs/index.md"])
-
-
-class TestNewFromOutline(SyncTestCase):
-    def test_pulled_new_doc_is_registered_and_not_duplicated(self):
-        state = self.fresh_state("col-1")
-        self.fake.seed("doc-900", "Server Note", "written in outline\n", collection_id="col-1")
-        rc, out = self.run_pull(state)
-        self.assertEqual(rc, 0)
-        new_path = "docs/from-outline/doc-900.md"
-        self.assertEqual(json.loads(out)["new_from_outline"], [new_path])
-        entry = state["documents"][new_path]
-        self.assertEqual(entry["id"], "doc-900")
-        self.assertEqual(entry["url_id"], "url-doc-900")
-        self.assertEqual(entry["last_synced_revision"], 1)
-        self.assertEqual(entry["last_synced_hash"], osync.content_hash(self.read(new_path)))
-        before = len(self.fake.calls)
-        rc, out = self.run_push(state)            # must update-or-skip, never duplicate
-        self.assertEqual(rc, 0)
-        report = json.loads(out)
-        self.assertEqual(report["created"], [])
-        self.assertIn(new_path, report["skipped"])
-        created = [c for c in self.fake.calls[before:] if c[0] == "documents.create"]
-        self.assertEqual(created, [])
-        self.assertEqual(len(self.fake.documents), 1)
 
 
 class TestForceScope(SyncTestCase):
@@ -311,8 +239,8 @@ class TestForwardLinks(SyncTestCase):
         self.assertEqual(report["updated"], [])
 
 
-class TestUrlIdSymmetry(SyncTestCase):
-    def test_push_uses_urlid_and_pull_maps_both_keys(self):
+class TestUrlIdLinks(SyncTestCase):
+    def test_push_rewrites_links_using_urlid_not_id(self):
         self.write("docs/x.md", "# X\n\ntarget\n")
         self.write("docs/y.md", "# Y\n\nGo to [x](x.md)\n")
         state = self.fresh_state("col-1")
@@ -321,50 +249,6 @@ class TestUrlIdSymmetry(SyncTestCase):
         self.assertNotEqual(x["url_id"], x["id"])
         self.assertIn(f'(/doc/{x["url_id"]})', self.fake.documents[y["id"]]["text"])
         self.assertNotIn(f'(/doc/{x["id"]})', self.fake.documents[y["id"]]["text"])
-        # server edit links once by urlId (with fragment) and once by raw id
-        self.fake.documents[y["id"]]["text"] = (
-            f'# Y\n\n[a](/doc/{x["url_id"]}#install) and [b](/doc/{x["id"]})\n')
-        self.fake.documents[y["id"]]["revision"] += 1
-        rc, out = self.run_pull(state)
-        self.assertEqual(rc, 0)
-        pulled = self.read("docs/y.md")
-        self.assertIn("(x.md#install)", pulled)
-        self.assertIn("(x.md)", pulled)
-        self.assertNotIn("/doc/", pulled)
-
-
-class TestDeepPathPull(SyncTestCase):
-    def test_pull_rewrites_links_relative_to_destination(self):
-        state = self.fresh_state("col-1")
-        state["documents"] = {
-            "docs/guides/deep/page.md": {"id": "doc-p", "url_id": "url-doc-p",
-                                         "last_synced_revision": 1,
-                                         "last_synced_hash": "stale"},
-            "docs/how-to/setup.md": {"id": "doc-s", "url_id": "url-doc-s",
-                                     "last_synced_revision": 1,
-                                     "last_synced_hash": "whatever"},
-        }
-        self.fake.seed("doc-p", "Page", "# Page\n\nSee [setup](/doc/url-doc-s)\n",
-                       revision=2, collection_id="col-1")
-        self.fake.seed("doc-s", "Setup", "# Setup\n\nsteps\n", revision=1,
-                       collection_id="col-1")
-        rc, out = self.run_pull(state)
-        self.assertEqual(rc, 0)
-        self.assertEqual(json.loads(out)["pulled"], ["docs/guides/deep/page.md"])
-        self.assertIn("(../../how-to/setup.md)", self.read("docs/guides/deep/page.md"))
-
-
-class TestPagination(SyncTestCase):
-    def test_pull_lists_beyond_first_page(self):
-        state = self.fresh_state("col-1")
-        for i in range(120):
-            self.fake.seed(f"doc-{i:03d}", f"Doc {i}", f"body {i}\n", collection_id="col-1")
-        rc, out = self.run_pull(state)
-        self.assertEqual(rc, 0)
-        self.assertEqual(len(json.loads(out)["new_from_outline"]), 120)
-        self.assertEqual(len(state["documents"]), 120)
-        list_calls = [c for c in self.fake.calls if c[0] == "documents.list"]
-        self.assertEqual(len(list_calls), 2)      # 100 + short page of 20
 
 
 class TestMissingDocsGuard(SyncTestCase):
@@ -394,6 +278,14 @@ class TestSingleJsonOutput(SyncTestCase):
 
 
 class TestCollectionName(SyncTestCase):
+    def test_default_collection_name_is_root_basename(self):
+        self.write("docs/index.md", "# Home\n\nhi\n")
+        state = self.fresh_state()
+        rc, _ = self.run_push(state)
+        self.assertEqual(rc, 0)
+        (col,) = self.fake.collections.values()
+        self.assertEqual(col["name"], os.path.basename(os.path.abspath(self.root)))
+
     def test_collection_name_flag_used_and_stored(self):
         self.write("docs/index.md", "# Home\n\nhi\n")
         state = self.fresh_state()

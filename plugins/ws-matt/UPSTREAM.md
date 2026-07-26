@@ -51,8 +51,44 @@ and all `/grilling` references are rewritten to `/ws-grilling`.
 **WS-local additions (preserve on upstream sync — not present upstream):**
 
 - `ws-setup-matt-pocock-skills/issue-tracker-jira.md` — Jira (jira-cli) tracker
-  template, plus the Jira option and `.claude/ws-project.yaml` detection in that
-  skill's Section A. Re-apply after any upstream refresh of the setup skill.
+  template, plus the Jira options and `.claude/ws-project.yaml` detection in
+  that skill's Section A (a bound Jira project now proposes **Local + Jira
+  sync** — see the local-first tracker bullet below; Jira-only remains for
+  teams living in Jira). Re-apply after any upstream refresh of the setup
+  skill.
+- **Local-first tracker in dev-docs** — the DEFAULT issue tracker is local
+  markdown under `dev-docs/tickets/` (`open/` + `done/`, one kebab-case file
+  per ticket, blocking edges as `Blocked by:` lines), replacing upstream's
+  `.scratch/` convention. Rationale: local tickets are the fastest tracker for
+  agents (fewest tokens); DONE tickets whose results are coded AND dev-docs
+  updated are archive — agents don't re-read them. Section A's proposal order
+  is (1) Local, (2) Local + Jira sync — local is the working store, and when
+  `.claude/ws-project.yaml` binds a Jira project, stakeholder-relevant tickets
+  are mirrored to Jira via jira-cli (create on promotion, `jira issue move` on
+  completion; the local file records the Jira key on a `jira: <KEY>` line) —
+  then (3) GitHub, (4) GitLab, (5) Jira-only, (6) Other.
+  `issue-tracker-local.md` is rewritten to the `dev-docs/tickets/` layout
+  (ticket file shape, done-archive rule, wayfinding ops on files: map =
+  `dev-docs/tickets/open/<map>.md`, frontier = open tickets with no open
+  blockers), and `issue-tracker-local-jira.md` is a new WS-authored template
+  for option 2. OpenWiki rule (setup Section A + both local templates):
+  `dev-docs/tickets/` is working state, NOT knowledge — when the repo/hub uses
+  OpenWiki, exclude it from wiki coverage via the wiki's INSTRUCTIONS.md ("do
+  not index dev-docs/tickets/ — working state, redundant tokens, potential
+  confusion; knowledge lands in decisions/ and code"). `.scratch/` survives
+  only as a legacy signal (setup exploration, ws-code-review's spec-source
+  list); the primary local-path references are updated in `ws-to-tickets`
+  (step 5, local ticket template, Graph node), `ws-implement` (Reads),
+  `ws-ask-matt` (main flow step 3), and `ws-code-review` (spec sources).
+  Re-apply all of this after any upstream refresh.
+- **WS commit/PR close-out in ws-implement** — commits follow the WS
+  conventions (Conventional Commits with the ticket reference; `/ws-commit`
+  when available), and the PR flow is `/ws-commit-push-pr`, which also handles
+  the CHANGELOG entry and the Jira transition when the project is bound —
+  ws-implement itself never hand-writes changelog entries (the PR-time entry
+  is canonical). A matching Graph-node edge (then → /ws-commit-push-pr at
+  branch completion) is WS-authored. Upstream says only "commit your work" —
+  re-apply on sync.
 - **ADR home + two-tier format** — ADRs live in `dev-docs/decisions/` (single
   home, single numbering), not upstream's `docs/adr/`. The Matt-style lightweight
   template (1-3 sentences) stays the default; big decisions (breaking, expensive

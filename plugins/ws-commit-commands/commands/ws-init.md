@@ -92,7 +92,6 @@ WS marketplace configured
 Next steps:
   /ws-status     — show your Jira assignments
   /ws-commit     — Jira-aware commit
-  /ws-ticket     — turn a description into a Jira ticket
 ```
 
 ### Constraints

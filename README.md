@@ -8,8 +8,8 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 
 | Plugin | Description | Commands |
 |--------|-------------|----------|
-| [docs-agent](./plugins/docs-agent) | Dual-track documentation suite with a single `/ws-docs` entry (Diátaxis, ADRs, changelogs, Outline sync) | `/ws-docs <verb>` (init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes, explain, publish, pull-back) |
-| [ws-commit-commands](./plugins/ws-commit-commands) | Jira-aware git workflows via jira-cli: Conventional Commits + ticket suffix, worklogs, ticket writing, PR via tea | `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`, `/ws-ticket`, `/ws-clean-gone` |
+| [docs-agent](./plugins/docs-agent) | Dual-track documentation suite with a single `/ws-docs` entry (Diátaxis, ADRs, changelogs, Outline sync) | `/ws-docs <verb>` (init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes, explain, publish) |
+| [ws-commit-commands](./plugins/ws-commit-commands) | Jira-aware git workflows via jira-cli: Conventional Commits + ticket suffix, worklogs, PR via tea | `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`, `/ws-clean-gone` |
 | [ws-matt](./plugins/ws-matt) | Matt Pocock's engineering skills (MIT) as a graph-engineered skill set — 19 interlinked `ws-*` skill nodes + worker agents | `/ws-matt` (status, `ask`, `implement`, `spec`, `tickets`, `triage`, `grill`, `architecture`, `wayfinder`, `setup`) |
 | [ws-project-hub](./plugins/ws-project-hub) | Multi-repo project hubs with auto-generated AGENTS.md and an agent-picker launcher (claude / omp) | `/ws-hub-init`, `/ws-hub-status`, `/ws-hub-repos <pull\|clone>`, `/ws-hub-add-repo [--scan]`, `/ws-hub-describe`, `/ws-hub-docs` |
 
@@ -20,7 +20,7 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 - [tea CLI](https://gitea.com/gitea/tea) (required for ws-commit-commands) — `brew install tea`
 - [jira-cli](https://github.com/ankitpokhrel/jira-cli) (required for ws-commit-commands) — `brew install ankitpokhrel/jira-cli/jira-cli`, then `export JIRA_API_TOKEN=<token>` and `jira init`
 - ws-matt issue trackers: `gh` (GitHub, default) / `glab` (GitLab) / jira-cli (Jira) depending on the tracker chosen in `/ws-matt setup`
-- [Python 3](https://python.org/) (required for `/ws-docs publish` / `pull-back` — Outline sync) with `OUTLINE_API_TOKEN` exported or stored in `~/.config/ws-docs/outline-token`
+- [Python 3](https://python.org/) (required for `/ws-docs publish` — one-way Outline sync) with `OUTLINE_API_TOKEN` exported or stored in `~/.config/ws-docs/outline-token`
 
 ## Installation
 
@@ -63,7 +63,6 @@ Dual-track documentation suite with a single unified `/ws-docs` entry covering t
 - `/ws-docs release-notes [version]` — Generate user-facing release notes (Linear style)
 - `/ws-docs explain` — Regenerate `docs/explained.md`, a generated Outline-safe onboarding page (mermaid diagrams, roles, quickstart)
 - `/ws-docs publish` — Lint the Outline-safe profile, then push `docs/` to an Outline collection (docs.wsagency.io) via `outline-sync.py`
-- `/ws-docs pull-back` — Pull Outline edits into a review branch + PR (git stays authoritative)
 
 In a multi-repo hub (ws-project-hub) with a `role: docs` sub-repo, `/ws-docs` routes product-level writes (user docs, product ADRs, architecture) to that docs repo automatically.
 
@@ -113,7 +112,7 @@ For **hard enforcement**, add hooks to `.claude/settings.json`:
 
 ### ws-commit-commands
 
-Jira-aware git workflow commands, powered by [jira-cli](https://github.com/ankitpokhrel/jira-cli). Detects ticket key from branch name (`WSC-123-feature`), composes Conventional Commits with `(WSC-123)` suffix, applies worklogs and transitions via explicit jira-cli calls, and turns brief descriptions into full Jira tickets. PR creation via [tea CLI](https://gitea.com/gitea/tea) for Gitea.
+Jira-aware git workflow commands, powered by [jira-cli](https://github.com/ankitpokhrel/jira-cli). Detects ticket key from branch name (`WSC-123-feature`), composes Conventional Commits with `(WSC-123)` suffix, applies worklogs and transitions via explicit jira-cli calls. PR creation via [tea CLI](https://gitea.com/gitea/tea) for Gitea.
 
 **Requires:** [tea CLI](https://gitea.com/gitea/tea) (`brew install tea && tea login add`), [jira-cli](https://github.com/ankitpokhrel/jira-cli) (`brew install ankitpokhrel/jira-cli/jira-cli` + `JIRA_API_TOKEN` + `jira init`)
 
@@ -122,14 +121,13 @@ Jira-aware git workflow commands, powered by [jira-cli](https://github.com/ankit
 - `/ws-status` — Show your Jira assignments, sprint status, and a suggestion for what to pick up next
 - `/ws-commit` — Jira-aware commit (Conventional Commits + ticket suffix, optional worklog and transition via jira-cli)
 - `/ws-commit-push-pr` — Commit + update CHANGELOG.md + push + open PR with Jira link; optionally transitions ticket to In Review
-- `/ws-ticket <description>` — Turn a brief description into a structured Jira ticket, optionally creating it via jira-cli (replaces the retired ws-jira-enhancer plugin)
 - `/ws-clean-gone` — Clean up git branches marked as `[gone]`
 
 **Changelog integration:** `/ws-commit-push-pr` auto-updates `CHANGELOG.md` (Keep a Changelog format) at PR time, mapping commit types to sections (`feat`→Added, `fix`→Fixed, etc.). Auto-creates the file if missing. Skips non-functional types (`docs, chore, test, style, build, ci`) by default — configurable per-project. Powered by the docs-agent `keep-a-changelog` skill, which auto-loads on the word "CHANGELOG".
 
 **Hooks:** `SessionStart` — when claude opens in a folder bound to a WS project, injects a brief Jira dashboard so the user sees their workload without running `/ws-status` manually. Toggle via `hooks.session_start_dashboard: false` in `.claude/ws-project.yaml`.
 
-**Skills:** `ws-jira-conventions` — branch naming, commit format, Smart Commit syntax; `ticket-writing` — ticket structure, Given/When/Then acceptance criteria, jira-cli creation
+**Skills:** `ws-jira-conventions` — branch naming, commit format, Smart Commit syntax
 
 ### ws-matt
 

@@ -23,7 +23,7 @@ The bound project key comes from `.claude/ws-project.yaml` (`jira.project`) when
 
 ## When a skill says "publish to the issue tracker"
 
-Create a Jira issue in `<PROJECT-KEY>` (via `jira issue create` as above). For richly structured tickets, compose per the `ticket-writing` skill (ws-commit-commands) first — Summary / User Story / Given-When-Then AC — then create.
+Create a Jira issue in `<PROJECT-KEY>` (via `jira issue create` as above). Tickets follow the `ws-to-tickets` shape (What to build / AC checkboxes / Blocked by). When a ticket is stakeholder-facing (PM/client will read it in Jira), add a short user-story line ("As a [role], I want [goal], so that [value]") and write the AC as Given/When/Then — testable and readable for non-developers.
 
 ## When a skill says "fetch the relevant ticket"
 

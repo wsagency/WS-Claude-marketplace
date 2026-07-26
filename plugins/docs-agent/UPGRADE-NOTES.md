@@ -1,3 +1,11 @@
+# docs-agent v3.9.0 — Outline pull-back removed (BREAKING)
+
+## What Changed in v3.9.0
+
+- **BREAKING: pull-back removed** — Outline is a one-way publish target; edits made in Outline are not synced back. The `/ws-docs pull-back` verb, the `pull` subcommand of `outline-sync.py`, and the `docs/from-outline/` flow are gone. Git stays authoritative: when `publish` reports a conflict (the doc changed in Outline), re-apply any wanted changes in git and push with `--force` to overwrite the Outline copy.
+
+---
+
 # docs-agent v3.6.0 — ADR two-tier, PR-time changelog canon, hook protocol fix
 
 ## What Changed in v3.6.0

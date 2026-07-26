@@ -1,5 +1,8 @@
 # Use the marketplace with omp
 
+> Machine setup (models, roles, safety, features): see
+> [Set up omp for the WS stack](./omp-setup.md).
+
 The WS marketplace works in [omp](https://omp.sh) (oh-my-pi) as well as Claude Code —
 omp's plugin marketplace natively reads the Claude Code registry format this repo uses.
 
@@ -27,10 +30,10 @@ already installed by Claude Code via `~/.claude/plugins/installed_plugins.json`.
 - **Skills** — all plugin skills, plus skills vendored into projects under
   `.claude/skills/` (omp reads that directory too).
 - **Agents** — plugin `agents/` definitions are read by omp's task system.
-- **Jira flows** — `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`,
-  `/ws-ticket` use jira-cli (a plain binary), fully agent-neutral.
-- **Outline sync** — `/ws-docs publish` / `pull-back` run `outline-sync.py`
-  (Python 3 stdlib), agent-neutral.
+- **Jira flows** — `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`
+  use jira-cli (a plain binary), fully agent-neutral.
+- **Outline publish** — `/ws-docs publish` runs `outline-sync.py`
+  (Python 3 stdlib, one-way), agent-neutral.
 - **Context files** — the AGENTS.md convention: canonical project context lives in
   `AGENTS.md` (omp reads it with a cwd→root walk-up; Claude Code loads it via the
   thin `CLAUDE.md` → `@AGENTS.md` import). Note: omp never reads a root-level

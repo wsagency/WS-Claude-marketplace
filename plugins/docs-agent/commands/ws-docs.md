@@ -1,7 +1,7 @@
 ---
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, AskUserQuestion
-description: "Unified docs entry: discovery, init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes, explain, publish, pull-back"
-argument-hint: "[init | audit | catchup | repair | write | adr | architecture | contributing | changelog | release-notes | explain | publish | pull-back] [verb args...]"
+description: "Unified docs entry: discovery, init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes, explain, publish"
+argument-hint: "[init | audit | catchup | repair | write | adr | architecture | contributing | changelog | release-notes | explain | publish] [verb args...]"
 ---
 
 # /ws-docs — Unified Documentation Entry
@@ -261,23 +261,10 @@ abort on violations, listing them per file; (2) run
 `... outline-sync.py push --root <repo>` (add `--dry-run` first and show the
 plan when the user hasn't published before); (3) report created/updated/
 skipped/conflicts/archived from the JSON; conflicts mean the doc changed in
-Outline too — resolve via `pull-back`, or `--force`, which overwrites
-conflicting docs (revision mismatch); it does NOT skip the lint gate; (4) commit
+Outline (revision mismatch) — Outline edits are not synced back; re-apply
+wanted changes in git and push with `--force`, which overwrites the
+conflicting docs; it does NOT skip the lint gate; (4) commit
 `.outline-sync.json` if it changed.
-
-Requires Python 3 + `OUTLINE_API_TOKEN` (or `~/.config/ws-docs/outline-token`);
-if the token is missing, the script exits with setup instructions — relay them.
-
-### verb = pull-back
-
-Bring Outline edits into git for review. Steps: (1) run
-`... outline-sync.py pull --root <repo>`; (2) if the report shows pulled or
-new_from_outline files: create branch `docs/outline-pull-back-<YYYY-MM-DD>`,
-commit the changes, open a PR via tea titled
-`docs: pull back Outline edits (<date>)`; (3) if nothing changed, say so and
-stop. Files under `docs/from-outline/` were created in Outline by
-helpdesk/others — the reviewer decides their final Diátaxis location during
-the PR.
 
 Requires Python 3 + `OUTLINE_API_TOKEN` (or `~/.config/ws-docs/outline-token`);
 if the token is missing, the script exits with setup instructions — relay them.
@@ -308,6 +295,6 @@ docs:
 ## Constraints
 
 - Never overwrite files without prompt + confirmation (except in `init` when files are missing).
-- Never push or commit on the user's behalf without explicit verb authorization (only `catchup` commits automatically after user triage; `publish` commits `.outline-sync.json`; `pull-back` commits to its review branch).
+- Never push or commit on the user's behalf without explicit verb authorization (only `catchup` commits automatically after user triage; `publish` commits `.outline-sync.json`).
 - All file paths are relative to the project root unless explicitly noted.
-- Background verbs (`init`, `audit`, `catchup`, `architecture`, `contributing`) dispatch agents with `run_in_background: true`; all other verbs (`repair`, `write`, `adr`, `changelog`, `release-notes`, `explain`, `publish`, `pull-back`) run foreground. This is the single authoritative list — the per-verb sections above follow it.
+- Background verbs (`init`, `audit`, `catchup`, `architecture`, `contributing`) dispatch agents with `run_in_background: true`; all other verbs (`repair`, `write`, `adr`, `changelog`, `release-notes`, `explain`, `publish`) run foreground. This is the single authoritative list — the per-verb sections above follow it.

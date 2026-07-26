@@ -21,7 +21,7 @@ The route most work travels. You have an idea and want it built.
    - **`/ws-prototype`** to answer the question with throwaway code,
    - **`/handoff`** back what you learned, and reference it from the original idea thread.
 3. **Branch — is this a multi-session build?**
-   - **Yes** → **`/ws-to-spec`** (turn the thread into a spec), then **`/ws-to-tickets`** to split it into tracer-bullet tickets, each declaring its **blocking edges**. On a local tracker that's one file per ticket under `.scratch/<feature>/issues/`, worked blockers-first by hand; on a real tracker the edges become native blocking links, so any ticket whose blockers are done can be grabbed — kick off **`/ws-implement`** per ticket, **clearing context between each one**.
+   - **Yes** → **`/ws-to-spec`** (turn the thread into a spec), then **`/ws-to-tickets`** to split it into tracer-bullet tickets, each declaring its **blocking edges**. On a local tracker that's one file per ticket under `dev-docs/tickets/open/`, worked blockers-first by hand; on a real tracker the edges become native blocking links, so any ticket whose blockers are done can be grabbed — kick off **`/ws-implement`** per ticket, **clearing context between each one**.
    - **No** → **`/ws-implement`** right here, in the same context window.
 
    Either way, **`/ws-implement`** builds each issue by driving **`/ws-tdd`** internally — one red-green slice at a time — then closes out by running **`/ws-code-review`**, a two-axis review (Standards + Spec) of the diff, before committing. Reach for **`/ws-tdd`** on its own when you just want to build a concrete behaviour test-first without a full spec, and **`/ws-code-review`** on its own whenever you want to review a branch or PR against a fixed point.

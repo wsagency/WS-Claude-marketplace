@@ -76,8 +76,7 @@ As of v3.0.0, all docs operations route through `/ws-docs <verb>`:
 | `changelog [version]` | Update `[Unreleased]` or cut version; mirrors to `docs/changelog.md` |
 | `release-notes [version]` | Linear-style notes → `docs/release-notes/<version>.md` |
 | `explain` | Regenerate `docs/explained.md` — Outline-safe product onboarding page (in `DOCS_REPO` when in hub mode) |
-| `publish` | Lint + push `docs/` to Outline via `outline-sync.py`; commits `.outline-sync.json` |
-| `pull-back` | Pull Outline edits into git as a review PR (branch `docs/outline-pull-back-<date>`) |
+| `publish` | Lint + push `docs/` to Outline via `outline-sync.py`; commits `.outline-sync.json`. One-way: Outline edits are never synced back |
 
 ## Product docs repo (hub mode)
 

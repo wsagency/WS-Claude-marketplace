@@ -106,11 +106,28 @@ never worker → worker). For hot fan-outs, compiling the shape into a dynamic
 workflow is a documented option, not shipped in v1 — interpreted execution is the
 default.
 
-**omp** — plugin skills, commands, and agents ingest natively. Task agents support
-`spawns` chains, `output` JSON-schema structured returns, and `autoloadSkills`
-(workers auto-load their paired discipline skill). Edge discipline is reinforced by
-the installed `omp-edge-discipline` rule — `/ws-matt setup` copies it into the
-project's `.omp/rules/`.
+**omp** — plugin skills, commands, and agents ingest natively, and the harness
+carries graph primitives directly (verified against omp docs, 2026-07):
+
+- **Fan-out**: the `task` tool is batched — `{ context, tasks[] }` spawns one
+  subagent per item with shared context injected; per-item `agent`, `effort`,
+  and `outputSchema` give schema-validated JSON fan-in (exactly this skill's
+  Send + reducer semantics). `isolated: true` runs a worker in a cloned
+  workspace returning patches — safe parallel edits.
+- **Handoff/liveness**: finished agents park and stay addressable — message
+  them via the `hub` tool (`send`/`wait`), read outputs at `agent://<id>` and
+  transcripts at `history://<id>`; that is the state-passing channel between
+  nodes beyond `DONE|{path}`.
+- **Magic keywords**: a standalone `orchestrate` in the prompt activates omp's
+  multi-agent orchestration contract; `workflowz` builds a deterministic
+  multi-subagent workflow over `task` — use them when driving multi-node
+  ws-matt runs.
+- **/vibe** turns the session into a director of persistent fast/good worker
+  tiers — matches this skill's classify → workers → synthesize shape.
+- Task agents also support `spawns` chains and `autoloadSkills` (workers
+  auto-load their paired discipline skill). Edge discipline is reinforced by
+  the installed `omp-edge-discipline` rule — `/ws-matt setup` copies it into
+  the project's `.omp/rules/`.
 
 **Codex** — skills follow the Agent Skills SKILL.md standard; the model orchestrates
 exactly as in Claude Code, minus Task-based workers (run workers inline, still

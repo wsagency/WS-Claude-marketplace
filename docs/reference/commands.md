@@ -13,7 +13,7 @@ Unified documentation command. Run with no verb for discovery (artifact status t
 **Arguments:**
 | Name | Required | Description |
 |------|----------|-------------|
-| `verb` | No | One of: `init`, `audit`, `catchup`, `repair`, `write`, `adr`, `architecture`, `contributing`, `changelog`, `release-notes`, `explain`, `publish`, `pull-back` |
+| `verb` | No | One of: `init`, `audit`, `catchup`, `repair`, `write`, `adr`, `architecture`, `contributing`, `changelog`, `release-notes`, `explain`, `publish` |
 | `args` | No | Verb-specific (e.g. `write <type> [topic]`, `adr "<decision>"`, `changelog [version]`) |
 
 **Verbs:**
@@ -32,7 +32,6 @@ Unified documentation command. Run with no verb for discovery (artifact status t
 | `release-notes [version]` | Linear-style notes → `docs/release-notes/<version>.md` |
 | `explain` | Regenerate `docs/explained.md` — generated Outline-safe onboarding page |
 | `publish` | Lint Outline-safe profile, push `docs/` to Outline (`outline-sync.py`; needs Python 3 + `OUTLINE_API_TOKEN`) |
-| `pull-back` | Pull Outline edits into a review branch + PR (git authoritative) |
 
 In a hub with a `role: docs` sub-repo, `/ws-docs` enters hub mode: user-audience writes, product ADRs, and product architecture route to the docs repo (scope prompt, cacheable as `default_scope`).
 
@@ -49,7 +48,7 @@ In a hub with a `role: docs` sub-repo, `/ws-docs` enters hub mode: user-audience
 
 ## ws-commit-commands
 
-Jira-aware git workflows via [jira-cli](https://github.com/ankitpokhrel/jira-cli). Detects ticket from branch name, composes Conventional Commits with `(TICKET)` suffix, applies worklogs and transitions with explicit jira-cli calls. PR creation via tea CLI.
+Jira-aware git workflows via [jira-cli](https://github.com/ankitpokhrel/jira-cli). Detects ticket from branch name, composes Conventional Commits with `(TICKET)` suffix, applies worklogs and transitions with explicit jira-cli calls. PR creation via tea CLI. Ticket breakdown lives in ws-matt (`ws-to-tickets`, local-first tracker in `dev-docs/tickets/`).
 
 **Prerequisites:** [tea CLI](https://gitea.com/gitea/tea); [jira-cli](https://github.com/ankitpokhrel/jira-cli) (`brew install ankitpokhrel/jira-cli/jira-cli`, `export JIRA_API_TOKEN=<token>`, `jira init`)
 
@@ -161,27 +160,6 @@ Clean up git branches marked as [gone] (deleted on remote but exist locally).
 **Example:**
 ```
 /ws-clean-gone
-```
-
----
-
-### /ws-ticket
-
-Turn a brief task description into a comprehensive Jira ticket (user story, Given/When/Then acceptance criteria, technical context from codebase research), optionally creating it in Jira via jira-cli. Replaces the retired `/ws-jira-enhancer`.
-
-**Arguments:**
-| Name | Required | Description |
-|------|----------|-------------|
-| `description` | Yes | Brief task description to enhance |
-
-**Behavior:**
-1. Applies the `ticket-writing` skill: codebase research where needed, then Summary / User Story / Background / Technical Context / Acceptance Criteria / Questions
-2. If the repo is bound to a Jira project, offers to create the ticket: `jira issue create -t<Type> -s"..." -b"..." -p<PROJECT> --no-input`
-3. Prints the created key and browse URL
-
-**Example:**
-```
-/ws-ticket "dark mode toggle for the settings screen"
 ```
 
 ---
@@ -371,7 +349,6 @@ Skills provide knowledge and templates, loaded on demand.
 | Skill | Triggers on |
 |-------|-------------|
 | `ws-jira-conventions` | jira, ticket, WSC-, smart commit, conventional commits |
-| `ticket-writing` | jira ticket, user story, acceptance criteria, enhance task |
 
 ### ws-matt Skills
 
