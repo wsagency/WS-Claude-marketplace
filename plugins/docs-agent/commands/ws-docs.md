@@ -167,6 +167,8 @@ git commit -m "docs: catchup since <last_version_or_sha>"
 
 Use the last version tag if one exists; otherwise the SHA of the last CHANGELOG-modifying commit.
 
+In a hub with `openwiki/`, significant dev-docs changes warrant an OpenWiki refresh (see the hub AGENTS.md; AI-driven).
+
 ### verb = repair
 
 Re-run discovery, list only ✗-missing or ⚠-stale items. Prompt confirmation (AskUserQuestion: proceed | cancel). Then create only what's missing — never delete, never modify what's present.
@@ -190,7 +192,7 @@ Audience routing:
 - `tutorial` → always user track
 - Others → read `.claude/docs-config.yaml` `default_audience`. If `ask`, AskUserQuestion. If `user` or `dev`, use that.
 
-Resolve destination from audience + type (see dual-track-docs skill routing table).
+Resolve destination from audience + type (see dual-track-docs skill routing table). In a hub with `openwiki/`, significant dev-docs changes warrant an OpenWiki refresh (see the hub AGENTS.md; AI-driven).
 
 Dispatch the matching agent (foreground, single):
 - `tutorial` → `diataxis-writer` with `quadrant: tutorial`
@@ -209,9 +211,13 @@ Pass `destination_track` and `destination_path` inputs to the agent (plus `quadr
 3. Dispatch `adr-writer` foreground with the decision, target path, and project context. Two-tier rule (see the `adr` skill): the lightweight template (`# NNNN — Title` + 1-3 sentences) is the default; full MADR v4.0.0 only for big decisions (breaking / costly to undo / multiple serious options). Both tiers share the same home and numbering.
 4. Print "✓ wrote `<path>`".
 
+In a hub with `openwiki/`, significant dev-docs changes warrant an OpenWiki refresh (see the hub AGENTS.md; AI-driven).
+
 ### verb = architecture
 
 Dispatch `architecture-documenter` in the background (`run_in_background: true`) and wait for its completion notification. Before writing, show a diff vs current `dev-docs/architecture.md` (if it exists) and AskUserQuestion: proceed | cancel. On proceed, write the new version.
+
+**When the project sits in a hub with `openwiki/`** (or its own OpenWiki): `architecture.md` is deliberately THIN — curated boundaries, cross-module contracts, and invariants only, opening with a pointer: "The living structural map is the OpenWiki (`openwiki/architecture/`) — this file records only what a map cannot: intended boundaries and contracts." Do not duplicate the wiki's derivable content; pass this constraint to the agent.
 
 ### verb = contributing
 

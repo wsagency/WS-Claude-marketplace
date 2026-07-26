@@ -43,9 +43,12 @@ The distinction is **audience**, not technical complexity. An API reference for 
 │
 └── dev-docs/                 ← INTERNAL docs
     ├── index.md
-    ├── architecture.md
+    ├── architecture.md       ← THIN when an OpenWiki exists: curated boundaries
+    │                           + contracts + pointer to openwiki/ (the map)
     ├── development.md
-    ├── decisions/            ← ADRs
+    ├── decisions/            ← ADRs (two-tier: lightweight default, MADR for big)
+    ├── client-materials/     ← DATED folders YYYY-MM-DD/ (latest = truth,
+    │                           older = history) + history.md request trail
     ├── runbooks/
     ├── reference/
     └── explanation/

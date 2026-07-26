@@ -294,6 +294,17 @@ Generate cross-repo documentation (architecture, contracts, deployment topology)
 
 ---
 
+### /ws-hub-explained
+
+Generate/refresh the product explainer artefact in the hub's `role: explained` repo — one self-contained HTML (ws-artefacts contract: all inline, WS chrome palette, inline-SVG diagrams) + tokenless `meta.json`, synthesized from openwiki, dev-docs, and project.yaml. Audience: product owner + dev team. Prints the `projects/<name>/git-source.yml` registration block for ws-artefacts (tokens are minted there).
+
+**Example:**
+```
+/ws-hub-explained
+```
+
+---
+
 
 ## Agents
 
@@ -375,6 +386,7 @@ Skills provide knowledge and templates, loaded on demand.
 | Skill | Triggers on |
 |-------|-------------|
 | `project-hub-conventions` | project hub, multi-repo, `<name>-main` |
+| `ws-artefacts-explained` | explained artefact contract (ws-artefacts format, palette, meta.json, git-source.yml) |
 
 This skill is also vendored into every hub at init time (`<hub>/.claude/skills/`), so hubs remain self-documenting even when the marketplace plugin isn't installed.
 

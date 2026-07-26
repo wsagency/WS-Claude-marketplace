@@ -61,7 +61,9 @@ Ask (AskUserQuestion): "Create a product docs repo (`<project>-docs`)?"
   AGENTS.md with the writing rules pointer (plus a thin CLAUDE.md containing
   only the `@AGENTS.md` import), docs/ tree with index.md and
   empty Diátaxis folders + assets/ + release-notes/, dev-docs/ tree
-  (architecture.md placeholder, decisions/, client-materials/, runbooks/).
+  (architecture.md placeholder, decisions/, client-materials/ with a
+  `history.md` stub and the dated-folder convention note (see the skill's
+  "Client materials" section), runbooks/).
   Register it in project.yaml with `role: docs` and add it to the .gitignore
   managed block. Do NOT create .outline-sync.json (created by the first
   /ws-docs publish).
@@ -72,8 +74,8 @@ Ask (AskUserQuestion): "Create a product docs repo (`<project>-docs`)?"
 **5a — OpenWiki (hub-level knowledge wiki).** Ask (AskUserQuestion): "Initialize OpenWiki at the hub level — one knowledge wiki covering ALL sub-repos?"
 
 - **Yes** → verify `command -v openwiki` (missing → print `npm install -g openwiki` and let the user install first). Run `openwiki --init` at the hub root — it is interactive (provider/model onboarding); let the user drive it. It generates `openwiki/` and maintains its own `<!-- OPENWIKI:START/END -->` block in the hub's `AGENTS.md` AND `CLAUDE.md` — the CLAUDE.md block is a permitted tool-managed exception to the thin-import rule (see the skill's "Context-file cascade"). Then, immediately after init:
-  1. **Write the coverage scope into `openwiki/INSTRUCTIONS.md`** (append a "Coverage scope" section): the wiki documents the ENTIRE product across ALL registered sub-repos — enumerate them from `project.yaml` — each a SEPARATE git repository nested in this hub and invisible to the hub's git; always scan them all; the hub root itself is a thin meta repo. Without this, OpenWiki tends to document only the largest repo it finds.
-  2. **Delete the generated CI workflow** (`.github/workflows/openwiki-update.yml`) if openwiki created one — the WS convention is AI-DRIVEN refresh (agents run a prompted refresh occasionally, before and/or after major work), not scheduled CI.
+  1. **Write the coverage scope into `openwiki/INSTRUCTIONS.md`** (append a "Coverage scope" section): the wiki documents the product across ALL registered **development** sub-repos — enumerate from `project.yaml` every repo WITHOUT an output role (`role: docs` and `role: explained` repos are generated/authored OUTPUTS and are excluded) — each a SEPARATE git repository nested in this hub and invisible to the hub's git; always scan them all; the hub root itself is a thin meta repo. Without this, OpenWiki tends to document only the largest repo it finds.
+  2. **Delete the generated CI workflow** (`.github/workflows/openwiki-update.yml`) if openwiki created one — the WS convention is AI-DRIVEN refresh (agents run a prompted refresh occasionally, before and/or after major work), not scheduled CI. Freshness is enforced softly: the plugin's Stop hook reminds when dev-docs changed since the last refresh (Claude Code), and when `.omp/` exists (or the user uses omp) copy `${CLAUDE_PLUGIN_ROOT}/rules/openwiki-freshness.md` into the hub's `.omp/rules/` (same fallback rule for the plugin root as above).
   3. For EVERY registered sub-repo, append this pointer to the sub-repo's `AGENTS.md` (creating it, plus a thin `CLAUDE.md`, if missing; adjust the relative path for sibling repos):
 
   ```markdown

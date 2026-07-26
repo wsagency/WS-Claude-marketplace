@@ -14,7 +14,8 @@ Report what OpenWiki changed (it prints its own summary) and remind that the
 `<!-- OPENWIKI:START/END -->` context-file blocks are tool-managed. Refresh is
 AI-driven by convention (no CI): also offer it proactively when the wiki is
 stale before major cross-repo work (`openwiki/.last-update.json` vs recent
-sub-repo commits).
+sub-repo commits), and after any significant dev-docs change — not only after
+doc-generation runs.
 
 Produce or refresh the hub's cross-repo documentation by dispatching the `hub-architect` agent.
 

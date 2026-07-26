@@ -41,7 +41,12 @@ repos:
     url: <git-remote-url>       # optional but recommended (enables /ws-hub-repos clone)
     description: <purpose>      # required (may be "TODO" temporarily)
     tech: <stack-keywords>      # optional, e.g. "react-native, typescript"
-    role: docs                  # optional; marks the product docs repo (max ONE per hub)
+    role: docs                  # optional; product docs repo (max ONE per hub)
+    # role: explained           # optional; generated human-facing output repo (visual
+    #                             product explainer for PO + dev team, ws-artefacts format).
+    # Repos with role docs|explained are OUTPUTS: excluded from the OpenWiki
+    # coverage scope and from hub-architect analysis — the wiki and cross-repo
+    # docs derive FROM development repos, outputs derive from them in turn.
 ```
 
 Path rules:
@@ -84,7 +89,7 @@ invoke-ai.sh) with this layout:
 ├── dev-docs/                # PRODUCT-level internal (never synced)
 │   ├── architecture.md      # cross-repo, written by hub-architect
 │   ├── decisions/           # product ADRs
-│   ├── client-materials/
+│   ├── client-materials/     # DATED folders: YYYY-MM-DD/ per delivery (see below)
 │   └── runbooks/
 └── .outline-sync.json       # sync state (committed)
 ```
@@ -95,6 +100,21 @@ product-level. CHANGELOG.md stays per-repo.
 
 Validation: commands that write `project.yaml` must refuse a second
 `role: docs` entry.
+
+### Client materials — dated folders
+
+Client documentation arrives successively and newer deliveries supersede older
+ones. Convention for `dev-docs/client-materials/`:
+
+- One folder per delivery, named by date: `2026-07-12/`, `2026-07-20/`, …
+- **The latest date is the most accurate truth**; older folders are preserved
+  history and are never deleted or edited.
+- Change requests from the client land in the dated folder they arrived with;
+  a top-level `history.md` logs the request trail (date → what changed → which
+  ADR/spec it triggered).
+- When processing a new delivery: diff it against the previous dated folder,
+  record what changed in `history.md`, and raise ADRs/spec updates for anything
+  that alters agreed scope.
 
 ## `.gitignore` managed block
 

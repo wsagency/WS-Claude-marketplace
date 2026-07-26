@@ -23,3 +23,6 @@ ws-wayfinder, ws-setup-matt-pocock-skills) or spawning ws-matt-* worker agents:
 - **Keep the orchestrator context small.** Read returned paths only when synthesis
   needs them; partition work into disjoint slices so parallel returns merge cleanly
   (list keys append, disjoint keys overwrite).
+- **Durable outcomes are recorded in authored docs (dev-docs).** A session that
+  changed decisions or architecture without recording them (ADR in
+  `dev-docs/decisions/`, `CONTEXT.md`) is incomplete.

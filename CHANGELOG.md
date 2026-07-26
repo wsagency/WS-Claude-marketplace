@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-07-26
+
+### Added
+
+- ws-project-hub /ws-hub-explained command + ws-artefacts-explained skill: generates the product explainer artefact (one self-contained HTML per the ws-artefacts contract — all inline, WS chrome palette, inline-SVG diagrams, tokenless meta.json) in the hub's `role: explained` repo, with the proposed `projects/<name>/git-source.yml` registration contract for ws-artefacts
+- ws-project-hub `role: explained` in the project.yaml schema; output-role repos (docs, explained) are excluded from the OpenWiki coverage scope and hub-architect analysis
+- ws-project-hub OpenWiki freshness Stop hook (non-blocking reminder when dev-docs changed since the last wiki refresh) + omp `openwiki-freshness` rule template installed by init
+- Client-materials dated-folder convention: `dev-docs/client-materials/YYYY-MM-DD/` per delivery (latest = truth, older = preserved history) + `history.md` request trail — in the dual-track and hub skills and the product-docs scaffold
+
+### Changed
+
+- `dev-docs/architecture.md` is THIN when an OpenWiki exists: curated boundaries/contracts/invariants + pointer to `openwiki/architecture/` (encoded in /ws-docs architecture, architecture-documenter, hub-architect, dual-track skill)
+- Knowledge-loop discipline tightened: ws-implement/ws-to-spec record decisions via ws-domain-modeling → dev-docs/decisions/, ws-research defaults to dev-docs/research/, OpenWiki-refresh notes in /ws-docs adr/catchup/write and /ws-hub-docs, dev-docs bullet in the omp edge rule
+
 ## [3.7.1] - 2026-07-26
 
 ### Changed

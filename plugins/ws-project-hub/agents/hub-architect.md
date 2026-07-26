@@ -21,10 +21,17 @@ hub's `dev-docs/` (NOT `docs/` — hubs must not have a `docs/` directory).
 
 Files to produce (in the docs repo's `dev-docs/` or, as fallback, the hub's `dev-docs/`):
 
-1. **`architecture.md`** — Cross-repo system map:
+1. **`architecture.md`** — Cross-repo boundaries and contracts. When the hub has
+   an OpenWiki (`<hub>/openwiki/` exists), keep this THIN and curated — the
+   living structural map is the wiki's job; open with a pointer to
+   `openwiki/architecture/` and record only what a derived map cannot:
+   intended boundaries, cross-repo contracts, invariants, deploy order.
+   Without an OpenWiki, produce the fuller map:
    - One section per sub-repo with: purpose, primary tech, entry points, public interfaces
    - A "How they connect" section: API boundaries, shared types/contracts, package dependencies between repos, deploy order
    - A simple ASCII diagram if the topology is non-trivial
+   Analyze DEVELOPMENT repos only — skip repos with `role: docs` or
+   `role: explained` (they are generated/authored outputs, not systems).
 
 2. **`contracts.md`** (only if shared contracts exist) — Document any cross-repo type contracts, API schemas, design tokens, or shared packages. Note where they're defined and consumed.
 

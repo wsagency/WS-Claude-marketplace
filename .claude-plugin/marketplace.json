@@ -10,7 +10,7 @@
     {
       "name": "docs-agent",
       "description": "Dual-track documentation suite with unified /ws-docs entry (discovery, init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes, explain, publish, pull-back), hub-aware product-docs routing, Outline sync via outline-sync.py, opt-in PreToolUse/Stop hooks, and background subagent dispatch",
-      "version": "3.7.1",
+      "version": "3.8.0",
       "source": "./plugins/docs-agent",
       "category": "development",
       "author": {
@@ -34,7 +34,7 @@
     {
       "name": "ws-commit-commands",
       "description": "Jira-aware git workflows via jira-cli: Conventional Commits with ticket suffix, worklogs and transitions, ticket writing (/ws-ticket), automatic Keep-a-Changelog updates, and PR creation via tea (Gitea)",
-      "version": "3.7.1",
+      "version": "3.8.0",
       "source": "./plugins/ws-commit-commands",
       "category": "development",
       "author": {
@@ -53,7 +53,7 @@
     {
       "name": "ws-matt",
       "description": "Matt Pocock's engineering skills (MIT, vendored) interlinked as a graph-engineered skill set: entry orchestrator nodes + worker discipline nodes, worker agents with structured output, omp edge-discipline rule. /ws-matt entry.",
-      "version": "3.7.1",
+      "version": "3.8.0",
       "source": "./plugins/ws-matt",
       "category": "development",
       "author": {
@@ -70,8 +70,8 @@
     },
     {
       "name": "ws-project-hub",
-      "description": "Multi-repo project hub: single source of truth for projects spanning multiple git repos (app, web, design, docs), managed via the consolidated ws-hub-* commands (init, status, repos, add-repo, describe, docs), with a role: docs product-docs sub-repo convention",
-      "version": "3.7.1",
+      "description": "Multi-repo project hub: single source of truth for projects spanning multiple git repos (app, web, design, docs), managed via the consolidated ws-hub-* commands (init, status, repos, add-repo, describe, docs, explained), with a role: docs product-docs sub-repo convention",
+      "version": "3.8.0",
       "source": "./plugins/ws-project-hub",
       "category": "development",
       "author": {
