@@ -105,6 +105,18 @@ The end-to-end behaviour this ticket makes work, from the user's perspective —
 
 In either form, avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
 
+## After the tickets land (omp)
+
+On omp, once the tickets are written, OFFER orchestration (ask — don't start
+alone): "N tickets created — orchestrate them now?" On yes, put the standalone
+word `orchestrate` in the next turn and drive the run. Ordering is not
+guesswork: execute the **dependency frontier** — open tickets whose `Blocked
+by:` lists have no open entries run in parallel; a ticket becomes eligible when
+its blockers move to `done/`. Batch-of-similar work (same change over N places)
+is `workflowz` instead. On Claude Code, execute tickets sequentially via
+`/ws-matt implement` or fan out worker agents per the ws-graph-engineering
+skill.
+
 ## Graph node
 
 - **Tier:** user-invoked (entry)

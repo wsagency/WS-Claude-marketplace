@@ -120,8 +120,13 @@ carries graph primitives directly (verified against omp docs, 2026-07):
   nodes beyond `DONE|{path}`.
 - **Magic keywords**: a standalone `orchestrate` in the prompt activates omp's
   multi-agent orchestration contract; `workflowz` builds a deterministic
-  multi-subagent workflow over `task` — use them when driving multi-node
-  ws-matt runs.
+  multi-subagent workflow over `task`. **Proactively SUGGEST them** (ask, don't
+  self-start): when work decomposes into N independent items (same change over
+  many files/repos, review of N branches) → suggest `workflowz`; when a run
+  spans multiple graph nodes or tickets → suggest `orchestrate`. Ordering
+  comes from the data, not intuition: follow the **dependency frontier** of
+  `Blocked by:` edges in `dev-docs/tickets/open/` — no-open-blockers run in
+  parallel, the rest wait for their blockers to reach `done/`.
 - **/vibe** turns the session into a director of persistent fast/good worker
   tiers — matches this skill's classify → workers → synthesize shape.
 - Task agents also support `spawns` chains and `autoloadSkills` (workers

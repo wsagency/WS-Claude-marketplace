@@ -1,5 +1,17 @@
 # omp integration backlog
 
+Shipped v3.11.0: project `.omp/hooks/post/openwiki-freshness.ts` (native TS
+hook — verified ExtensionAPI: `session_stop` with `{continue, additionalContext,
+decision:"block"}` returns capped at 8 continuations, `tool_call` block
+fail-closed, `context` per-call message rewriting, `ui.setWidget` banners).
+New hook ideas from the API deep-dive, feasibility-verified:
+
+- `session_stop` self-check continuation ("run tests before settling") — trivial
+- `context` event redaction/injection per LLM call (transcript untouched)
+- `before_provider_request` payload surgery (cache-control, betas per model)
+- `ttsr_triggered`/`tool_approval_*` audit telemetry via `pi.appendEntry`
+- `user_bash` interception + persistent status widgets (Jira ticket banner)
+
 From the 2026-07-26 omp feature research (fresh clone, HEAD 403931b). Shipped in
 v3.9.0: graph-engineering omp primitives note, `docs/how-to/omp-setup.md` user
 checklist. Remaining, prioritized:

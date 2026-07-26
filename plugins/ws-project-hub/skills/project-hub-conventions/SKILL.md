@@ -154,6 +154,14 @@ Hubs used with omp carry a project `.omp/` preset written by `/ws-hub-init`:
 - `.omp/config.yml` — `tools.approvalMode: write` (omp's global default is
   `yolo` — too aggressive for client work), bash guard patterns (force-push
   deny), earlier compaction. Model roles stay in the USER config.
+- `.omp/hooks/post/openwiki-freshness.ts` — a native omp TypeScript hook: on
+  every session settle it compares `*/dev-docs/**` mtimes (excluding
+  `dev-docs/tickets/`) against `openwiki/.last-update.json` and shows a
+  persistent banner + toast with the exact prompted `openwiki --update`
+  command (repo list parsed from project.yaml). Non-blocking; omp-only
+  (Claude Code uses the plugin's shell Stop hook for the same purpose).
+  Caveat: never park loose `.ts`/`.sh` files in `.claude/hooks/pre|post/`
+  directories — omp's Claude-compat provider scans them.
 - `.omp/rules/` — the WS rules pack, TTSR stream-interrupting rules:
   `ws-guard-git` (destructive git ops), `ws-commit-format` (Conventional
   Commits + ticket key + WS trailer, reminded per commit attempt),

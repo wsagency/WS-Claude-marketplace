@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.11.0] - 2026-07-26
+
+### Added
+
+- ws-project-hub native omp TypeScript hook `openwiki-freshness.ts` (installed into `.omp/hooks/post/` by init): on session settle compares dev-docs mtimes vs the wiki marker and shows a persistent banner + toast with the exact prompted update command (repo list from project.yaml); non-blocking, omp-only, zero config — built on the verified ExtensionAPI (session_stop, ui.setWidget)
+- ws-commit-commands /ws-help — one-screen orientation guide (start with /ws-matt grill; adapts to hub/wiki/omp presence)
+- ws-matt orchestration UX on omp: ws-to-tickets OFFERS orchestration after creating tickets; ordering follows the Blocked-by dependency frontier; ws-graph-engineering instructs proactively SUGGESTING `workflowz` (N independent items) and `orchestrate` (multi-node runs)
+- Local tracker `share:` line convention — session /share links attach to the ticket file
+
+### Changed
+
+- omp preset defaults flipped per owner decision: approval stays **yolo**, bash guard patterns ship commented (off); init now ASKS about posture, guards, and per-project modelRoles (each project can run different providers; template documents the WS class mapping, thinking-level suffixes, and task.agentModelOverrides as the per-agent "custom role" mechanism)
+
 ## [3.10.0] - 2026-07-26
 
 ### Added

@@ -28,6 +28,7 @@ Why local-first: local ticket files are the fastest tracker for agents — no CL
 - `Blocked by:` names other ticket files by slug. A ticket is unblocked when every slug it lists is in `done/`.
 - `Status:` records the triage role (see `triage-labels.md` for the role strings) or `claimed`.
 - When a ticket is mirrored to Jira (local + Jira sync setups), a `jira: <KEY>` line sits directly under the title.
+- Session evidence: when a work session on the ticket is worth reviewing (omp `/share` E2E-encrypted link, or an exported transcript), record it as a `share: <url>` line in the ticket file — the local-tracker equivalent of "attach the session to the ticket".
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading.
 
 ## The done-archive rule

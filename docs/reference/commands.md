@@ -146,6 +146,12 @@ End-to-end Jira-aware flow: commit, push, open PR with Jira link, optionally tra
 
 ---
 
+### /ws-help
+
+One-screen orientation guide to the WS system (start here: /ws-matt grill). Adapts to the project — hub, OpenWiki, omp keywords sections appear only when applicable. Display-only.
+
+---
+
 ### /ws-clean-gone
 
 Clean up git branches marked as [gone] (deleted on remote but exist locally).

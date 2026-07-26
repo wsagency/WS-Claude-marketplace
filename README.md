@@ -9,7 +9,7 @@ A curated registry of Claude Code plugins, agents, and tools built by [ws.agency
 | Plugin | Description | Commands |
 |--------|-------------|----------|
 | [docs-agent](./plugins/docs-agent) | Dual-track documentation suite with a single `/ws-docs` entry (Diátaxis, ADRs, changelogs, Outline sync) | `/ws-docs <verb>` (init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes, explain, publish) |
-| [ws-commit-commands](./plugins/ws-commit-commands) | Jira-aware git workflows via jira-cli: Conventional Commits + ticket suffix, worklogs, PR via tea | `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`, `/ws-clean-gone` |
+| [ws-commit-commands](./plugins/ws-commit-commands) | Jira-aware git workflows via jira-cli: Conventional Commits + ticket suffix, worklogs, PR via tea | `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`, `/ws-help`, `/ws-clean-gone` |
 | [ws-matt](./plugins/ws-matt) | Matt Pocock's engineering skills (MIT) as a graph-engineered skill set — 19 interlinked `ws-*` skill nodes + worker agents | `/ws-matt` (status, `ask`, `implement`, `spec`, `tickets`, `triage`, `grill`, `architecture`, `wayfinder`, `setup`) |
 | [ws-project-hub](./plugins/ws-project-hub) | Multi-repo project hubs with auto-generated AGENTS.md and an agent-picker launcher (claude / omp) | `/ws-hub-init`, `/ws-hub-status`, `/ws-hub-repos <pull\|clone>`, `/ws-hub-add-repo [--scan]`, `/ws-hub-describe`, `/ws-hub-docs` |
 
