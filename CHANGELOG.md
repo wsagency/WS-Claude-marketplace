@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-07-26
+
+### Added
+
+- ws-project-hub omp preset: `/ws-hub-init` writes a project `.omp/config.yml` (approvalMode `write` — omp defaults to yolo, bash guard patterns, earlier compaction) and installs the **WS TTSR rules pack** into `.omp/rules/` — `ws-guard-git` (stream-interrupt on force-push/hard-reset/clean), `ws-commit-format` (Conventional Commits + ticket key + WS trailer reminder per commit attempt), `ws-generated-files` (never hand-edit openwiki pages / changelog mirror / explained artefacts) — WS conventions become enforcement in the model's output stream instead of prose
+- ws-graph-engineering documents omp graph primitives verified from source: batched `task` with shared context + `outputSchema` fan-in, `hub` messaging to parked agents, `agent://`/`history://` addresses, `orchestrate`/`workflowz` magic keywords, `/vibe` director mode
+
 ## [3.9.0] - 2026-07-26
 
 ### Added

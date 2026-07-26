@@ -1,0 +1,24 @@
+# WS hub preset for omp — written by /ws-hub-init (project-level .omp/config.yml)
+# Layered over the user's ~/.omp/agent/config.yml; arrays REPLACE wholesale.
+
+# Safer default for client work (omp's global default is `yolo`).
+tools:
+  approvalMode: write
+
+# Bash guardrails (approval layer; the TTSR rules in .omp/rules/ interrupt
+# the stream even earlier).
+bash:
+  patterns:
+    - { match: "git push*--force*", approval: deny }
+    - { match: "git push --force*", approval: deny }
+    - { match: "rm -rf *", approval: prompt }
+
+# Compact a bit earlier on hub work (cross-repo sessions run long).
+compaction:
+  thresholdPercent: 80
+
+# Model roles: set in your USER config (~/.omp/agent/config.yml) so they follow
+# you across projects — see docs/how-to/omp-setup.md in the ws marketplace for
+# the recommended WS tiering. Uncomment here only to pin project-specific roles.
+# modelRoles:
+#   slow: anthropic/claude-opus-4-8:high

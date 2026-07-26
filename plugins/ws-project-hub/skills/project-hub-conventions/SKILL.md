@@ -147,6 +147,21 @@ A hub MAY carry an [OpenWiki](https://github.com/langchain-ai/openwiki) at `<hub
 - **Refresh is AI-driven — no CI**: agents run it occasionally, before major cross-repo work when the wiki is stale (`openwiki/.last-update.json` vs recent sub-repo activity) and after completing major changes. It is always prompted — `openwiki --update "Refresh; re-scan sub-repos: <list>"` — because sub-repo commits are invisible to the hub's git (plain `--update` would skip as "no changes"). `/ws-hub-docs` offers this after generating cross-repo docs.
 - Generated pages are never hand-edited; the wiki is a DERIVED index, never the source of truth — authored truth lives in the dual-track docs (`role: docs` repo + per-repo `dev-docs/`); when wiki and dev-docs disagree, dev-docs wins and the wiki gets regenerated. The wiki is internal (not part of the `docs/` Outline track).
 
+## omp preset — conventions as enforcement
+
+Hubs used with omp carry a project `.omp/` preset written by `/ws-hub-init`:
+
+- `.omp/config.yml` — `tools.approvalMode: write` (omp's global default is
+  `yolo` — too aggressive for client work), bash guard patterns (force-push
+  deny), earlier compaction. Model roles stay in the USER config.
+- `.omp/rules/` — the WS rules pack, TTSR stream-interrupting rules:
+  `ws-guard-git` (destructive git ops), `ws-commit-format` (Conventional
+  Commits + ticket key + WS trailer, reminded per commit attempt),
+  `ws-generated-files` (never hand-edit openwiki pages / changelog mirror /
+  explained artefacts — fix the source), plus `openwiki-freshness` and
+  ws-matt's `omp-edge-discipline`. These turn WS conventions from prose into
+  enforcement in the model's output stream.
+
 ## Herdr — agent fleets
 
 Hubs pair well with [herdr](https://herdr.dev) (terminal agent multiplexer; supports claude and omp agent kinds). Setup is one **global** skill install per machine — `npx skills add ogulcancelik/herdr --skill herdr -g` — which covers every repo and agent reading `~/.claude/skills/`; nothing is written per sub-repo. Hub pattern: one herdr workspace per sub-repo (`herdr workspace create --cwd <hub>/<repo> --label <repo>`); `HERDR_ENV=1` marks a herdr-managed pane. The hub AGENTS.md keeps a short Herdr section when in use.
