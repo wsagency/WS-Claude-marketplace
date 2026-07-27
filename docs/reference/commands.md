@@ -196,13 +196,15 @@ Single entry for the skill graph.
 
 ## ws-project-hub
 
-Multi-repo project hubs. A hub is a small meta-repo (`<project>-main`) that registers all sub-repos (mobile app, marketing site, design, docs, etc.) of a project and launches Claude across them with `--add-dir`. Sub-repos live as gitignored subfolders, each with its own independent git history.
+Multi-repo project hubs. A hub is a small meta-repo (`<project>-main`) that registers all sub-repos (mobile app, marketing site, design, docs, etc.) of a project and launches your agent harness across them (Claude Code with `--add-dir` mounts; omp at the hub root). Sub-repos live as gitignored subfolders, each with its own independent git history. All hub tooling is harness-agnostic — new harnesses plug in via the launcher's agent registry.
 
 Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-hub-status`). The launcher opens an interactive agent picker (Claude Code / omp; extensible registry) — bypass with `--agent <name>` or `WS_HUB_AGENT`.
 
 ### /ws-hub-init
 
 Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register. Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml`, `AGENTS.md` (+ thin `CLAUDE.md` import), `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), and vendors `.claude/skills/project-hub-conventions/`. Offers to scaffold a `role: docs` product docs repo (`<project>-docs`), initialize a hub-level OpenWiki knowledge wiki (with pointers written into every sub-repo's AGENTS.md), and set up herdr (global skill install). Registration details (schema, managed block, tech inference, docs-repo layout) are defined in the project-hub-conventions skill.
+
+**Doctor mode:** invoked inside an already-initialized hub (detected via `project.yaml`), it does not re-scaffold — it asks whether to run **doctor**: pull the hub and every sub-repo (`--ff-only`, clean repos only), offer clones for registered-but-missing repos, verify registry integrity (roles, `.gitignore` block, AGENTS.md markers, thin CLAUDE.md), refresh drifted generated files (`invoke-ai.sh`, vendored skill, omp rules/hooks), check OpenWiki freshness, and end with a ready-for-development verdict. Diagnose-only posture available; dirty/diverged repos and user-owned config are never touched — only reported.
 
 **Example:**
 ```
@@ -213,7 +215,7 @@ Initialize a new project hub. Interactive: prompts for project name, description
 
 ### /ws-hub-status
 
-Aggregated git status report across all registered sub-repos: branch, ahead/behind upstream, uncommitted count, recent commits. Read-only; ends with the `./invoke-ai.sh` launch hint.
+Aggregated git status report across all registered sub-repos: branch, ahead/behind upstream, uncommitted count, recent commits. Read-only; ends with the `./invoke-ai.sh` launch hint (harness-agnostic) and, when problems surfaced, a pointer to `/ws-hub-init` doctor mode.
 
 **Example:**
 ```

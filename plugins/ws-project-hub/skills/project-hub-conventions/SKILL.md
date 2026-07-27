@@ -134,6 +134,14 @@ Rules:
 - Sibling-pathed repos (`../X`) are NOT added — they're not in the hub
 - If the block is missing, commands create it at the top of `.gitignore`
 
+## Harness policy
+
+Hub tooling is **harness-agnostic**. Commands and generated files never assume a specific agent harness; today's supported harnesses are Claude Code and omp, and the structure is built for more:
+
+- `invoke-ai.sh` keeps an extensible agent registry — add a name to `REGISTERED_AGENTS` plus an `agent_cmd_<name>()` function.
+- Prose that genuinely differs per harness is written as a **"Harness notes"** list with one bullet per harness — a new harness is one more bullet, never a fork of the flow.
+- Everything else (project.yaml, AGENTS.md, doctor checks, docs flows) is neutral by construction.
+
 ## Context-file cascade
 
 `AGENTS.md` is the canonical, agent-neutral context file at every level — hub and sub-repos alike. Each `CLAUDE.md` is a thin import containing only `@AGENTS.md` plus one comment line, kept because Claude Code always reads `CLAUDE.md` and the `@import` guarantees the same content loads everywhere. Why AGENTS.md is canonical: omp finds `AGENTS.md` by walking up from the cwd but **never reads a root-level `CLAUDE.md`** — content left in a fat CLAUDE.md is invisible to omp. Keep all content in `AGENTS.md`; never fatten the thin `CLAUDE.md`. One permitted exception: **tool-managed marker blocks** (e.g. OpenWiki's `<!-- OPENWIKI:START/END -->`) that a tool rewrites idempotently on its own runs — leave those alone in both files.
@@ -151,9 +159,11 @@ A hub MAY carry an [OpenWiki](https://github.com/langchain-ai/openwiki) at `<hub
 
 Hubs used with omp carry a project `.omp/` preset written by `/ws-hub-init`:
 
-- `.omp/config.yml` — `tools.approvalMode: write` (omp's global default is
-  `yolo` — too aggressive for client work), bash guard patterns (force-push
-  deny), earlier compaction. Model roles stay in the USER config.
+- `.omp/config.yml` — approval posture defaults to `yolo` (omp's own default;
+  the template carries a commented `write` block for cautious client repos)
+  and bash guard patterns default to off (commented deny/prompt examples);
+  `/ws-hub-init` asks about both, plus whether to fill the per-project
+  `modelRoles` block. Earlier compaction is on by default.
 - `.omp/hooks/post/openwiki-freshness.ts` — a native omp TypeScript hook: on
   every session settle it compares `*/dev-docs/**` mtimes (excluding
   `dev-docs/tickets/`) against `openwiki/.last-update.json` and shows a

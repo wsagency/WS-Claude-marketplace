@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash, Read, Write, Edit, Glob, AskUserQuestion
-description: Initialize a new project hub repo with subfolder layout, .gitignore management, and vendored conventions
+description: Initialize a new project hub — or, inside an existing hub, run doctor (diagnose + repair)
 ---
 
 ## Context
@@ -15,9 +15,22 @@ description: Initialize a new project hub repo with subfolder layout, .gitignore
 
 ## Your task
 
-Initialize a new project hub. Sub-repos live as **subfolders of the hub**, each with its own git, kept out of the hub's git via a managed `.gitignore` block.
+Initialize a new project hub — or, when invoked inside an EXISTING hub, offer the doctor flow (step 0). Sub-repos live as **subfolders of the hub**, each with its own git, kept out of the hub's git via a managed `.gitignore` block.
+
+This command is **harness-agnostic**: it behaves the same under any agent harness (Claude Code, omp, …) and never assumes which one is running. Where a step genuinely differs per harness, it is written as a "Harness notes" list with one bullet per harness — support a new harness by adding a bullet there (and an `agent_cmd_<name>()` entry in `invoke-ai.sh`), never by forking the flow.
 
 Read the **project-hub-conventions** skill (path above) before you start — it is the single source for the `project.yaml` schema, path rules, the `.gitignore` managed block, the AGENTS.md `ws-hub:repos` marker pair, and the tech-inference table. This command defines only the interaction flow; follow the skill for every structural detail.
+
+### 0. Existing hub? → offer doctor
+
+If `./project.yaml` already exists (or the current `AGENTS.md` carries the `ws-hub:repos` markers), this is an already-initialized hub — do NOT re-scaffold anything. Ask (AskUserQuestion, or a plain chat question when that tool is unavailable): "This hub is already set up. What do you want?"
+
+- **Doctor — diagnose + repair** (recommended) → run **Doctor mode** (section below) in fix posture.
+- **Diagnose only** → Doctor mode in report posture: print findings, change nothing.
+- **New hub elsewhere** → the invocation was intentional but for a different location; ask for the parent path and continue from step 1 there.
+- **Nothing** → wrongly invoked; exit without changes.
+
+When neither detection marker is present, skip this step silently and start at step 1.
 
 ### 1. Gather project info via AskUserQuestion (or a plain chat question when that tool is unavailable)
 
@@ -133,7 +146,9 @@ Fill the region between the `ws-hub:repos` markers (replacing the template's pla
   - `/ws-hub-repos clone` if any registered repos aren't on disk
   - `/ws-hub-add-repo` to register more
   - `/ws-hub-docs` to generate cross-repo docs (and refresh OpenWiki when initialized)
-  - Each sub-repo should keep repo-specific rules in its own `AGENTS.md`, with a thin `CLAUDE.md` containing only `@AGENTS.md` (Claude Code auto-loads it when the repo is mounted via `--add-dir`; omp does not auto-load it — read it when entering the sub-repo)
+  - Each sub-repo should keep repo-specific rules in its own `AGENTS.md`, with a thin `CLAUDE.md` containing only `@AGENTS.md`. Harness notes:
+    - Claude Code — auto-loads it when the repo is mounted via `--add-dir`
+    - omp — does not auto-load sub-repo context; read it when entering the sub-repo
 
 ### Constraints
 
@@ -141,3 +156,21 @@ Fill the region between the `ws-hub:repos` markers (replacing the template's pla
 - Do NOT push to any remote.
 - Do NOT clone repos the user didn't ask to clone.
 - Confirm before `mv` — moves are observable side effects.
+
+## Doctor mode (existing hub)
+
+Entered only via step 0. Purpose: verify the hub is **ready for development** — everything pulled, registered, and up to date. Posture comes from step 0: **fix** (apply safe repairs, confirming each group before applying) or **report** (findings only, zero changes).
+
+Hard limits in BOTH postures: never switch branches, never `reset`/`checkout` files, never force-push, never overwrite user-owned config (`project.yaml` values, `.omp/config.yml`). Anything in that category is a report-only finding, addressed to the user.
+
+Run the checks in order:
+
+1. **Hub repo freshness** — `git fetch` in the hub (skip gracefully when there is no remote). Clean and behind upstream → `git pull --ff-only`. Dirty, diverged, or on a non-default branch → report; touch nothing.
+2. **Sub-repos on disk** — for every repo in `project.yaml`: folder missing but `url` present → offer to clone (same behavior as `/ws-hub-repos clone`); present → fetch, and when clean and behind, `git pull --ff-only`. Dirty, diverged, or detached → report with branch names; touch nothing.
+3. **Registry integrity** — `project.yaml` parses; at most one `role: docs` and one `role: explained`; every nested (`./`) repo appears in the `.gitignore` managed block; the `ws-hub:repos` marker region in `AGENTS.md` matches `project.yaml` (drifted → regenerate the region, it is machine-managed); `CLAUDE.md` is the thin `@AGENTS.md` import (tool-managed marker blocks are the only permitted extras) — if fattened, move the content to `AGENTS.md`.
+4. **Generated files up to date** — compare the hub's `invoke-ai.sh` against `${CLAUDE_PLUGIN_ROOT}/templates/invoke-ai.sh.tmpl` and the vendored `.claude/skills/project-hub-conventions/SKILL.md` against the plugin's copy (plugin-root fallback rule as in Context). Differences → summarize the diff and offer a refresh, warning explicitly that both files are generated and hand edits will be lost.
+5. **Harness assets** — one bullet per harness; extend this list when a new harness joins:
+   - Claude Code — the vendored skill from check 4 is the only hub-side asset; nothing else to verify.
+   - omp — when `.omp/` exists: the rules pack (`.omp/rules/ws-*.md`, `openwiki-freshness.md`) and `.omp/hooks/post/openwiki-freshness.ts` are present and match the plugin templates (offer refresh); `.omp/config.yml` present (report-only — user config is never overwritten). When `.omp/` is absent and the user works with omp, offer the step-5a omp preset flow.
+6. **Knowledge freshness** — when `openwiki/` exists: compare sub-repo `dev-docs/` mtimes (excluding `dev-docs/tickets/`) against `openwiki/.last-update.json`. Stale → print the exact prompted refresh command (`openwiki --update "Refresh; re-scan sub-repos: <list from project.yaml>"`) and ask before running it — a refresh costs tokens.
+7. **Verdict** — render one line per check (`✓` ok / `~` fixed / `✗` needs the user), then: what was fixed, what was deliberately left alone and why, and a closing line — either `Ready for development — cd <hub> && ./invoke-ai.sh` or `Not ready: <blocking items>`.

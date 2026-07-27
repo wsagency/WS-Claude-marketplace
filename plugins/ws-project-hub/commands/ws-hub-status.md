@@ -33,10 +33,12 @@ Read-only status sweep across all sub-repos registered in the current hub.
 
 5. End with a one-line summary: `N repos checked · M with changes · K skipped`.
 
-6. Finish with the launch hint:
+6. Finish with the launch hint (harness-agnostic — the launcher has its own agent picker):
 
    ```
-   To launch Claude with all sub-repos mounted:  cd <hub> && ./invoke-ai.sh
+   To launch an agent across all sub-repos:  cd <hub> && ./invoke-ai.sh
    ```
+
+   If the sweep surfaced problems (behind upstream, missing checkouts, dirty repos), add one more line: `For diagnosis + repair, run /ws-hub-init here — in an existing hub it offers doctor mode.`
 
 Read-only command. Do not run any pulls, fetches, or modifications.

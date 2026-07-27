@@ -177,7 +177,7 @@ Tickets default to the **local tracker** (`dev-docs/tickets/open|done/` — fast
 Manage multi-repo projects (mobile app, marketing site, design, docs, etc.) through a single hub repo. Generates a `<project>-main` folder with a registry of all sub-repos, an auto-built `AGENTS.md` project map (with a thin `CLAUDE.md` import), and an `invoke-ai.sh` launcher with an interactive agent picker — Claude Code (mounts sub-repos via `--add-dir`) or omp (runs at the hub root). Sub-repos live as gitignored subfolders, each with its own independent git.
 
 **Commands:**
-- `/ws-hub-init` — Initialize a new project hub (interactive)
+- `/ws-hub-init` — Initialize a new project hub (interactive); in an existing hub it offers **doctor** — pull everything, verify integrity, refresh drifted generated files, ready-for-development verdict
 - `/ws-hub-status` — Aggregated git status report (read-only), ends with the launch hint
 - `/ws-hub-repos <pull|clone>` — `git pull` across all sub-repos, or clone every registered URL into a missing subfolder
 - `/ws-hub-add-repo [--scan]` — Register a new sub-repo; `--scan` first discovers unregistered repos in/near the hub

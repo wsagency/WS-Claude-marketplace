@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.12.0] - 2026-07-27
+
+### Added
+
+- ws-project-hub /ws-hub-init doctor mode: invoked inside an already-initialized hub it no longer re-scaffolds — it asks (doctor fix / diagnose only / new hub elsewhere / nothing) and runs a readiness check: ff-only pulls of hub + clean sub-repos, clone offers for registered-but-missing repos, registry integrity (roles, .gitignore managed block, AGENTS.md markers, thin CLAUDE.md), refresh of drifted generated files (invoke-ai.sh, vendored skill, omp rules/hooks), OpenWiki freshness, and a ready-for-development verdict; dirty/diverged repos and user-owned config are report-only, never touched
+
+### Changed
+
+- ws-project-hub commands are explicitly harness-agnostic: "Harness notes" convention (one bullet per harness, extend by adding a bullet — never fork the flow) recorded in /ws-hub-init and the project-hub-conventions skill (new "Harness policy" section); /ws-hub-status launch hint no longer names Claude
+- project-hub-conventions skill: stale omp preset description corrected to match the shipped template (approval defaults to yolo, bash guards off, init asks about both plus modelRoles)
+
 ## [3.11.2] - 2026-07-27
 
 ### Changed
