@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.13.0] - 2026-07-27
+
+### Added
+
+- docs-agent /ws-docs is now position-aware in hubs — no new command: invoked at the HUB ROOT it runs a **hub sweep** across all dev sub-repos (one subagent per repo in parallel, each repo its own git so runs never conflict): discovery/audit aggregate per-repo reports, catchup presents one combined triage then commits per repo, repair fixes gaps per repo, init offers per-repo init (never scaffolds docs in the hub itself), write/adr/architecture default to product scope without asking; invoked inside a sub-repo, behavior is unchanged (repo-level + product routing)
+
+### Changed
+
+- Hub detection in /ws-docs no longer requires a `role: docs` repo — any hub `project.yaml` triggers hub mode, with a graceful repo-level fallback (pointer to /ws-hub-init step 4) when no docs repo is registered
+- /ws-hub-docs scope clarified: it produces the cross-repo synthesis layer only; per-repo docs maintenance across the hub is /ws-docs at the hub root
+
 ## [3.12.0] - 2026-07-27
 
 ### Added

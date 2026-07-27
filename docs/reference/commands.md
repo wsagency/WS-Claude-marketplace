@@ -10,6 +10,8 @@ Dual-track documentation suite. All operations route through the single `/ws-doc
 
 Unified documentation command. Run with no verb for discovery (artifact status table, no writes).
 
+Position-aware in WS project hubs: invoked **inside a sub-repo** it runs repo-level with product routing (user docs and product ADRs go to the `role: docs` repo); invoked **at the hub root** it runs a **hub sweep** — `discovery`/`audit`/`catchup`/`repair` fan out one subagent per dev sub-repo in parallel and aggregate (catchup commits per repo), `write`/`adr`/`architecture` default to product scope, `init` never scaffolds docs in the hub itself (offers per-repo init instead).
+
 **Arguments:**
 | Name | Required | Description |
 |------|----------|-------------|

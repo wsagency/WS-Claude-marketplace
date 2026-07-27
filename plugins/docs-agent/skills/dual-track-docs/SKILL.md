@@ -89,7 +89,15 @@ Split rule: **concerns more than one repo, the client, or any end user → docs
 repo.** Sub-repos keep only repo-specific `dev-docs/`; user docs are always
 product-level. `CHANGELOG.md` stays per-repo.
 
-Scope routing in hub mode (repo-level behavior is unchanged outside hubs):
+Position decides behavior (authoritative detail in the `/ws-docs` command):
+invoked **inside a sub-repo** → repo-level with the product routing below;
+invoked **at the hub root** → **hub sweep** — discovery/audit/catchup/repair
+fan out one subagent per dev sub-repo (each its own git, so parallel runs
+never conflict; catchup commits per repo) and aggregate, while write/adr/
+architecture default to product scope (`DOCS_REPO`) without asking. Hubs never
+carry `docs/` of their own.
+
+Scope routing in sub-repo position (repo-level behavior is unchanged outside hubs):
 
 | Verb | Hub-mode routing |
 |---|---|

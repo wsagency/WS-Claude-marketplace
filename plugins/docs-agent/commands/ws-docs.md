@@ -20,12 +20,19 @@ Project state lives in `.claude/docs-config.yaml`. Hooks (PreToolUse + Stop) rea
 
 ## Hub mode
 
-Before dispatching any verb, look for a `project.yaml` (cwd, then parent
-directories up to $HOME) whose `repos:` list contains `role: docs`. If found,
-you are in **hub mode**; resolve `DOCS_REPO` = the hub-relative path of that
-repo. All product-level writes go there.
+Before dispatching any verb, look for a `project.yaml` with a `repos:` list
+(cwd, then parent directories up to $HOME). If found, you are in a WS project
+hub; resolve `DOCS_REPO` = the hub-relative path of the `role: docs` repo when
+one is registered. All product-level writes go there. **Position** then decides
+behavior:
 
-Scope routing in hub mode (repo-level behavior is unchanged outside hubs):
+- **Sub-repo position** — `project.yaml` was found in a PARENT directory: run
+  repo-level with the product scope routing below (the original hub mode).
+- **Hub-root position** — `./project.yaml` belongs to the cwd itself: there is
+  no local repo to document (hubs never carry `docs/`), so verbs run as a
+  **hub sweep** across the sub-repos (section below).
+
+Scope routing in sub-repo position (repo-level behavior is unchanged outside hubs):
 - `write` with user audience → ALWAYS `DOCS_REPO/docs/` (user docs are
   product-level by definition)
 - `write` with dev audience → ask scope: **this repo** (local `dev-docs/`) or
@@ -37,8 +44,49 @@ Scope routing in hub mode (repo-level behavior is unchanged outside hubs):
   hub-architect agent when available)
 - `changelog`, `release-notes` → repo-level, unchanged
 
+When the hub registers no `role: docs` repo, product-scope targets are
+unavailable: fall back to repo-level and mention that `/ws-hub-init` step 4
+(or `/ws-hub-add-repo`) can register one.
+
 The scope answer may be cached in `.claude/docs-config.yaml` as
 `default_scope: repo | product | ask` (honor it like `default_audience`).
+
+### Hub-root sweep (invoked at the hub root)
+
+Sweep targets: every repo in `project.yaml` that exists on disk and has no
+output role (`role: docs` and `role: explained` are excluded — the docs repo
+is covered by the product-level rows, explained is generated). Each sub-repo
+is its own git, so per-repo subagents cannot conflict: dispatch **one subagent
+per target repo in parallel** (`run_in_background: true`), passing the repo's
+absolute path as its working root, and aggregate when all report. Each
+subagent honors that repo's own `.claude/docs-config.yaml` (the hub has none).
+
+Verb behavior at the hub root:
+
+- **no verb (discovery)** — one `docs-doctor` per target repo. Render a
+  compact aggregate table: one row per repo with its worst state per column
+  (`docs/`, `dev-docs/`, `CHANGELOG`, config), then product rows (`DOCS_REPO`
+  present/missing, `openwiki/` freshness). End with suggested verbs per repo.
+- **audit** — same fan-out with `mode: audit`; merge into one report grouped
+  by repo.
+- **catchup** — one subagent per target repo returning the three proposal
+  sets (changelog entries, reference updates, ADR candidates). Present ONE
+  combined triage grouped by repo, then apply and commit **per repo, inside
+  that repo's git** (same commit format as repo-level catchup). When
+  `openwiki/` exists and dev-docs changed, offer the prompted wiki refresh at
+  the end.
+- **repair** — fan out discovery, list gaps grouped by repo, one confirmation,
+  then per-repo repair subagents (create only what's missing).
+- **init** — NEVER scaffold docs in the hub itself. List target repos missing
+  the convention, let the user pick (AskUserQuestion, multi-select), then run
+  the init flow per selected repo via one subagent each.
+- **write / adr / architecture** — product scope by default (`DOCS_REPO`;
+  architecture delegates to hub-architect when available) — at the hub root
+  you are at product level, so skip the repo-vs-product question. If no
+  `role: docs` repo is registered, say so and point at `/ws-hub-init` step 4.
+- **changelog / release-notes** — per-repo artifacts: ask which repo, then run
+  repo-level inside it.
+- **explain / publish** — `DOCS_REPO`, as already defined.
 
 ## Routing
 
