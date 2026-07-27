@@ -60,10 +60,15 @@ Direct install:
 ```
 omp
 /marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
-/plugin install ws
+/plugin install ws@ws-marketplace
 ```
 
-Update later with `/marketplace update`. Machine setup for the full omp
+⚠️ Always install as `ws@ws-marketplace` in omp — a bare `install ws` resolves
+to the npm websocket package of the same name, not this plugin.
+
+Update later with `/marketplace update ws-marketplace` followed by
+`/plugin upgrade` (the order matters — upgrade alone compares against the
+cached catalog). Machine setup for the full omp
 experience (model roles, feature toggles): [docs/how-to/omp-setup.md](./docs/how-to/omp-setup.md).
 What works and known gaps: [docs/how-to/use-with-omp.md](./docs/how-to/use-with-omp.md).
 

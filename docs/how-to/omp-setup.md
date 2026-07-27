@@ -66,7 +66,7 @@ omp config set collab.displayName "Kristijan"
 
 ```bash
 omp plugin marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
-omp plugin install ws
+omp plugin install ws@ws-marketplace
 # or: plugins installed via Claude Code are auto-visible in omp
 ```
 

@@ -12,8 +12,11 @@ omp's plugin marketplace natively reads the Claude Code registry format this rep
 # omp reads .claude-plugin/marketplace.json as a Claude-compatible catalog
 omp
 /marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
-/plugin install ws
+/plugin install ws@ws-marketplace
 ```
+
+⚠️ Always `ws@ws-marketplace`, never a bare `install ws` — the bare name
+resolves to the npm websocket package `ws`, not this plugin.
 
 (Consult `omp.sh/docs/marketplace` for the current commands — omp also picks up plugins
 already installed by Claude Code via `~/.claude/plugins/installed_plugins.json`.)

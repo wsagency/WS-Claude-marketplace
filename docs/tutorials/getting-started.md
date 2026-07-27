@@ -108,7 +108,7 @@ Claude Code are auto-visible there, or add directly inside omp:
 
 ```
 /marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
-/plugin install ws
+/plugin install ws@ws-marketplace
 ```
 
 See [Use the marketplace with omp](../how-to/use-with-omp.md) and
