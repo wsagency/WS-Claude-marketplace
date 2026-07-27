@@ -66,7 +66,7 @@ omp config set collab.displayName "Kristijan"
 
 ```bash
 omp plugin marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
-# ili: pluginovi instalirani kroz Claude Code su automatski vidljivi
+# or: plugins installed via Claude Code are auto-visible in omp
 ```
 
 MCP: existing `.claude`/`.mcp.json` configs are discovered automatically.

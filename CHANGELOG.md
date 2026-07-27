@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.11.2] - 2026-07-27
+
+### Changed
+
+- Language convention recorded in AGENTS.md: everything written is ENGLISH (code, commands, skills, specs, ADRs, changelogs, commit messages, output templates); user-facing docs may be translated but originals are English; conversation language never leaks into artifacts
+- English sweep: /ws-help output template, "Verbose diagnosis" wording, omp-setup comment, explained artifacts default to lang="en" (client-facing ws-artefacts copies may be translated)
+
 ## [3.11.1] - 2026-07-27
 
 ### Changed

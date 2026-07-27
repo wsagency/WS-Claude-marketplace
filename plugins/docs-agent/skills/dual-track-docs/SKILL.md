@@ -66,7 +66,7 @@ As of v3.0.0, all docs operations route through `/ws-docs <verb>`:
 |---|---|
 | (no verb) | Discovery — prints the artifact status table, no writes |
 | `init` | Scaffolds both tracks, writes `.claude/docs-config.yaml`, appends the AGENTS.md maintenance section + thin `CLAUDE.md` import (offers migration when a real CLAUDE.md exists), generates CHANGELOG.md, 3-file CONTRIBUTING |
-| `audit` | Verbose dijagnoza; optionally writes `docs-audit-<date>.md` |
+| `audit` | Verbose diagnosis; optionally writes `docs-audit-<date>.md` |
 | `catchup` | Proposes CHANGELOG entries, reference updates, ADRs; user triages; one big commit |
 | `repair` | Creates missing artifacts only (never deletes) |
 | `write <type> [topic]` | One Diátaxis doc; `type` = `tutorial \| howto \| reference \| explanation` |

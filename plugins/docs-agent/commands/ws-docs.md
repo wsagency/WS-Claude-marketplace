@@ -115,7 +115,7 @@ Suggested commit:
 
 ### verb = audit
 
-Verbose dijagnoza. Run 3 agents in parallel (background) — same dispatch pattern as `catchup`:
+Verbose diagnosis. Run 3 agents in parallel (background) — same dispatch pattern as `catchup`:
 1. `docs-doctor` with `mode: audit` — returns the artifact table plus per-commit details since last CHANGELOG entry
 2. `public-api-watcher` — returns detected public API changes needing `docs/reference/` updates
 3. `arch-watcher` — returns ADR candidates (architectural signals)

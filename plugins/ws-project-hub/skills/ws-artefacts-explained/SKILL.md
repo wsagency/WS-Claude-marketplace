@@ -56,7 +56,7 @@ There is no shared CSS — **every artefact carries the palette itself**:
 }
 ```
 
-Conventions: `<html lang="hr">`, light theme only, print-friendly
+Conventions: `<html lang="en">` — WS language rule: originals are ENGLISH (explained serves the PO + dev team; translate only when a client-facing copy demands it, as a derived artifact). Existing ws-artefacts CLIENT artefacts use `lang="hr"` per that repo's house style. Light theme only, print-friendly
 (`@media print` with sensible page breaks), mobile breakpoint around 540px,
 content column 46–52rem (`max-width` + centered).
 

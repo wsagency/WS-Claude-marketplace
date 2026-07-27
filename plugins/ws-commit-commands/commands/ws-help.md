@@ -10,35 +10,35 @@ current project — check for `dev-docs/`, `.omp/`, a hub `project.yaml`,
 `openwiki/`). Keep it under one screen. Base shape:
 
 ```
-WS sustav — brzi vodič
+WS system — quick guide
 ──────────────────────────────────────────────
-POČNI OVDJE
-  /ws-matt              graf status + prijedlog ulaza
-  /ws-matt ask          router: "što da uzmem?"
-  Tipičan tok: ideja → /ws-matt grill → (spec → tickets) → implement
+START HERE
+  /ws-matt              graph status + suggested entry point
+  /ws-matt ask          router: "what should I pick up?"
+  Typical flow: idea → /ws-matt grill → (spec → tickets) → implement
 
-DNEVNI RAD
-  /ws-matt implement    izvrši jedan ticket (tdd → review)
-  /ws-commit-push-pr    commit + changelog + PR + Jira (kraj svake grane)
-  /ws-status            tvoji Jira zadaci
-  Ticketi žive u dev-docs/tickets/open/ (done/ je arhiva)
+DAILY WORK
+  /ws-matt implement    execute one ticket (tdd → review)
+  /ws-commit-push-pr    commit + changelog + PR + Jira (end of every branch)
+  /ws-status            your Jira assignments
+  Tickets live in dev-docs/tickets/open/ (done/ is archive)
 
-DOKUMENTACIJA (piše se sama uz rad)
-  Odluke → ADR u dev-docs/decisions/ (lagani default; nastaju kroz grill)
-  /ws-docs              status svih docs artefakata
-  openwiki/quickstart.md  ← ČITAJ PRIJE istraživanja koda (hub)
+DOCUMENTATION (writes itself as you work)
+  Decisions → ADR in dev-docs/decisions/ (lightweight default; born in grill)
+  /ws-docs              status of all docs artifacts
+  openwiki/quickstart.md  ← READ BEFORE exploring code (hub)
 
-HUB (multi-repo projekti)
-  ./invoke-ai.sh        launcher s izborom agenta (claude/omp)
-  /ws-hub-status        git pregled svih repoa
+HUB (multi-repo projects)
+  ./invoke-ai.sh        launcher with agent picker (claude/omp)
+  /ws-hub-status        git overview across all repos
   /ws-hub-docs          cross-repo docs + wiki refresh
 
-omp KEYWORDI (samo napiši riječ u promptu)
-  orchestrate = multi-agent run    workflowz = batch nad N stavki
-  ultrathink = maksimalni reasoning za tvrd problem
+omp KEYWORDS (just write the word in your prompt)
+  orchestrate = multi-agent run    workflowz = batch over N items
+  ultrathink = max reasoning for one hard problem
 
-Prvi skill za naučiti: /ws-matt grill — sve ostalo dolazi samo.
-Detalji: docs/how-to/ u marketplaceu (omp-setup, use-with-omp).
+First skill to learn: /ws-matt grill — everything else follows.
+Details: docs/how-to/ in the marketplace (omp-setup, use-with-omp).
 ```
 
 Omit sections that don't apply (no hub → skip HUB; no openwiki → skip that
