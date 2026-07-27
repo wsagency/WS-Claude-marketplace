@@ -21,6 +21,22 @@ omp
 (Consult `omp.sh/docs/marketplace` for the current commands — omp also picks up plugins
 already installed by Claude Code via `~/.claude/plugins/installed_plugins.json`.)
 
+## Update (verified on omp 17.x)
+
+Two steps — the order matters:
+
+```bash
+omp plugin marketplace update ws-marketplace   # 1. refresh the catalog cache (git pull)
+omp plugin upgrade                             # 2. upgrade all installed plugins
+```
+
+**Gotcha:** `omp plugin upgrade` alone compares against the CACHED catalog and
+reports "all plugins are up to date" even when the marketplace has moved on —
+always refresh the marketplace first. In-session equivalents: `/marketplace
+update ws-marketplace`, then `/plugin upgrade`. Restart open omp sessions to
+load the new command definitions. Versioning is lockstep, so one update brings
+all four plugins to the same repo version.
+
 ## What works
 
 - **Commands** — all `/ws-*` and `/ws-hub-*` commands (also addressable as
