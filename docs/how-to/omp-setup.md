@@ -74,6 +74,24 @@ MCP: existing `.claude`/`.mcp.json` configs are discovered automatically.
 Context files: `~/.claude/CLAUDE.md` is read — do NOT also create
 `~/.omp/agent/AGENTS.md` (it would shadow it).
 
+### Native extension — `@wsagency/omp-ws`
+
+The marketplace plugin covers commands/skills/agents; the **native
+extension** adds what the Claude-compat layer cannot: fail-closed git guard,
+per-commit changelog enforcement (opt-in), the Jira session dashboard widget,
+a docs-drift stop nudge, global OpenWiki freshness, and the `ws_ticket` /
+`ws_changelog` / `ws_adr` structured tools. It cannot ship via the
+marketplace (TS extension) — install from a checkout:
+
+```bash
+git clone git@github.com:wsagency/WS-Claude-marketplace.git
+cd WS-Claude-marketplace/extensions/omp-ws && bun install && bun run build
+omp plugin link .
+```
+
+Details, config, and off-switches: `extensions/omp-ws/README.md`. Full
+capability audit: `dev-docs/omp-native-improvements.md`.
+
 ## Daily-driver vocabulary (no config)
 
 - **`orchestrate`** in a prompt → multi-agent orchestration contract
@@ -88,6 +106,6 @@ Context files: `~/.claude/CLAUDE.md` is read — do NOT also create
 ## Known gaps
 
 - omp extensions (TS policy hooks) can't ship via the marketplace — npm/link
-  only; a future `ws-guard` extension will be distributed separately.
+  only; `@wsagency/omp-ws` (above) is the WS extension, installed separately.
 - `goal.*`/`loop.*` settings exist but are undocumented — inspect with
   `omp config list` before relying on them.

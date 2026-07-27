@@ -1,0 +1,29 @@
+{
+  "name": "@wsagency/omp-ws",
+  "version": "0.1.0",
+  "description": "WS Agency native omp extension: dangerous-git guard, changelog gate, Jira session dashboard, docs-drift stop nudge, OpenWiki freshness, and ws_ticket/ws_changelog/ws_adr tools.",
+  "type": "module",
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "omp": {
+    "extensions": [
+      "./dist/index.js"
+    ]
+  },
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist --target=bun",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@oh-my-pi/pi-coding-agent": "17.1.5",
+    "@types/bun": "^1.2.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  },
+  "license": "UNLICENSED",
+  "author": "WS Agency"
+}

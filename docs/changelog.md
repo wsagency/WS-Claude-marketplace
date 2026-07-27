@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-07-27
+
+### Added
+
+- `extensions/omp-ws/` — native omp extension `@wsagency/omp-ws` 0.1.0 (Tier 1+2 of dev-docs/omp-native-improvements.md): fail-safe dangerous-git guard (blocks force-push/reset-hard-origin/clean-fd/rm-rf-escapes at the tool_call layer — verified live), opt-in per-commit changelog gate, Jira session dashboard widget, docs-drift stop nudge, global OpenWiki freshness (defers to per-hub hook), and schema-validated `ws_ticket`/`ws_changelog`/`ws_adr` tools; 104 unit/integration tests, typechecked against omp 17.1.5; installed via `omp plugin link` (marketplace cannot carry TS extensions)
+- /ws-hub doctor omp harness check now also reports when the `@wsagency/omp-ws` extension is absent (informational)
+- docs/how-to/omp-setup.md gains the extension install section; capability audit recorded in dev-docs/omp-native-improvements.md
+
 ## [4.0.0] - 2026-07-27
 
 ### Changed
