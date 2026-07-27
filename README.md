@@ -72,6 +72,28 @@ cached catalog). Machine setup for the full omp
 experience (model roles, feature toggles): [docs/how-to/omp-setup.md](./docs/how-to/omp-setup.md).
 What works and known gaps: [docs/how-to/use-with-omp.md](./docs/how-to/use-with-omp.md).
 
+### Native omp extension — `@wsagency/omp-ws` (optional, recommended)
+
+The plugin covers commands/skills/agents; the native extension adds what
+omp's Claude-compat layer cannot run: a **fail-safe git guard** (blocks
+force-push, `reset --hard origin`, `clean -fd` at the tool layer), the
+opt-in per-commit changelog gate, a **Jira session dashboard widget**, a
+docs-drift stop nudge, global OpenWiki freshness, and the schema-validated
+`ws_ticket` / `ws_changelog` / `ws_adr` tools.
+
+It cannot ship through the marketplace (TypeScript extension) — install it
+from a checkout of this repo (requires [bun](https://bun.sh)):
+
+```bash
+git clone git@github.com:wsagency/WS-Claude-marketplace.git
+cd WS-Claude-marketplace/extensions/omp-ws
+bun install && bun run build
+omp plugin link .
+```
+
+Restart open omp sessions afterwards. Details, config, and off-switches:
+[extensions/omp-ws/README.md](./extensions/omp-ws/README.md).
+
 ## Plugin Details
 
 Everything below ships in the single **ws** plugin — grouped here by area.
