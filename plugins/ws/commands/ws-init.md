@@ -1,6 +1,6 @@
 ---
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
-description: Bootstrap WS marketplace — verify jira-cli setup and configure per-project Jira binding
+description: Bootstrap the WS suite for this user — verify jira-cli setup and bind the current project to a Jira project
 ---
 
 ## Context
@@ -45,6 +45,7 @@ defaults:
   jira_actions: ask          # ask | always | never
   pr_transition: in-review   # transition triggered after /ws-commit pr
   smart_commit_trailer: true # include the #time/#transition trailer in commit messages
+  commit_comment: false      # post the commit message as a Jira comment after /ws-commit (off by default)
 ui:
   session_start_dashboard: true
 ```

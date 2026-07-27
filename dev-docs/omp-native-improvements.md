@@ -45,7 +45,7 @@ forbidden — the generator is the only bridge.
 
 | Surface | Today in omp | Native gain |
 |---|---|---|
-| 7 commands, 28 skills, 14 agents | work via Claude-compat | none — stays compat, permanently |
+| 7 commands, 30 skills, 14 agents | generated natively at build time from `plugins/ws/` (ADR 0004) | native discovery, no compat layer; hand-maintained copies stay forbidden — the generator is the only bridge |
 | Shell hooks (SessionStart dashboard, PreToolUse changelog, Stop docs-drift) | DEAD (omp ignores Claude shell-hook JSON) | full parity via ExtensionAPI |
 | Per-project `.omp/` preset (rules, freshness TS hook, config) | works, but must be re-installed per hub | one global extension covers every repo |
 | Dangerous-git protection | TTSR rule (in-stream, advisory-strength) | `tool_call` block — fail-closed, cannot be talked past |
@@ -82,7 +82,9 @@ carries no TS); versions are tagged to match the marketplace repo release.
 
 Maintenance rule: the package stays THIN (no business logic beyond the five
 behaviors) because omp's ExtensionAPI moves fast — every omp minor gets a
-smoke test (`omp -e <built-hook> --no-extensions` headless run).
+smoke test (headless `omp -e <built-extension> --no-session -p ...` run — see
+the recipe in `extensions/omp-ws/README.md`; never `--no-extensions`, which
+silently drops explicit `-e` paths).
 
 ## Tier 2 — registered tools (conventions as tools)
 
@@ -94,7 +96,7 @@ free-form file edits. Candidates, in value order:
    "ticket file format drift" class of errors; ws-matt skills keep working
    without it (graceful absence).
 2. **`ws_changelog`** — append a Keep-a-Changelog entry (schema: type,
-   text, ticket). Wraps the `validate-changelog.sh` rules as validation.
+   text, ticket). Mirrors the keep-a-changelog section rules.
 3. **`ws_adr`** — lightweight ADR scaffold with auto-numbering.
 
 Each tool duplicates a convention that already exists as prose — so each is
@@ -103,10 +105,11 @@ not speculative).
 
 ## Adopted omp-specific improvements (from the 17.1.5 source audit)
 
-1. **Plugin `settings` schema + `features`** (`PluginManifest`): typed
-   settings with env fallback and secret masking (Jira project binding,
-   guard/dashboard toggles); bracket installs `ws[guard,jira]` for selective
-   features.
+1. **Plugin `settings` schema** (`PluginManifest`): typed settings with env
+   fallback and secret masking (Jira project binding, guard/dashboard
+   toggles). Only `settings` shipped — the `features` half (bracket installs
+   `ws[guard,jira]`) was dropped: feature gating is verified dead for the
+   directory-convention surface (commands/skills/agents/rules).
 2. **TTSR rules shipped by the package** — the guardrails run BOTH as
    in-stream rules (interrupt while the model is typing) and as the
    fail-safe `tool_call` hook (blocks execution) — defense in depth Claude
@@ -149,7 +152,9 @@ preset as defaults evolve:
 
 ## What is deliberately NOT ported
 
-- Commands/skills/agents (single source of truth — compat layer).
+- Commands/skills/agents are never hand-ported — they are generated natively
+  at build time from `plugins/ws/` (ADR 0004); hand-maintained copies remain
+  forbidden.
 - TTSR rules pack (already omp-native, per-project by design: rules are
   project conventions, not machine-global policy).
 - `outline-sync.py`, jira-cli, tea flows (agent-neutral binaries — the whole
@@ -159,7 +164,7 @@ preset as defaults evolve:
 
 - Repo: `extensions/omp-ws/` inside this marketplace repo (TS, bun build,
   npm publish `@wsagency/omp-ws`); README with `omp plugin link` dev flow.
-- Versioning: tag `omp-ws-vX.Y.Z`; X.Y.Z tracks the marketplace release the
-  build was verified against.
+- Versioning: the package versions independently (0.x); each marketplace
+  release notes the omp-ws version it shipped with.
 - Install documented in `docs/how-to/omp-setup.md`; `/ws-hub doctor` gains a
   harness-assets bullet checking for the extension when the user runs omp.

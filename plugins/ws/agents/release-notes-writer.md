@@ -1,4 +1,5 @@
 ---
+name: release-notes-writer
 description: Generates user-facing release notes in Linear's style from changelog entries or git history
 tools:
   - Bash

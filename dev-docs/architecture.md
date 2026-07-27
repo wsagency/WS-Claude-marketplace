@@ -52,16 +52,13 @@ Markdown files with YAML frontmatter defining slash commands. Executed inline in
 **Frontmatter schema:**
 ```yaml
 description: Brief description
-allowed-tools: [Tool1, Tool2, ...]
-arguments:
-  - name: arg-name
-    description: What the argument does
-    required: false
+allowed-tools: Tool1, Tool2, ...
+argument-hint: "[verb | other-verb] [verb args...]"
 ```
 
 **Example:** `commands/ws-docs.md` defines `/ws-docs` (unified entry point for documentation tasks).
 
-**Execution model:** Command is loaded as inline instructions; user can pass arguments via the slash interface.
+**Execution model:** Command is loaded as inline instructions. `argument-hint` is display-only autocomplete help; the arguments the user types are substituted into the command body via `$ARGUMENTS` (the full argument string) or positional `$1`, `$2`, ....
 
 ### `agents/*.md` (Task-spawned subagents)
 
@@ -110,7 +107,7 @@ Scaffolding and boilerplate for plugin-specific workflows. Used during initializ
 
 Scripts the plugin's commands shell out to for deterministic work.
 
-**Example:** `plugins/ws/scripts/` holds `outline-sync.py` (Outline publish/pull-back sync), `test_outline_sync.py` (its test suite), `parse-git-log.sh`, and `validate-changelog.sh`.
+**Example:** `plugins/ws/scripts/` holds `outline-sync.py` (one-way Outline publish: lint + push), `test_outline_sync.py` (its test suite), `parse-git-log.sh`, and `validate-changelog.sh`.
 
 ### The ws-matt skill graph (inside the ws plugin)
 
@@ -157,7 +154,7 @@ The `marketplace.json` at the repository root is the single source of truth for 
 
 ```
 1. Register marketplace
-   claude plugin marketplace add https://github.com/wsagency/ws-claude-marketplace
+   claude plugin marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
 
 2. Discover plugins
    claude plugin marketplace list
@@ -180,6 +177,10 @@ After installation, Claude Code discovers components from the cached plugin dire
 - **Agents:** Scans `agents/*.md`, enables spawning via Task tool with `plugin-name:agent-name`
 - **Skills:** Scans `skills/*/SKILL.md`, registers skill descriptions for contextual loading
 - **Hooks:** Loads `hooks/hooks.json`, configures event listeners
+
+## Native omp distribution
+
+Besides the Claude Code marketplace, the repo ships a native omp extension package at `extensions/omp-ws/`. Its generator (`scripts/generate.ts`) builds the package's commands, skills, agents, and rules from `plugins/ws/` at build time (`bun run build`), so `plugins/ws/` remains the single source of truth and nothing is hand-copied. This is the two-artifact model decided in ADR 0004: one plugin source, two distribution artifacts (Claude Code plugin + native omp package).
 
 ## Commands vs Agents vs Skills
 
@@ -235,7 +236,7 @@ This structure ensures new maintainers can quickly understand system design and 
 - **Maintainer docs:** `dev-docs/runbooks/` - Step-by-step guides for adding plugins, updating registry, versioning, and releases.
 - **Decisions:** `dev-docs/decisions/` - Why certain architectural choices were made (e.g., why versioning is lockstep, why hooks are optional).
 
-**Quick start for contributors:** Read `dev-docs/index.md`, then the relevant runbook (e.g., `add-plugin.md` or `update-plugin.md`).
+**Quick start for contributors:** Read `dev-docs/index.md`, then the relevant runbook (`create-plugin.md`, `add-command.md`, or `add-agent.md`).
 
 ## Install Path Conventions
 

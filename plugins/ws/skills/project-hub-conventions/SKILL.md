@@ -129,7 +129,7 @@ The plugin maintains a single block in the hub's `.gitignore`:
 ```
 
 Rules:
-- Anything outside the `=== ws-project-hub: ... ===` markers is hand-written and preserved
+- Anything outside the two literal markers — `# === ws-project-hub: sub-repos (auto-managed, do not edit) ===` (opening) and `# === /ws-project-hub ===` (closing) — is hand-written and preserved
 - `/ws-hub add` (with or without `--scan`) rewrites only what's between the markers
 - Sibling-pathed repos (`../X`) are NOT added — they're not in the hub
 - If the block is missing, commands create it at the top of `.gitignore`
@@ -182,7 +182,7 @@ Hubs used with omp carry a project `.omp/` preset written by `/ws-hub init`:
 
 ## Herdr — agent fleets
 
-Hubs pair well with [herdr](https://herdr.dev) (terminal agent multiplexer; supports claude and omp agent kinds). Setup is one **global** skill install per machine — `npx skills add ogulcancelik/herdr --skill herdr -g` — which covers every repo and agent reading `~/.claude/skills/`; nothing is written per sub-repo. Hub pattern: one herdr workspace per sub-repo (`herdr workspace create --cwd <hub>/<repo> --label <repo>`); `HERDR_ENV=1` marks a herdr-managed pane. The hub AGENTS.md keeps a short Herdr section when in use.
+Hubs pair well with [herdr](https://herdr.dev) (terminal agent multiplexer; supports claude and omp agent kinds). The ws plugin ships the vendored `herdr` skill (`plugins/ws/skills/herdr`, self-guarded by `HERDR_ENV=1`), so no per-repo or global skill install is needed where the plugin is installed. On machines WITHOUT the ws plugin, one **global** skill install per machine — `npx skills add ogulcancelik/herdr --skill herdr -g` — covers every repo and agent reading `~/.claude/skills/`; nothing is written per sub-repo. Hub pattern: one herdr workspace per sub-repo (`herdr workspace create --cwd <hub>/<repo> --label <repo>`); `HERDR_ENV=1` marks a herdr-managed pane. The hub AGENTS.md keeps a short Herdr section when in use.
 
 The cascade:
 

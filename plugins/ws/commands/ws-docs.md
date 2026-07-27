@@ -51,7 +51,7 @@ unavailable: fall back to repo-level and mention that `/ws-hub init` step 4
 The scope answer may be cached in `.claude/docs-config.yaml` as
 `default_scope: repo | product | ask` (honor it like `default_audience`).
 
-### Hub-root sweep (invoked at the hub root)
+### Hub sweep (invoked at the hub root)
 
 Sweep targets: every repo in `project.yaml` that exists on disk and has no
 output role (`role: docs` and `role: explained` are excluded — the docs repo
@@ -289,6 +289,8 @@ Dispatch `release-notes-writer` foreground. Write to `docs/release-notes/<versio
 
 ### verb = explain
 
+Not to be confused with `/ws-hub explained` (the `role: explained` HTML artefacts).
+
 Regenerate `docs/explained.md` (in DOCS_REPO when in hub mode, else the
 current repo): a single Outline-safe onboarding page generated from
 project.yaml, sub-repo READMEs, dev-docs/architecture.md, and existing docs/ —
@@ -345,4 +347,4 @@ docs:
 - Never overwrite files without prompt + confirmation (except in `init` when files are missing).
 - Never push or commit on the user's behalf without explicit verb authorization (only `catchup` commits automatically after user triage; `publish` commits `.outline-sync.json`).
 - All file paths are relative to the project root unless explicitly noted.
-- Background verbs (`init`, `audit`, `catchup`, `architecture`, `contributing`) dispatch agents with `run_in_background: true`; all other verbs (`repair`, `write`, `adr`, `changelog`, `release-notes`, `explain`, `publish`) run foreground. This is the single authoritative list — the per-verb sections above follow it.
+- Background verbs (`init`, `audit`, `catchup`, `architecture`, `contributing`) dispatch agents with `run_in_background: true`; all other verbs (`repair`, `write`, `adr`, `changelog`, `release-notes`, `explain`, `publish`) run foreground. This is the single authoritative list for the repo-level position — the per-verb sections above follow it; at the hub root, dispatch per the Hub sweep section instead.

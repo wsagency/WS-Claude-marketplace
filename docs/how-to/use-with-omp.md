@@ -82,7 +82,10 @@ system, and `/ws-matt setup` installs the edge-discipline rule (`alwaysApply`) i
 `.omp/rules/` so the two-tier topology (entry nodes never chain into entry nodes) and
 the `DONE|{path}` file-handoff protocol are enforced session-wide.
 
-## Known gaps in omp
+## Known gaps (compat install)
+
+The native `@wsagency/omp-ws` package closes the dashboard, changelog-gate, and
+stop-nudge gaps — only the compat install lacks them.
 
 - **SessionStart Jira dashboard** (ws plugin hook) does not run — omp hooks
   are TypeScript modules, not Claude's shell-hook JSON. Run `/ws-status` manually.

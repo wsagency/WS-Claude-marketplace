@@ -1,4 +1,5 @@
 ---
+name: arch-watcher
 description: Scans commits for architectural-change signals (BREAKING CHANGE, keywords, large diffs on infra/schema paths, new dependencies) and returns ADR candidates
 tools:
   - Bash

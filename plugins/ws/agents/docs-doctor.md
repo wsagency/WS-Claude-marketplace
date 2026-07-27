@@ -1,4 +1,5 @@
 ---
+name: docs-doctor
 description: Scans a project for documentation state (which artifacts exist, which are stale, which are missing) and returns a structured report for /ws-docs discovery and audit modes
 tools:
   - Bash

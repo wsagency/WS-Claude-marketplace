@@ -5,7 +5,7 @@ WS Agency **full-native suite** for [omp](https://omp.sh) (oh-my-pi). Since
 install, zero marketplace coupling:
 
 - **Generated at build time** from `plugins/ws/` in the ws-claude-marketplace
-  repo (single source of truth): `commands/` (7), `skills/` (28), `agents/`
+  repo (single source of truth): `commands/` (7), `skills/` (30), `agents/`
   (14, with omp `@role` model aliases), `rules/` (4 TTSR/always-apply rules).
   These directories are build artifacts — gitignored, wiped and rewritten by
   `scripts/generate.ts` on every build, never hand-edited.
@@ -38,8 +38,9 @@ omp plugin install @wsagency/omp-ws
 
 **Rebuild after plugin changes:** any change to `plugins/ws/` (commands,
 skills, agents, rules) requires `bun run build` (or `bun run generate`) here
-— the linked package serves whatever was last generated. The release runbook
-carries a "rebuild omp-ws" step.
+— the linked package serves whatever was last generated. The release
+checklist in `dev-docs/development.md` carries a "rebuild the native omp
+package" step.
 
 ## Migration from the marketplace plugin
 
@@ -201,7 +202,7 @@ the extension silently never loads.
 
 ## Versioning
 
-Tagged `omp-ws-vX.Y.Z`; the version tracks the marketplace release the build
-was verified against (see ADR 0002 — lockstep versioning — for the
+The package versions independently (0.x); each marketplace release notes the
+omp-ws version it shipped with (see ADR 0002 — lockstep versioning — for the
 marketplace side). Every omp minor gets a fresh smoke test: the ExtensionAPI
 moves fast and this package must stay thin.

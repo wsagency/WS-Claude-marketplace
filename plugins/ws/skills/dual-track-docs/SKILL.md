@@ -1,13 +1,6 @@
 ---
-description: Convention for splitting documentation into user-facing (docs/) and internal contributor (dev-docs/) tracks. Use when scaffolding documentation, deciding where a new doc belongs, or migrating an existing single-track docs layout.
-triggers:
-  - user docs
-  - dev docs
-  - documentation structure
-  - where should this go
-  - split docs
-  - docs/ vs dev-docs/
-  - dual-track
+name: dual-track-docs
+description: Convention for splitting documentation into user-facing (docs/) and internal contributor (dev-docs/) tracks. Use when scaffolding documentation, deciding where a new doc belongs (docs/ vs dev-docs/), discussing documentation structure, or migrating an existing single-track docs layout.
 ---
 
 # Dual-Track Documentation Convention
@@ -137,7 +130,7 @@ The canonical changelog lives at the repo root (`CHANGELOG.md`) for GitHub's aut
 
 ## CONTRIBUTING split
 
-`/contributing` produces three files:
+`/ws-docs contributing` produces three files:
 
 1. **`CONTRIBUTING.md` (root)** — thin router (~5 lines):
    ```markdown

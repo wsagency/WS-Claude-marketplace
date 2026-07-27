@@ -1,4 +1,5 @@
 ---
+name: api-documenter
 description: Generates API reference documentation by extracting code signatures and analyzing implementations
 tools:
   - Bash

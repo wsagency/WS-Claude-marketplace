@@ -149,19 +149,14 @@ When a command uses the Task tool:
 ```markdown
 ---
 description: What this command does
-allowed-tools:
-  - Read
-  - Write
-  - Bash
-arguments:
-  - name: arg1
-    description: What this argument is for
-    required: false
+allowed-tools: Read, Write, Bash
+argument-hint: "[arg1]"
 ---
 
 # Command Title
 
 Instructions for Claude when executing this command.
+The arguments the user typed are available as `$ARGUMENTS` (full string) or positional `$1`, `$2`, ....
 ```
 
 ### Agent File
@@ -199,7 +194,7 @@ Skill loading is **description-based**: Claude Code reads the `description` fron
 
 ## The Marketplace Registry
 
-The `marketplace.json` file serves as the central registry:
+The `marketplace.json` file serves as the central registry (the `version` value below is illustrative — it always equals the current lockstep release version):
 
 ```json
 {

@@ -56,7 +56,7 @@ Position-aware in WS project hubs: invoked **inside a sub-repo** it runs repo-le
 | `contributing` | Regenerate 3-file CONTRIBUTING set (diff + confirm) |
 | `changelog [version]` | Update `[Unreleased]` or cut version; mirrors to `docs/changelog.md` |
 | `release-notes [version]` | Linear-style notes → `docs/release-notes/<version>.md` |
-| `explain` | Regenerate `docs/explained.md` — generated Outline-safe onboarding page |
+| `explain` | Regenerate `docs/explained.md` — generated Outline-safe onboarding page (not to be confused with `/ws-hub explained`, the `role: explained` HTML artefact) |
 | `publish` | Lint Outline-safe profile, push `docs/` to Outline (`outline-sync.py`; needs Python 3 + `OUTLINE_API_TOKEN`) |
 
 In a hub with a `role: docs` sub-repo, `/ws-docs` enters hub mode: user-audience writes, product ADRs, and product architecture route to the docs repo (scope prompt, cacheable as `default_scope`).
@@ -87,7 +87,7 @@ Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-h
 | `add [--scan]` | Register a sub-repo; `--scan` discovers unregistered repos first |
 | `describe` | Refresh `description`/`tech` fields from repo contents |
 | `docs` | Cross-repo docs via the hub-architect agent (+ wiki refresh offer) |
-| `explained` | Generate the `role: explained` product explainer artefact |
+| `explained` | Generate the `role: explained` product explainer artefact (not to be confused with `/ws-docs explain`, the `docs/explained.md` onboarding page) |
 
 ### /ws-hub init
 
@@ -171,7 +171,7 @@ Refresh `description` and `tech` fields in `project.yaml` by reading each sub-re
 
 ### /ws-hub docs
 
-Generate cross-repo documentation (architecture, contracts, deployment topology) via the `hub-architect` agent. When the hub has an OpenWiki (`<hub>/openwiki/`), offers a prompted wiki refresh afterwards (sub-repo commits are invisible to hub git, so the refresh names the sub-repos explicitly). Targets the `role: docs` repo's `dev-docs/` when one is registered, else the hub's `docs/`.
+Generate cross-repo documentation (architecture, contracts, deployment topology) via the `hub-architect` agent. When the hub has an OpenWiki (`<hub>/openwiki/`), offers a prompted wiki refresh afterwards (sub-repo commits are invisible to hub git, so the refresh names the sub-repos explicitly). Targets the `role: docs` repo's `dev-docs/` when one is registered, else the hub's `dev-docs/` (hubs never carry `docs/`).
 
 **Example:**
 ```
@@ -378,6 +378,13 @@ Skills provide knowledge and templates, loaded on demand. All ship in the ws plu
 |-------|-------------|
 | `project-hub-conventions` | project hub, multi-repo, `<name>-main` |
 | `ws-artefacts-explained` | explained artefact contract (ws-artefacts format, palette, meta.json, git-source.yml) |
+| `herdr` | herdr fleet management (vendored upstream skill, self-guarded — active only when `HERDR_ENV` is set) |
+
+### Maintenance Skills
+
+| Skill | Purpose |
+|-------|---------|
+| `ws-repo-maintenance` | Periodic repo maintenance: vendored-upstream sync (UPSTREAM.md pins), tool/version audit |
 
 The `project-hub-conventions` skill is also vendored into every hub at init time (`<hub>/.claude/skills/`), so hubs remain self-documenting even when the marketplace plugin isn't installed.
 

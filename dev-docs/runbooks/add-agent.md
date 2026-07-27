@@ -269,6 +269,14 @@ Instruct agents to communicate progress:
 - Summarize when complete
 ```
 
+## Regenerate the omp Package
+
+The native omp package is generated from `plugins/ws/`. After adding or changing an agent, regenerate it:
+
+```bash
+cd extensions/omp-ws && bun run generate
+```
+
 ## What's Next?
 
 - [Plugin Architecture](../explanation/plugin-architecture.md) - Understand commands vs agents

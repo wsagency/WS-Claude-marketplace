@@ -103,6 +103,10 @@ The same install already includes the git workflow commands for commit and PR au
 
 ### Using omp instead of (or alongside) Claude Code
 
+On omp the recommended path is the native `@wsagency/omp-ws` package (see the
+README section "Installation in omp"); the `/marketplace` flow below is the
+compat alternative.
+
 The marketplace works in [omp](https://omp.sh) too — plugins installed via
 Claude Code are auto-visible there, or add directly inside omp:
 

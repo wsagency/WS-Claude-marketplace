@@ -1,13 +1,6 @@
 ---
-description: Knowledge about Architecture Decision Records (ADRs) using MADR v4.0.0 format
-triggers:
-  - adr
-  - architecture decision
-  - decision record
-  - design decision
-  - technical decision
-  - why we chose
-  - tradeoff
+name: adr
+description: Knowledge about Architecture Decision Records (ADRs) using MADR v4.0.0 format. Use when writing or discussing an ADR, an architecture/design/technical decision, a decision record, a tradeoff, or a "why we chose" question.
 ---
 
 # Architecture Decision Records (ADRs)

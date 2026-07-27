@@ -4,7 +4,7 @@ This guide covers setting up the WS Claude Marketplace repository for contributi
 
 ## Local setup
 
-The marketplace is a registry of plugins and source code — no build step required.
+The marketplace is a registry of plugins and source code — no build step required, with one exception: `extensions/omp-ws/` is a TypeScript package built with bun.
 
 1. Clone the repository:
    ```bash
@@ -31,7 +31,7 @@ See [dev-docs/runbooks/create-plugin.md](runbooks/create-plugin.md) for the comp
 
 ## Code style
 
-The marketplace is markdown and JSON only — no compiled code.
+The marketplace is markdown and JSON only — no compiled code — except `extensions/omp-ws/`, a TypeScript package built with bun.
 
 - **Markdown prose** — Follow the [style-guide skill](../plugins/ws/skills/style-guide/SKILL.md) for documentation tone, structure, and formatting
 - **Hook scripts** — Bash scripts in `plugins/*/hooks/` use `set -euo pipefail` at the top and target bash 3.2+ for macOS compatibility (no `mapfile`, no associative arrays)
@@ -77,6 +77,8 @@ This project follows a dual-track docs convention:
 1. After code changes, add an entry to `CHANGELOG.md` under `[Unreleased]`
 2. For architectural decisions, run `/ws-docs adr "<decision>"` to create an ADR in `dev-docs/decisions/` (two-tier convention: lightweight ADR by default, full MADR for big decisions)
 
+For periodic upstream/tool audits (vendored skills, pinned tools, version drift), follow the `ws-repo-maintenance` skill.
+
 ## Testing
 
 There is no automated test harness for markdown plugins. Verification is manual:
@@ -99,7 +101,8 @@ Direct commits to `main` are the convention for day-to-day changes:
 1. Cut `[Unreleased]` in `CHANGELOG.md` to a new `[X.Y.Z]` section
 2. Mirror the changelog to `docs/changelog.md`
 3. Set **every** `version` field in `.claude-plugin/marketplace.json` to `X.Y.Z`
-4. Tag the release: `git tag vX.Y.Z`
+4. Rebuild the native omp package: `cd extensions/omp-ws && bun run build` (regenerates from plugins/ws; verify printed counts)
+5. Tag the release: `git tag vX.Y.Z`
 
 Never bump a single plugin on its own — all versions move together.
 

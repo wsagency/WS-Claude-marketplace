@@ -1,11 +1,6 @@
 ---
-description: Knowledge about Keep a Changelog standard for writing and maintaining changelogs
-triggers:
-  - changelog
-  - CHANGELOG
-  - release notes
-  - version history
-  - what changed
+name: keep-a-changelog
+description: Knowledge about the Keep a Changelog standard for writing and maintaining changelogs. Use when touching a CHANGELOG, writing release notes, or summarizing version history and what changed.
 ---
 
 # Keep a Changelog Standard
@@ -87,3 +82,7 @@ See `examples/changelog-template.md` for a ready-to-use template.
 ## Single source + mirror
 
 In the dual-track-docs convention, the canonical `CHANGELOG.md` lives at the repo root for GitHub's auto-detection. A copy is mirrored to `docs/changelog.md` for inclusion in the VitePress user-facing site. `/ws-docs changelog` always updates both — the root file is the source of truth, the mirror is a build artifact.
+
+## Helper scripts
+
+The ws plugin ships two deterministic helpers: `${CLAUDE_PLUGIN_ROOT}/scripts/validate-changelog.sh` (checks a CHANGELOG.md against the format rules above) and `${CLAUDE_PLUGIN_ROOT}/scripts/parse-git-log.sh` (extracts Conventional Commits history for changelog generation).

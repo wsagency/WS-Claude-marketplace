@@ -1,4 +1,5 @@
 ---
+name: contributing-generator
 description: Generates CONTRIBUTING.md files by analyzing project tooling, workflows, and conventions
 tools:
   - Bash

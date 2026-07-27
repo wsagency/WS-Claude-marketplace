@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.3.0] - 2026-07-27
+
+### Added
+
+- `ws-repo-maintenance` skill — the written AI-driven maintenance process for this repo: vendored-upstream refresh (Matt Pocock skills per UPSTREAM.md, herdr per its pin), external-tool version + doc-drift audit (jira-cli, tea, omp, herdr, openwiki, bun, skills CLI — with the exact invocations to re-verify), omp capability adoption, rebuild + release, dated log in dev-docs/maintenance-log.md
+- `herdr` skill vendored VERBATIM from ogulcancelik/herdr (pin a979916; self-guarded by HERDR_ENV=1) — ships with the plugin everywhere; global npx install now needed only on machines without the plugin; /ws-hub init herdr step rewritten accordingly
+- ADR 0005 — skill and omp-rule naming rule (ws- prefix = WS graph/flow skills and convention-enforcement rules; unprefixed = vendored/generic standards and conventions)
+
+### Fixed
+
+- Three-angle review sweep (wiring/flows, naming/language, docs freshness — 53 findings, 0 broken flows): /ws-hub init omp preset lifted out of the OpenWiki branch (hubs without a wiki now get the preset; new step 5b), stale `pull-back` verb removed from AGENTS.md, `/ws-docs explain` vs `/ws-hub explained` cross-pointers, removed `/contributing` references, `ws-matt-*` agent names in the edge-discipline rule, `name:` frontmatter added to 10 agents and 6 skills (nonstandard `triggers:` keys folded into trigger-bearing descriptions), runbooks now document the real `argument-hint`/`$1` pattern and end with the omp-package regenerate step, release checklist gains the rebuild step (ADR 0004), known-gaps docs scoped to the compat install, /ws-init description and /ws-commit comment gating corrected, English example values in ws-artefacts-explained, and ~30 more doc-freshness corrections
+
 ## [4.2.0] - 2026-07-27
 
 ### Added

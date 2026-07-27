@@ -129,7 +129,7 @@ Perform the actions chosen in step 4 via jira-cli — one call each, in this ord
 
 - worklog → `jira issue worklog add TICKET "<Xh Ym>" --no-input`
 - transition → `jira issue move TICKET "<target state>"`
-- optional comment (only if explicitly enabled in config): `git log -1 --format='%H %s'`, then `jira issue comment add TICKET "Committed <SHA>: <subject>" --no-input`
+- optional comment (only when `defaults.commit_comment: true` in `~/.claude/ws/config.yaml` — off by default): `git log -1 --format='%H %s'`, then `jira issue comment add TICKET "Committed <SHA>: <subject>" --no-input`
 
 If a jira-cli call fails, report it and continue — the commit stands; the user can retry the Jira action separately.
 

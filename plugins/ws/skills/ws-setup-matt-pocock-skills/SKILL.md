@@ -9,7 +9,7 @@ disableModelInvocation: true
 
 Scaffold the per-repo configuration that the engineering skills assume:
 
-- **Issue tracker** — where issues live (GitHub by default; local markdown is also supported out of the box)
+- **Issue tracker** — where issues live (local markdown in `dev-docs/tickets/` by default; GitHub, GitLab, and Jira are also supported out of the box)
 - **Triage labels** — the strings used for the five canonical triage roles
 - **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them
 
@@ -112,6 +112,7 @@ Then write the docs files using the seed templates in this skill folder as a sta
 
 - [issue-tracker-local.md](./issue-tracker-local.md) — local-markdown issue tracker in `dev-docs/tickets/` (the default)
 - [issue-tracker-local-jira.md](./issue-tracker-local-jira.md) — local tracker + Jira stakeholder sync (substitute `<PROJECT-KEY>`)
+- [issue-tracker-jira.md](./issue-tracker-jira.md) — Jira as the primary tracker via jira-cli (substitute `<PROJECT-KEY>`)
 - [issue-tracker-github.md](./issue-tracker-github.md) — GitHub issue tracker
 - [issue-tracker-gitlab.md](./issue-tracker-gitlab.md) — GitLab issue tracker
 - [triage-labels.md](./triage-labels.md) — label mapping (only if `ws-triage` is installed)

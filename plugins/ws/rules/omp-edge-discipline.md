@@ -7,7 +7,8 @@ alwaysApply: true
 
 When executing any ws-matt graph node (ws-ask-matt, ws-implement, ws-to-spec,
 ws-to-tickets, ws-triage, ws-grill-with-docs, ws-improve-codebase-architecture,
-ws-wayfinder, ws-setup-matt-pocock-skills) or spawning ws-matt-* worker agents:
+ws-wayfinder, ws-setup-matt-pocock-skills) or spawning the worker agents
+(`reviewer`, `researcher`, `tdd-runner`):
 
 - **Never chain entry → entry.** An entry (user-invoked) node may invoke worker
   (model-invoked) nodes and worker agents only. When an entry node's output should

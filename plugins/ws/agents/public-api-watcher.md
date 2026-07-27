@@ -1,4 +1,5 @@
 ---
+name: public-api-watcher
 description: Diffs public API surface (TypeScript exports, Python __all__, CLI flags, GraphQL schema) across a git commit range and returns the set of docs/reference/ files that need updating
 tools:
   - Bash

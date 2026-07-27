@@ -1,13 +1,6 @@
 ---
-description: Knowledge about the Diátaxis documentation framework for creating effective technical documentation
-triggers:
-  - documentation
-  - docs
-  - tutorial
-  - how-to
-  - reference
-  - explanation
-  - guide
+name: diataxis
+description: Knowledge about the Diátaxis documentation framework for creating effective technical documentation. Use when writing or structuring docs — a tutorial, how-to guide, reference, or explanation.
 ---
 
 # Diátaxis Documentation Framework

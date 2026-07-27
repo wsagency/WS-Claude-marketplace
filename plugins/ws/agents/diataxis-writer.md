@@ -1,4 +1,5 @@
 ---
+name: diataxis-writer
 description: Writes a single Diátaxis document — tutorial, how-to guide, or explanation — applying exactly one quadrant's discipline from the diataxis skill
 tools:
   - Bash

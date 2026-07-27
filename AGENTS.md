@@ -6,7 +6,7 @@ a thin `@AGENTS.md` import kept for Claude Code compatibility.
 
 ## Repository Purpose
 
-This is the WS Agency internal Claude Code-compatible marketplace - a registry of plugins, agents, prompts, MCP servers, and workflows distributed to team members. It works in Claude Code natively and in omp (omp.sh) via its Claude-compatible marketplace support.
+This is the WS Agency internal Claude Code-compatible marketplace - a registry shipping one plugin (`ws`): commands, agents, skills, and hooks distributed to team members. It works in Claude Code natively and in omp (omp.sh) via its Claude-compatible marketplace support.
 
 ## Architecture
 
@@ -50,11 +50,12 @@ This project uses the WS dual-track-docs convention (ws plugin — formerly docs
 - Skill precedence in WS projects: **ws-matt discipline skills are authoritative** for TDD, code review, and research flows; superpowers process skills (brainstorming, systematic-debugging) remain complementary for other activities.
 - Design specs and implementation plans live in `dev-docs/superpowers/` (internal track), not `docs/`.
 - **Language: everything written is ENGLISH.** All development artifacts — code, comments, commands, skills, specs, ADRs, changelogs, commit messages, dev-docs, command output templates — are English only, for uniformity. User-facing documentation may be translated to other languages, but the ORIGINALS are English. Conversation with the user may be in any language; written artifacts never follow the conversation language. (Proper nouns keep their spelling.)
-- When changing public surface (a plugin's commands, agents, or skills), update the matching reference in `docs/reference/` and ensure the plugin's `description` field stays in sync between `plugin.json` and `marketplace.json`.
+- When changing public surface (a plugin's commands, agents, or skills), update the matching reference in `docs/reference/`, ensure the plugin's `description` field stays in sync between `plugin.json` and `marketplace.json`, and rebuild the native omp package (`cd extensions/omp-ws && bun run build`).
 - Versioning is lockstep (ADR 0002): all `version` fields in `marketplace.json` equal the repo release version. On release: cut `[Unreleased]` in CHANGELOG.md, mirror to `docs/changelog.md`, set all versions, tag `vX.Y.Z`. Never bump a single plugin independently.
 - Context files follow the AGENTS.md convention (this file): canonical content in `AGENTS.md`, `CLAUDE.md` is only the `@AGENTS.md` import. Never add content to `CLAUDE.md` directly. Exception: tool-managed marker blocks (e.g. OpenWiki's `<!-- OPENWIKI:START/END -->`) are owned by their tool and left alone.
 
 ### On request
 
 - `/ws-docs` — status / audit
-- `/ws-docs <verb>` — init / audit / catchup / repair / write / adr / architecture / contributing / changelog / release-notes / explain / publish / pull-back
+- `/ws-docs <verb>` — init / audit / catchup / repair / write / adr / architecture / contributing / changelog / release-notes / explain / publish
+- Repo maintenance (vendored upstreams, tool/version audit): follow the `ws-repo-maintenance` skill

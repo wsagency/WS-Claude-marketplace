@@ -19,8 +19,8 @@ Solutions for common issues with the WS Claude Marketplace.
 
 2. Reinstall the plugin:
    ```bash
-   claude plugin uninstall plugin-name@ws-marketplace
-   claude plugin install plugin-name@ws-marketplace
+   claude plugin uninstall ws@ws-marketplace
+   claude plugin install ws@ws-marketplace
    ```
 
 3. Restart Claude Code session
@@ -78,7 +78,7 @@ Solutions for common issues with the WS Claude Marketplace.
 
 2. Verify command exists in plugin:
    ```bash
-   ls plugins/plugin-name/commands/
+   ls plugins/ws/commands/
    ```
 
 3. Check command filename matches expected name (filename becomes command)
@@ -223,8 +223,8 @@ Solutions for common issues with the WS Claude Marketplace.
 
 1. Reinstall the local plugin:
    ```bash
-   claude plugin uninstall my-plugin
-   claude plugin install ./plugins/my-plugin
+   claude plugin uninstall ws
+   claude plugin install ./plugins/ws
    ```
 
 2. Restart Claude Code session
@@ -259,10 +259,10 @@ Solutions for common issues with the WS Claude Marketplace.
 
 1. Verify agent file exists:
    ```bash
-   ls plugins/plugin-name/agents/
+   ls plugins/ws/agents/
    ```
 
-2. Check agent reference format: `plugin-name:agent-name`
+2. Check agent reference format: `ws:agent-name`
 
 3. Ensure command has `Task` in `allowed-tools`
 

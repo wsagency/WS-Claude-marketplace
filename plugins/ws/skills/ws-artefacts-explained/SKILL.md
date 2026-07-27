@@ -74,9 +74,9 @@ tokens are minted and committed on the ws-artefacts side by its `add.mjs`;
   "artefacts": [
     {
       "file": "acme-explained.html",
-      "title": "Acme — kako proizvod radi",
+      "title": "Acme — how the product works",
       "date": "2026-07-26",
-      "description": "Pregled cijelog proizvoda za PO i dev tim"
+      "description": "Full-product overview for the PO and dev team"
     }
   ]
 }

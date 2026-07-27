@@ -1,4 +1,5 @@
 ---
+name: adr-writer
 description: Creates Architecture Decision Records (ADRs) by analyzing codebase context — lightweight by default, full MADR v4.0.0 for big decisions
 tools:
   - Bash

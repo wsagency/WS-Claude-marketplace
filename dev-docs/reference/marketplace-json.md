@@ -44,6 +44,8 @@ Array of plugin entries.
 
 ## Example
 
+The `version` value below is illustrative — in the real file it always equals the current lockstep release version:
+
 ```json
 {
   "plugins": [
@@ -117,7 +119,7 @@ done
    ```json
    {
      "name": "your-plugin",
-     "version": "4.0.0",
+     "version": "<current release version>",
      "source": "./plugins/your-plugin",
      "description": "What your plugin does",
      "category": "appropriate-category",

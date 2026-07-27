@@ -1,4 +1,5 @@
 ---
+name: changelog-analyzer
 description: Analyzes git commits to generate changelog entries following Keep a Changelog standard
 tools:
   - Bash
@@ -162,5 +163,7 @@ The invoking command may pass these structured inputs in your prompt:
 
 - **`destination_track`** — `user` (write into `docs/`) or `dev` (write into `dev-docs/`). Required for agents whose audience is ambiguous; ignored by agents that always target one track.
 - **`destination_path`** — an explicit output path that overrides the track default. Use this when the command has already resolved the exact target.
+- **`mode`** — `propose` = return-only: return the proposed changelog entries to the invoking command without writing any file.
+- **`version`** — a version string (e.g. `1.4.0`): cut a release — move `[Unreleased]` content into a new `[<version>]` section dated today.
 
 If neither is supplied, default per the routing rules in the `dual-track-docs` skill.

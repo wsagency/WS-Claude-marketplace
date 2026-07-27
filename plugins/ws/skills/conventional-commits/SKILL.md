@@ -1,14 +1,6 @@
 ---
-description: Knowledge about Conventional Commits standard for structured, meaningful commit messages
-triggers:
-  - commit
-  - conventional commits
-  - commit message
-  - git commit
-  - commitlint
-  - semantic versioning
-  - semver
-  - release
+name: conventional-commits
+description: Knowledge about the Conventional Commits standard for structured, meaningful commit messages. Use when writing a git commit message, discussing conventional commits or commitlint, or working with semantic versioning (semver) and releases.
 ---
 
 # Conventional Commits Standard
@@ -90,4 +82,4 @@ Conventional Commits directly enables:
 
 ## Where this lives in the dual-track convention
 
-Conventional Commits is a developer-facing convention. In projects using the `dual-track-docs` convention, the commit format documentation belongs in `dev-docs/development.md`, not in user-facing `docs/`. The `/contributing` command places it there automatically.
+Conventional Commits is a developer-facing convention. In projects using the `dual-track-docs` convention, the commit format documentation belongs in `dev-docs/development.md`, not in user-facing `docs/`. The `/ws-docs contributing` command places it there automatically.

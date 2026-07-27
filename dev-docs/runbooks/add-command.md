@@ -24,19 +24,12 @@ Every command needs frontmatter that configures its behavior:
 ```yaml
 ---
 description: One-line description shown when listing commands
-allowed-tools:
-  - Read
-  - Write
-  - Edit
-  - Glob
-  - Grep
-  - Bash
-arguments:
-  - name: target
-    description: The target file or directory
-    required: false
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash
+argument-hint: "[target]"
 ---
 ```
+
+(Mirror a real command: see `plugins/ws/commands/ws-docs.md` for a live example.)
 
 ### Frontmatter Fields
 
@@ -44,7 +37,7 @@ arguments:
 |-------|----------|-------------|
 | `description` | Yes | Shown in command list and help |
 | `allowed-tools` | Yes | Tools Claude can use during execution |
-| `arguments` | No | Named arguments the command accepts |
+| `argument-hint` | No | Display-only autocomplete hint for the command's arguments |
 
 ### Common Tool Sets
 
@@ -125,18 +118,13 @@ Present the summary as:
 
 ## Step 4: Using Arguments
 
-If your command accepts arguments, reference them in your instructions:
+If your command accepts arguments, declare a display-only `argument-hint` in the frontmatter and reference the actual values in the body via `$ARGUMENTS` (the full argument string) or positional `$1`, `$2`, ...:
 
 ```markdown
 ---
 description: Analyze a specific file
-allowed-tools:
-  - Read
-  - Glob
-arguments:
-  - name: file
-    description: Path to the file to analyze
-    required: true
+allowed-tools: Read, Glob
+argument-hint: "<file>"
 ---
 
 # Analyze File
@@ -145,7 +133,7 @@ Analyze the file specified by the user.
 
 ## Input
 
-The user wants to analyze: `{{file}}`
+The user wants to analyze: `$1`
 
 ## Steps
 
@@ -154,7 +142,7 @@ The user wants to analyze: `{{file}}`
 3. Report findings
 ```
 
-Arguments are passed when invoking: `/analyze-file src/main.ts`
+Arguments are passed when invoking: `/analyze-file src/main.ts` — here `$ARGUMENTS` and `$1` both expand to `src/main.ts`.
 
 ## Step 5: Test Your Command
 
@@ -211,17 +199,8 @@ Commands should do one thing well. If you need complex multi-step automation, co
 ```markdown
 ---
 description: Generate TypeScript interface from JSON
-allowed-tools:
-  - Read
-  - Write
-  - Glob
-arguments:
-  - name: input
-    description: Path to JSON file
-    required: true
-  - name: output
-    description: Output path for TypeScript file
-    required: false
+allowed-tools: Read, Write, Glob
+argument-hint: "<input.json> [output.ts]"
 ---
 
 # Generate TypeScript Interface
@@ -230,12 +209,12 @@ Convert a JSON file to a TypeScript interface definition.
 
 ## Input
 
-- JSON file: `{{input}}`
-- Output file: `{{output}}` (default: same name with .ts extension)
+- JSON file: `$1`
+- Output file: `$2` (default: same name with .ts extension)
 
 ## Steps
 
-1. Read the JSON file at `{{input}}`
+1. Read the JSON file at `$1`
 2. Analyze the structure to infer types
 3. Generate a TypeScript interface
 4. Write to the output file
@@ -256,6 +235,14 @@ export interface GeneratedInterface {
   // ... inferred fields
 }
 ```
+```
+
+## Step 6: Regenerate the omp Package
+
+The native omp package is generated from `plugins/ws/`. After adding or changing a command, regenerate it:
+
+```bash
+cd extensions/omp-ws && bun run generate
 ```
 
 ## What's Next?

@@ -16,6 +16,7 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
 const MARKER_RELPATH = path.join("openwiki", ".last-update.json");
 const LOCAL_HOOK_RELPATH = path.join(".omp", "hooks", "post", "openwiki-freshness.ts");
+// Shared deliberately with the per-project hook (plugins/ws/templates/omp/hooks/openwiki-freshness.ts) so only one banner renders.
 const WIDGET_KEY = "openwiki-freshness";
 const MAX_LISTED = 3;
 // Dirs never worth descending into while walking a dev-docs tree.

@@ -1,14 +1,6 @@
 ---
-description: Knowledge about documentation style guides and prose linting for consistent, high-quality technical writing
-triggers:
-  - style guide
-  - writing style
-  - vale
-  - prose linting
-  - tone
-  - voice
-  - technical writing
-  - documentation quality
+name: style-guide
+description: Knowledge about documentation style guides and prose linting for consistent, high-quality technical writing. Use when questions of writing style, tone, voice, prose linting (vale), or documentation quality come up.
 ---
 
 # Documentation Style Guide

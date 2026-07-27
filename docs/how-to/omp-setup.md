@@ -76,8 +76,8 @@ Context files: `~/.claude/CLAUDE.md` is read — do NOT also create
 
 ### Native package — `@wsagency/omp-ws` (the complete suite, recommended)
 
-Since 0.2.0 (ADR 0004) the native package carries the **ENTIRE WS suite** —
-all 7 commands, 28 skills, 14 agents (generated from the same source as the
+Since 0.2.0 (ADR 0004) the native package carries the **entire ws plugin surface** —
+all 7 commands, 30 skills, 14 agents (generated from the same source as the
 Claude plugin), TTSR rules, PLUS what only a native package can do:
 fail-safe git guard, opt-in changelog gate, Jira dashboard widget,
 docs-drift nudge, OpenWiki freshness, compaction preservation, and the

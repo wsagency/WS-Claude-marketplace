@@ -27,7 +27,7 @@ One plugin ([ws](./plugins/ws)), one workflow:
 - [Git](https://git-scm.com/)
 - [tea CLI](https://gitea.com/gitea/tea) (required for the git flows, `/ws-commit`) — `brew install tea`
 - [jira-cli](https://github.com/ankitpokhrel/jira-cli) (required for the git flows, `/ws-commit`) — `brew install ankitpokhrel/jira-cli/jira-cli`, then `export JIRA_API_TOKEN=<token>` and `jira init`
-- ws-matt issue trackers: `gh` (GitHub, default) / `glab` (GitLab) / jira-cli (Jira) depending on the tracker chosen in `/ws-matt setup`
+- ws-matt issue trackers: local `dev-docs/tickets/` by default; `gh` (GitHub) / `glab` (GitLab) / jira-cli (Jira) only when that tracker is chosen in `/ws-matt setup`
 - [Python 3](https://python.org/) (required for `/ws-docs publish` — one-way Outline sync) with `OUTLINE_API_TOKEN` exported or stored in `~/.config/ws-docs/outline-token`
 
 ## Installation
@@ -89,14 +89,14 @@ Everything below ships in the single **ws** plugin — grouped here by area.
 
 ### Docs suite (`/ws-docs`)
 
-Dual-track documentation suite with a single unified `/ws-docs` entry covering the full docs-as-code lifecycle: Diátaxis framework docs, Keep a Changelog, Architecture Decision Records (MADR v4.0.0), CONTRIBUTING.md, ARCHITECTURE.md, release notes, Conventional Commits, style guide enforcement, and TSDoc/GraphQL API reference. Ships opt-in PreToolUse/Stop hooks and dispatches work to background subagents.
+Dual-track documentation suite with a single unified `/ws-docs` entry covering the full docs-as-code lifecycle: Diátaxis framework docs, Keep a Changelog, Architecture Decision Records (MADR v4.0.0), CONTRIBUTING.md, dev-docs/architecture.md, release notes, Conventional Commits, style guide enforcement, and TSDoc/GraphQL API reference. Ships opt-in PreToolUse/Stop hooks and dispatches work to background subagents.
 
 **Commands** (all via the unified `/ws-docs` entry):
 - `/ws-docs` — Discovery / status (run with no verb to see what exists, what's stale, what's missing)
 - `/ws-docs init | audit | catchup | repair` — Scaffold the dual-track layout, audit docs state, backfill from git history, or fix drift
-- `/ws-docs write <type> <topic>` — Write a Diátaxis doc: `tutorial`, `how-to`, `explanation`, or `reference`
+- `/ws-docs write <type> <topic>` — Write a Diátaxis doc: `tutorial`, `howto`, `explanation`, or `reference`
 - `/ws-docs adr <decision>` — Create an Architecture Decision Record (MADR v4.0.0)
-- `/ws-docs architecture` — Generate ARCHITECTURE.md (matklad pattern)
+- `/ws-docs architecture` — Generate dev-docs/architecture.md (matklad pattern)
 - `/ws-docs contributing` — Generate CONTRIBUTING.md from project analysis
 - `/ws-docs changelog [version]` — Generate or update CHANGELOG.md from git history
 - `/ws-docs release-notes [version]` — Generate user-facing release notes (Linear style)
@@ -107,7 +107,7 @@ In a multi-repo hub (see [Project hubs](#project-hubs-ws-hub)) with a `role: doc
 
 **Agents:** `diataxis-writer`, `api-documenter`, `changelog-analyzer`, `adr-writer`, `arch-watcher`, `contributing-generator`, `architecture-documenter`, `docs-doctor`, `public-api-watcher`, `release-notes-writer`
 
-**Skills (knowledge bases):** `diataxis`, `keep-a-changelog`, `conventional-commits`, `style-guide`, `adr`, `dual-track-docs`
+**Skills (knowledge bases):** `diataxis`, `keep-a-changelog`, `conventional-commits`, `style-guide`, `adr`, `dual-track-docs`, plus `ws-repo-maintenance` (periodic repo maintenance: vendored upstreams, tool/version audit)
 
 #### Auto-Applying Documentation Skills
 
@@ -126,7 +126,7 @@ Always apply these WS documentation standards when working on this project:
 - **Writing**: Follow Google style guide (active voice, present tense, second person)
 - **Definition of done**: Documentation must ship with the feature
 
-Available commands: /ws-docs (run with no verb for discovery, or with init | audit | catchup | repair | write | adr | architecture | contributing | changelog | release-notes)
+Available commands: /ws-docs (run with no verb for discovery, or with init | audit | catchup | repair | write | adr | architecture | contributing | changelog | release-notes | explain | publish)
 ```
 
 For **hard enforcement**, add hooks to `.claude/settings.json`:
@@ -195,7 +195,7 @@ Manage multi-repo projects (mobile app, marketing site, design, docs, etc.) thro
 - `/ws-hub docs` — Generate cross-repo architecture/contracts/deployment docs (hub-architect agent; targets the `role: docs` repo's `dev-docs/` when one is registered)
 - `/ws-hub explained` — Generate the product explainer artefact (ws-artefacts format) in the hub's `role: explained` repo — audience: product owner + dev team
 
-One sub-repo per hub can be marked `role: docs` — the product docs repo (`<project>-docs`), single source of truth for user docs (synced to Outline via `/ws-docs publish`) and cross-repo dev docs. `/ws-hub init` offers to scaffold it — plus optional hub-level [OpenWiki](https://github.com/langchain-ai/openwiki) (one knowledge wiki for all sub-repos, referenced from every sub-repo's AGENTS.md, refreshed via `/ws-hub docs`) and [herdr](https://herdr.dev) fleet setup (global skill install; works with Claude Code and omp).
+One sub-repo per hub can be marked `role: docs` — the product docs repo (`<project>-docs`), single source of truth for user docs (synced to Outline via `/ws-docs publish`) and cross-repo dev docs. `/ws-hub init` offers to scaffold it — plus optional hub-level [OpenWiki](https://github.com/langchain-ai/openwiki) (one knowledge wiki for all sub-repos, referenced from every sub-repo's AGENTS.md, refreshed via `/ws-hub docs`) and [herdr](https://herdr.dev) fleet setup (the ws plugin ships the vendored `herdr` skill; works with Claude Code and omp).
 
 On omp, `/ws-hub init` also writes a project preset: `.omp/config.yml` (yolo approval by default — init asks; per-project model roles), the **WS TTSR rules pack** (stream-interrupting rules for dangerous git ops, commit format, and hand-edits of generated files) and a native TypeScript hook that shows a banner when dev-docs changed since the last OpenWiki refresh.
 
@@ -203,7 +203,7 @@ Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-h
 
 **Agents:** `hub-architect` (generates cross-repo architecture docs)
 
-**Skills:** `project-hub-conventions` (vendored into each hub at init time so hubs work even without the plugin installed)
+**Skills:** `project-hub-conventions` (vendored into each hub at init time so hubs work even without the plugin installed), `herdr` (vendored herdr fleet skill, self-guarded by `HERDR_ENV`)
 
 **Highlights:**
 - ASCII intro animation on launch (atlas figure with rotating Earth, lightning)
@@ -231,6 +231,8 @@ ws-claude-marketplace/
 │   ├── superpowers/         # brainstorming specs and plans
 │   ├── architecture.md
 │   └── development.md       # local setup, code style, commits
+├── extensions/
+│   └── omp-ws/              # native omp package (TypeScript, generated from plugins/ws at build time)
 ├── CHANGELOG.md             # single source (Keep a Changelog)
 ├── CONTRIBUTING.md          # thin router → docs/ + dev-docs/
 └── plugins/
