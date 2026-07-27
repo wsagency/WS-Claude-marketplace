@@ -12,7 +12,7 @@ This is the WS Agency internal Claude Code-compatible marketplace - a registry s
 
 **Marketplace Registry**: `.claude-plugin/marketplace.json` is the central manifest that registers all available plugins. Each plugin entry specifies name, version, source path, and metadata.
 
-**Plugin Structure**: Each plugin under `plugins/` follows Claude Code plugin conventions:
+**Plugin Structure**: The repo currently ships exactly one plugin, `ws` (ADR 0003); the conventions below are written per-plugin and apply again the moment a second plugin is added. Each plugin under `plugins/` follows Claude Code plugin conventions:
 - `.claude-plugin/plugin.json` - Plugin metadata (name, description, author)
 - `commands/*.md` - Slash commands with YAML frontmatter for allowed-tools and description
 - `agents/*.md` - Agent definitions with YAML frontmatter for tools and system prompts

@@ -7,7 +7,7 @@
  * TS behaviors the markdown surface cannot express.
  *
  * Tier 1 (parity + guard):
- *   - ws-guard: fail-closed tool_call block on dangerous git/rm commands
+ *   - ws-guard: fail-safe tool_call block on dangerous git/rm commands
  *   - changelog-gate: opt-in `git commit` gate (docs-config changelog_per_commit)
  *   - dashboard: Jira workload widget on session_start
  *   - stop-nudge: non-blocking CHANGELOG-drift reminder on session_stop

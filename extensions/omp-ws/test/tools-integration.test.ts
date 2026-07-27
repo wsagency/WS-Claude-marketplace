@@ -96,6 +96,17 @@ describe("ws_ticket", () => {
 		const result = await call(tool, { op: "close", slug: "nope" });
 		expect(result.isError).toBe(true);
 	});
+
+	test("close refuses to overwrite an existing done ticket", async () => {
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "open"), { recursive: true });
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "done"), { recursive: true });
+		await fs.writeFile(path.join(cwd, "dev-docs", "tickets", "open", "dup.md"), "# New\n", "utf8");
+		await fs.writeFile(path.join(cwd, "dev-docs", "tickets", "done", "dup.md"), "# Old\n", "utf8");
+		const result = await call(tool, { op: "close", slug: "dup" });
+		expect(result.isError).toBe(true);
+		expect(await fs.readFile(path.join(cwd, "dev-docs", "tickets", "done", "dup.md"), "utf8")).toBe("# Old\n");
+		expect(await fs.readFile(path.join(cwd, "dev-docs", "tickets", "open", "dup.md"), "utf8")).toBe("# New\n");
+	});
 });
 
 describe("ws_adr", () => {

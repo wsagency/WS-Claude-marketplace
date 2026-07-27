@@ -13,6 +13,7 @@ current project — check for `dev-docs/`, `.omp/`, a hub `project.yaml`,
 WS system — quick guide
 ──────────────────────────────────────────────
 START HERE
+  /ws-init              first run in a project: bind Jira (ws-commit/status use it)
   /ws-matt              graph status + suggested entry point
   /ws-matt ask          router: "what should I pick up?"
   Typical flow: idea → /ws-matt grill → (spec → tickets) → implement

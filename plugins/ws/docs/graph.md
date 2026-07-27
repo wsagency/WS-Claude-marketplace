@@ -58,10 +58,12 @@ graph TD
   GRILL -. "fits one session" .-> IMPL
 
   TOSPEC -. "published spec" .-> TOTICKETS
+  TOSPEC -. "ADR-worthy decision" .-> DM
   TOTICKETS -. "per frontier ticket" .-> IMPL
 
   IMPL -->|"at agreed seams"| TDD
   IMPL -->|"before commit"| CR
+  IMPL -. "decision the spec didn't cover" .-> DM
   TDD -->|"refactor stage"| CR
   TDD -. "vocabulary" .-> CBD
 

@@ -81,7 +81,7 @@ Declared in `package.json` under `omp.settings`; set globally via
 | Setting | Type | Default | Effect |
 |---|---|---|---|
 | `jiraProject` | string (env `JIRA_PROJECT`) | `""` | Jira project the dashboard scopes to; overrides the `.claude/ws-project.yaml` binding |
-| `guard` | boolean | `true` | fail-closed dangerous-git/rm guard |
+| `guard` | boolean | `true` | fail-safe dangerous-git/rm guard |
 | `dashboard` | boolean | `true` | Jira workload widget on session start |
 
 omp 17.1.5 offers no ExtensionAPI settings accessor, so the extension reads
@@ -99,12 +99,13 @@ switches.
 
 ## Behaviors (dist/index.js)
 
-### ws-guard (tool_call, fail-closed)
+### ws-guard (tool_call, fail-safe)
 
-Blocks dangerous bash invocations before they run:
+Blocks dangerous bash invocations before they run (fails OPEN on internal
+error; a self-discipline guard, not a security boundary):
 
 - `git push --force` / `-f` — `--force-with-lease` stays allowed
-- `git reset --hard origin/*`
+- `git reset --hard origin/*` / `upstream/*` / `@{u}` / `@{upstream}`
 - `git clean -fd` / `-fdx` (dry runs pass)
 - `rm -rf` targeting paths outside the working-directory subtree (absolute
   paths, `~`, `..`-escapes; globs are judged by their directory prefix)
@@ -204,5 +205,9 @@ the extension silently never loads.
 
 The package versions independently (0.x); each marketplace release notes the
 omp-ws version it shipped with (see ADR 0002 — lockstep versioning — for the
-marketplace side). Every omp minor gets a fresh smoke test: the ExtensionAPI
-moves fast and this package must stay thin.
+marketplace side). Bump rule: bump the package minor whenever a marketplace
+release changes the native code (`src/`, `scripts/`) OR the generated surface
+(anything under `plugins/ws/` that generate.ts consumes) — the version must
+signal "the artifact you get changed", not just "the TS changed". Every omp
+minor gets a fresh smoke test: the ExtensionAPI moves fast and this package
+must stay thin.

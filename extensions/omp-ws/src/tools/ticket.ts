@@ -149,6 +149,9 @@ export function registerTicketTool(pi: ExtensionAPI): void {
 				}
 			}
 			await fs.mkdir(path.dirname(to), { recursive: true });
+			if (await exists(to)) {
+				return textResult(`Destination already exists: ${to}. Resolve the slug collision first (rename one of the tickets).`, true);
+			}
 			await fs.rename(from, to);
 			return textResult(`Moved ${from} -> ${to}`);
 		},

@@ -43,4 +43,5 @@ Ask: "What's the public interface, and which seams should we test?"
 - **Edges:**
   - when a seam is unconfirmed → back to the caller (ws-implement or the user) to agree it — no test is written at an unconfirmed seam
   - then → ws-code-review (refactoring belongs to the review stage, not the red → green loop)
+  - when naming or seam-design vocabulary is needed → ws-codebase-design (worker: the deep-module vocabulary)
 - **Handoff protocol:** slices land in the working tree; the confirmed seam list is the shared state with the caller (DONE|{test files}).

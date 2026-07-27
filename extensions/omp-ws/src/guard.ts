@@ -1,11 +1,14 @@
 /**
- * ws-guard: fail-closed `tool_call` hook on bash that blocks dangerous git
- * and rm invocations. Enforcement counterpart of the advisory ws-guard-git
- * TTSR rule (dev-docs/omp-native-improvements.md, Tier 1 item 1).
+ * ws-guard: fail-safe `tool_call` hook on bash that blocks dangerous git
+ * and rm invocations (fails OPEN on internal error — see registerGuard).
+ * Enforcement counterpart of the advisory ws-guard-git TTSR rule
+ * (dev-docs/omp-native-improvements.md, Tier 1 item 1). It is a
+ * self-discipline guard, not a security boundary: parsing is quote-blind,
+ * so deliberately obfuscated commands can evade it.
  *
  * Blocked:
  *   - `git push --force` / `-f`            (--force-with-lease stays allowed)
- *   - `git reset --hard origin/*`
+ *   - `git reset --hard origin/*` / `upstream/*` / `@{u}` / `@{upstream}`
  *   - `git clean -fd` / `-fdx`
  *   - `rm -rf` targeting paths outside the working-directory subtree
  *     (absolute, `~`, `..`-escapes)
@@ -82,10 +85,12 @@ function checkGitResetHard(tokens: string[]): GuardVerdict | undefined {
 	const args = gitSubcommandArgs(tokens, "reset");
 	if (!args) return undefined;
 	if (!args.includes("--hard")) return undefined;
-	if (!args.some(arg => arg.startsWith("origin/"))) return undefined;
+	const isRemoteTracking = (arg: string): boolean =>
+		arg.startsWith("origin/") || arg.startsWith("upstream/") || arg === "@{u}" || arg === "@{upstream}" || arg.endsWith("@{u}") || arg.endsWith("@{upstream}");
+	if (!args.some(isRemoteTracking)) return undefined;
 	return {
 		block: true,
-		reason: "ws-guard: git reset --hard origin/* discards local commits and changes. Inspect first (`git status`, `git log origin/..HEAD`) and use `git stash` or a new branch instead.",
+		reason: "ws-guard: git reset --hard to a remote-tracking ref discards local commits and changes. Inspect first (`git status`, `git log @{u}..HEAD`) and use `git stash` or a new branch instead.",
 	};
 }
 
@@ -189,11 +194,13 @@ export function tokenize(segment: string): string[] {
 }
 
 /**
- * Index of the actual command word: skips env assignments and the common
- * wrappers (sudo, command, env, nohup, time).
+ * Index of the actual command word: skips env assignments, the common
+ * wrappers (sudo, command, env, nohup, time), and shell wrappers
+ * (`bash|sh|zsh -c "..."` — quote-blind tokenization exposes the inner
+ * command words, so skipping the shell finds them).
  */
 function commandPosition(tokens: string[]): number | undefined {
-	const wrappers = new Set(["sudo", "command", "env", "nohup", "time"]);
+	const wrappers = new Set(["sudo", "command", "env", "nohup", "time", "bash", "sh", "zsh"]);
 	for (let index = 0; index < tokens.length; index += 1) {
 		const token = tokens[index] as string;
 		if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token)) continue; // env assignment
@@ -239,7 +246,7 @@ export function registerGuard(pi: ExtensionAPI): void {
 			const cwd = typeof input.cwd === "string" && input.cwd !== "" ? input.cwd : ctx.cwd;
 			return evaluateGuard(command, cwd);
 		} catch (error) {
-			// Never let an internal error block every bash call (tool_call is fail-closed).
+			// Fail OPEN by design: an internal guard bug must never block every bash call.
 			pi.logger.warn(`ws-guard: internal error, allowing command: ${String(error)}`);
 			return;
 		}

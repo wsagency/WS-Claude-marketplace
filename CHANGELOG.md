@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- omp-ws guard hardening: unwraps `bash|sh|zsh -c` wrappers and blocks `git reset --hard` to `upstream/*` / `@{u}` / `@{upstream}` (not just `origin/*`); `generate.ts` now fails the build when a `plugins/ws/rules/` file is neither packaged nor explicitly excluded (no more silently dropped rules); `ws_ticket` close/move refuses to overwrite an existing destination ticket — `@wsagency/omp-ws` 0.3.0, with the package bump rule documented in its README
+
+### Fixed
+
+- Five-agent repo review sweep: ADR 0004 no longer attributes the omp "stays compat" clause to ADR 0003 (the real source is the 2026-07-23 omp dual-agent design spec); graph.md gains the declared `ws-to-spec → ws-domain-modeling` and `ws-implement → ws-domain-modeling` edges and ws-tdd now declares its vocabulary edge to ws-codebase-design; the guard is documented as fail-safe (fails OPEN on internal error) instead of "fail-closed" everywhere; the changelog gate no longer treats `git add -A && echo commit` as a commit; enforce-changelog.sh honors `--amend` (as its comment promised) and reads the commit type out of heredoc `-m "$(cat <<'EOF' ...)"` messages; `/ws-help` lists `/ws-init`; ws-docs init names the Task tool (not "Agent tool"); arch-watcher's broken awk example replaced with the working `git log --grep` form; ws-grilling points at `plugins/ws/UPSTREAM.md`; ADRs 0003–0005 use the same YAML frontmatter as 0001–0002; AGENTS.md states the single-plugin reality up front; dead root scaffolding dirs (`agents/`, `workflows/`, `mcp-servers/`) removed
+
 ## [4.3.0] - 2026-07-27
 
 ### Added

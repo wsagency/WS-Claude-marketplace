@@ -23,6 +23,12 @@ describe("isGitCommitCommand", () => {
 		expect(isGitCommitCommand("git status")).toBe(false);
 		expect(isGitCommitCommand("npm run commitlint")).toBe(false);
 	});
+	test("ignores non-commit git commands mentioning commit elsewhere", () => {
+		expect(isGitCommitCommand("git add -A && echo commit")).toBe(false);
+	});
+	test("recognizes commit behind git global options", () => {
+		expect(isGitCommitCommand('git -C /repo commit -m "feat: x"')).toBe(true);
+	});
 });
 
 describe("extractCommitType", () => {

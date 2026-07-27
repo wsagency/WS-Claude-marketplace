@@ -121,7 +121,7 @@ State icons: `✓ present`, `⚠ stale|behind|empty`, `✗ missing`. Suggest ver
 
 ### verb = init
 
-First-time setup. Dispatch in parallel (Agent tool with `run_in_background: true`):
+First-time setup. Dispatch in parallel (Task tool with `run_in_background: true`):
 
 1. `architecture-documenter` → writes `dev-docs/architecture.md`
 2. `contributing-generator` → writes the 3-file CONTRIBUTING set

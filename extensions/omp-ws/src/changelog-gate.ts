@@ -9,6 +9,7 @@
  * staged sets that are docs-only or already include CHANGELOG.md pass.
  */
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { splitSegments, tokenize } from "./guard";
 import { hasCodeChanges, loadDocsConfig, touchesChangelog, type DocsConfig } from "./lib/docs-config";
 import { stagedFiles } from "./lib/git";
 
@@ -17,9 +18,28 @@ export const CHANGELOG_BLOCK_REASON =
 
 /** True when the bash command is a `git commit` this gate should look at. */
 export function isGitCommitCommand(command: string): boolean {
-	if (!/\bgit\b[\s\S]*\bcommit\b/.test(command)) return false;
 	if (command.includes("--allow-empty")) return false;
-	return true;
+	for (const segment of splitSegments(command)) {
+		const tokens = tokenize(segment);
+		const gitIndex = tokens.indexOf("git");
+		if (gitIndex === -1) continue;
+		// Skip git global options (-C <dir>, -c <k=v>, --no-pager, ...) to find the subcommand.
+		let index = gitIndex + 1;
+		while (index < tokens.length) {
+			const token = tokens[index] as string;
+			if (token === "-C" || token === "-c") {
+				index += 2;
+				continue;
+			}
+			if (token.startsWith("-")) {
+				index += 1;
+				continue;
+			}
+			break;
+		}
+		if (tokens[index] === "commit") return true;
+	}
+	return false;
 }
 
 /**

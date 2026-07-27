@@ -28,8 +28,7 @@ Run each detector on the same commit range and merge results:
 
 **Signal B — Keywords in subject or body**:
 - Keywords: `adopt`, `migrate`, `switch`, `replace`, `introduce`
-- `git log <since>..<until> --format='%H %s%n%b' | awk '/^[a-f0-9]/{sha=$1; sub(/^[a-f0-9]+ /,""); subj=$0; next} { for (k in keywords) if (tolower($0) ~ k) print sha, subj }' BEGIN='keywords["adopt"]=1;keywords["migrate"]=1;keywords["switch"]=1;keywords["replace"]=1;keywords["introduce"]=1'`
-- Simpler shell-only approach: `git log <since>..<until> -i --grep='adopt\|migrate\|switch\|replace\|introduce' --format='%H %s'`
+- `git log <since>..<until> -i --grep='adopt\|migrate\|switch\|replace\|introduce' --format='%H %s'` (`--grep` matches the whole message, subject and body)
 
 **Signal C — Large diffs on infra / schema / config paths**:
 - Watch paths: `infra/`, `config/`, `schema/`, `migrations/`, top-level `*.toml`, `*.yaml`, `*.yml`, `Dockerfile`, `docker-compose.*`, `terraform/`, `helm/`, `.github/workflows/`

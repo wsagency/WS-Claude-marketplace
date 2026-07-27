@@ -21,4 +21,4 @@ Do not act on it until I confirm we have reached a shared understanding.
   - invoked by: ws-grill-with-docs, ws-triage (step 4), ws-improve-codebase-architecture (grilling loop), ws-wayfinder (HITL grilling tickets)
 - **Handoff protocol:** decisions land in the project docs (CONTEXT.md/ADRs) as they are made; no large artifacts — the conversation is the work.
 
-> Vendored from upstream `skills/productivity/grilling` as a runtime dependency of the engineering set (see UPSTREAM.md).
+> Vendored from upstream `skills/productivity/grilling` as a runtime dependency of the engineering set (see `plugins/ws/UPSTREAM.md`).

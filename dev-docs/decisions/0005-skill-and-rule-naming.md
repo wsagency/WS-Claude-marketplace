@@ -1,7 +1,10 @@
-# 0005 — Skill and omp-rule naming rule
+---
+status: accepted
+date: 2026-07-27
+decision-makers: Kristijan Lukačin
+---
 
-- Status: accepted
-- Date: 2026-07-27
+# 0005 — Skill and omp-rule naming rule
 
 Skills: `ws-` prefix marks WS graph/flow skills (ws-tdd, ws-implement, …);
 unprefixed marks vendored/generic standards and cross-cutting conventions

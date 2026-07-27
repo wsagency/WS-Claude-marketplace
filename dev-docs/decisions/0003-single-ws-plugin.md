@@ -1,8 +1,10 @@
-# 0003 — Merge the four plugins into a single `ws` plugin
+---
+status: accepted
+date: 2026-07-27
+decision-makers: Kristijan Lukačin
+---
 
-- Status: accepted
-- Date: 2026-07-27
-- Deciders: Kristijan Lukačin
+# 0003 — Merge the four plugins into a single `ws` plugin
 
 ## Context and Problem Statement
 

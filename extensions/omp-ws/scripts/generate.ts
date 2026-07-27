@@ -186,11 +186,21 @@ export async function generate(sourceRoot: string, outRoot: string): Promise<{ c
 	}
 
 	// rules (verbatim: TTSR templates + the always-apply edge discipline)
+	const packagedPluginRules = ["omp-edge-discipline.md"];
+	// Per-hub rules: /ws-hub installs these into each hub's .omp/rules/, never the package.
+	const excludedPluginRules = ["openwiki-freshness.md"];
+	const pluginRules = await listMarkdown(path.join(sourceRoot, "rules"));
+	const unaccountedRules = pluginRules.filter(name => !packagedPluginRules.includes(name) && !excludedPluginRules.includes(name));
+	if (unaccountedRules.length > 0) {
+		throw new Error(
+			`rules unaccounted for in generate.ts — add each to packagedPluginRules or excludedPluginRules:\n  - ${unaccountedRules.join("\n  - ")}`,
+		);
+	}
 	const ruleSources = [
 		...(await listMarkdown(path.join(sourceRoot, "templates", "omp", "rules"))).map(name =>
 			path.join(sourceRoot, "templates", "omp", "rules", name),
 		),
-		path.join(sourceRoot, "rules", "omp-edge-discipline.md"),
+		...packagedPluginRules.map(name => path.join(sourceRoot, "rules", name)),
 	];
 	for (const source of ruleSources) {
 		await fs.copyFile(source, path.join(outRoot, "rules", path.basename(source)));

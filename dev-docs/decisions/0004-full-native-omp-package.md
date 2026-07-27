@@ -1,12 +1,15 @@
-# 0004 — Full-native omp package, generated from a single source
+---
+status: accepted
+date: 2026-07-27
+decision-makers: Kristijan Lukačin
+---
 
-- Status: accepted
-- Date: 2026-07-27
-- Deciders: Kristijan Lukačin
+# 0004 — Full-native omp package, generated from a single source
 
 ## Context and Problem Statement
 
-ADR 0003 kept omp on the Claude-compat layer for commands/skills/agents,
+Until v4.1.0 omp consumed the suite through the Claude-compat marketplace
+layer for commands/skills/agents (the 2026-07-23 omp dual-agent design spec),
 reserving native work for hooks/tools. Kristijan decided the omp side should
 be COMPLETE and fully decoupled: one native artifact per harness, with
 authored truth in this repo (dev-docs conventions + plugins/ws content), so
@@ -53,5 +56,7 @@ two independent, complete distributions of the same source.
 - The generator is new load-bearing code: any change to `plugins/ws/`
   surface requires a package rebuild; CI-less for now — the release runbook
   gains a "rebuild omp-ws" step.
-- Supersedes ADR 0003's "stays compat, permanently" clause for omp;
-  everything else in 0003 stands.
+- Supersedes the compat-only omp distribution approach recorded in
+  dev-docs/superpowers/specs/2026-07-23-omp-dual-agent-design.md (content via
+  the Claude-compat marketplace, native TS only for hooks/tools). ADR 0003 is
+  unaffected — it never took a position on omp distribution.

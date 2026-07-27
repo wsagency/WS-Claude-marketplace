@@ -50,6 +50,28 @@ describe("git reset --hard origin/*", () => {
 	test("allows reset --soft origin/main", () => {
 		expect(blocked("git reset --soft origin/main")).toBe(false);
 	});
+	test("blocks reset --hard upstream/main", () => {
+		expect(blocked("git reset --hard upstream/main")).toBe(true);
+	});
+	test("blocks reset --hard @{u} forms", () => {
+		expect(blocked("git reset --hard @{u}")).toBe(true);
+		expect(blocked("git reset --hard main@{upstream}")).toBe(true);
+	});
+});
+
+describe("shell wrappers", () => {
+	test("blocks bash -c wrapped force push", () => {
+		expect(blocked('bash -c "git push --force"')).toBe(true);
+	});
+	test("blocks sh -c wrapped reset --hard origin", () => {
+		expect(blocked("sh -c 'git reset --hard origin/main'")).toBe(true);
+	});
+	test("blocks zsh -c wrapped clean -fd", () => {
+		expect(blocked('zsh -c "git clean -fd"')).toBe(true);
+	});
+	test("allows safe wrapped commands", () => {
+		expect(blocked('bash -c "git push origin main"')).toBe(false);
+	});
 });
 
 describe("git clean", () => {

@@ -21,6 +21,7 @@ command=$(printf '%s' "$input" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"
 # Only act on `git commit` invocations (not amend, not --allow-empty)
 case "$command" in
   *"git commit"*"--allow-empty"*) exit 0 ;;
+  *"git commit"*"--amend"*) exit 0 ;;
   *"git commit"*) ;;
   *) exit 0 ;;
 esac
@@ -100,6 +101,16 @@ fi
 unescaped=$(printf '%s' "$command" | sed 's/\\"/"/g')
 msg=$(printf '%s' "$unescaped" | sed -n "s/.*-m[[:space:]]*[\"']\([^\"']*\)[\"'].*/\1/p" | head -1)
 commit_type=$(printf '%s' "$msg" | sed -n 's/^\([a-z]*\)[(:!].*/\1/p')
+
+# Heredoc commits (`git commit -m "$(cat <<'EOF' ...)"`) hide the message from
+# the -m extraction above. The JSON-encoded command carries literal \n, so
+# expand those and read the type from the first heredoc body line.
+if [[ -z "$commit_type" ]]; then
+  commit_type=$(printf '%s' "$unescaped" | sed 's/\\n/\n/g' | awk '
+    found { if (match($0, /^[a-z]+[(:!]/)) print substr($0, 1, RLENGTH - 1); exit }
+    /<</ { found = 1 }
+  ')
+fi
 
 if [[ -n "$commit_type" ]]; then
   for t in $skip_types; do
