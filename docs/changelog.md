@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-07-27
+
 ### Added
 
 - omp-ws guard hardening: unwraps `bash|sh|zsh -c` wrappers and blocks `git reset --hard` to `upstream/*` / `@{u}` / `@{upstream}` (not just `origin/*`); `generate.ts` now fails the build when a `plugins/ws/rules/` file is neither packaged nor explicitly excluded (no more silently dropped rules); `ws_ticket` close/move refuses to overwrite an existing destination ticket — `@wsagency/omp-ws` 0.3.0, with the package bump rule documented in its README
