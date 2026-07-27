@@ -8,6 +8,21 @@ omp's plugin marketplace natively reads the Claude Code registry format this rep
 
 ## Install
 
+**Recommended: the native package** — carries the complete suite (commands,
+skills, agents generated from the same source — ADR 0004) plus the native
+layer (guard, TTSR rules, dashboard, nudges, ws_* tools):
+
+```bash
+git clone git@github.com:wsagency/WS-Claude-marketplace.git
+cd WS-Claude-marketplace/extensions/omp-ws && bun install && bun run build
+omp plugin link .
+```
+
+Don't combine it with the marketplace plugin in omp (everything loads twice;
+the package warns with the remedy at session start).
+
+**Compat alternative** (no bun/checkout — content only, no native layer):
+
 ```bash
 # omp reads .claude-plugin/marketplace.json as a Claude-compatible catalog
 omp

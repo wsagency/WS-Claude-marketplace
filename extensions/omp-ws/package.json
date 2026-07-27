@@ -1,20 +1,43 @@
 {
   "name": "@wsagency/omp-ws",
-  "version": "0.1.0",
-  "description": "WS Agency native omp extension: dangerous-git guard, changelog gate, Jira session dashboard, docs-drift stop nudge, OpenWiki freshness, and ws_ticket/ws_changelog/ws_adr tools.",
+  "version": "0.2.0",
+  "description": "WS Agency full-native omp suite: all WS commands/skills/agents/rules (generated from the marketplace source) plus dangerous-git guard, changelog gate, Jira session dashboard, docs-drift stop nudge, OpenWiki freshness, compaction preservation, and ws_ticket/ws_changelog/ws_adr tools.",
   "type": "module",
   "main": "dist/index.js",
   "files": [
     "dist",
+    "commands",
+    "skills",
+    "agents",
+    "rules",
     "README.md"
   ],
   "omp": {
     "extensions": [
       "./dist/index.js"
-    ]
+    ],
+    "settings": {
+      "jiraProject": {
+        "type": "string",
+        "description": "Jira project key the session dashboard scopes to (overrides .claude/ws-project.yaml binding)",
+        "env": "JIRA_PROJECT",
+        "default": ""
+      },
+      "guard": {
+        "type": "boolean",
+        "description": "Enable the fail-closed dangerous-git/rm bash guard",
+        "default": true
+      },
+      "dashboard": {
+        "type": "boolean",
+        "description": "Enable the Jira workload widget on session start",
+        "default": true
+      }
+    }
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --outdir ./dist --target=bun",
+    "generate": "bun run scripts/generate.ts",
+    "build": "bun run generate && bun build ./src/index.ts --outdir ./dist --target=bun",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

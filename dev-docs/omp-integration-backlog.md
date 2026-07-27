@@ -28,10 +28,13 @@ checklist. Remaining, prioritized:
    needs a hands-on omp install test first (does `model: sonnet` resolve?).
 4. **WATCHDOG.md template** (M) — advisor brief encoding ws-code-review axes;
    cross-family `modelRoles.advisor`.
-5. **omp-native extension** (M/L) — superseded by the full audit and tiered
-   plan in `dev-docs/omp-native-improvements.md` (`@wsagency/omp-ws`: guard,
-   changelog enforcement, Jira dashboard, stop nudge, global wiki freshness;
-   Tier 2 registered tools; Tier 3 config improvements).
+5. **omp-native extension** — SHIPPED as the full-native `@wsagency/omp-ws`
+   0.2.0 (ADR 0004; see `dev-docs/omp-native-improvements.md`). Open
+   follow-up: omp lists only ~11 of the 19 non-hidden skills in the session
+   system prompt (prompt-budget/conditional behavior; identical under the
+   marketplace plugin — the 6 `triggers:` knowledge skills + 2 conventions
+   skills load but aren't listed and `skill://` reads report missing).
+   Investigate omp's skill-listing rules and adjust frontmatter if needed.
 6. **Browser-verify skill** (M) — omp `browser` tool (ariaSnapshot, screenshots)
    as the UI-verification path, replacing the playwright MCP dependency.
 7. **invoke-ai.sh RPC backend** (L) — drive omp via `--mode rpc` for scripted

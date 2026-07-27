@@ -51,38 +51,15 @@ claude plugin marketplace update ws-marketplace
 claude plugin uninstall ws@ws-marketplace
 ```
 
-### Installation in omp
+### Installation in omp — native package (recommended)
 
-omp reads this registry natively (Claude-plugin format). Easiest path: plugins
-already installed via Claude Code are **auto-visible in omp** — nothing to do.
-Direct install:
-
-```
-omp
-/marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
-/plugin install ws@ws-marketplace
-```
-
-⚠️ Always install as `ws@ws-marketplace` in omp — a bare `install ws` resolves
-to the npm websocket package of the same name, not this plugin.
-
-Update later with `/marketplace update ws-marketplace` followed by
-`/plugin upgrade` (the order matters — upgrade alone compares against the
-cached catalog). Machine setup for the full omp
-experience (model roles, feature toggles): [docs/how-to/omp-setup.md](./docs/how-to/omp-setup.md).
-What works and known gaps: [docs/how-to/use-with-omp.md](./docs/how-to/use-with-omp.md).
-
-### Native omp extension — `@wsagency/omp-ws` (optional, recommended)
-
-The plugin covers commands/skills/agents; the native extension adds what
-omp's Claude-compat layer cannot run: a **fail-safe git guard** (blocks
-force-push, `reset --hard origin`, `clean -fd` at the tool layer), the
-opt-in per-commit changelog gate, a **Jira session dashboard widget**, a
-docs-drift stop nudge, global OpenWiki freshness, and the schema-validated
-`ws_ticket` / `ws_changelog` / `ws_adr` tools.
-
-It cannot ship through the marketplace (TypeScript extension) — install it
-from a checkout of this repo (requires [bun](https://bun.sh)):
+On omp, install the **native package** `@wsagency/omp-ws` — it carries the
+COMPLETE suite (all commands, skills, and agents, generated from the same
+source as the Claude plugin — ADR 0004) plus omp-only capabilities: a
+**fail-safe git guard**, TTSR convention rules, the opt-in changelog gate, a
+**Jira session dashboard widget**, docs-drift and OpenWiki-freshness nudges,
+compaction preservation, and the schema-validated `ws_ticket` /
+`ws_changelog` / `ws_adr` tools. Requires [bun](https://bun.sh):
 
 ```bash
 git clone git@github.com:wsagency/WS-Claude-marketplace.git
@@ -91,8 +68,20 @@ bun install && bun run build
 omp plugin link .
 ```
 
-Restart open omp sessions afterwards. Details, config, and off-switches:
+Restart open omp sessions afterwards. Do NOT also install the marketplace
+`ws` plugin in omp — everything would load twice (the package warns at
+session start with the remedy: `omp plugin disable ws@ws-marketplace`).
+Details, settings, and off-switches:
 [extensions/omp-ws/README.md](./extensions/omp-ws/README.md).
+
+Compat alternative (no bun, no checkout): omp also reads this registry in
+Claude-plugin format — `/marketplace add git@github.com:wsagency/WS-Claude-marketplace.git`
+then `/plugin install ws@ws-marketplace` (⚠️ always with the
+`@ws-marketplace` suffix — a bare `install ws` resolves to the npm websocket
+package). You get all commands/skills/agents but none of the native layer.
+Machine setup (model roles, feature toggles):
+[docs/how-to/omp-setup.md](./docs/how-to/omp-setup.md). What works and known
+gaps: [docs/how-to/use-with-omp.md](./docs/how-to/use-with-omp.md).
 
 ## Plugin Details
 

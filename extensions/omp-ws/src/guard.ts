@@ -10,12 +10,15 @@
  *   - `rm -rf` targeting paths outside the working-directory subtree
  *     (absolute, `~`, `..`-escapes)
  *
- * Off-switches: `.omp/ws-guard.off` file in cwd, or env OMP_WS_GUARD=off.
+ * Off-switches: plugin setting `guard: false` (omp plugin settings /
+ * .omp/plugin-overrides.json), `.omp/ws-guard.off` file in cwd, or env
+ * OMP_WS_GUARD=off.
  */
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { readWsSettings } from "./lib/settings";
 
 export interface GuardVerdict {
 	block: true;
@@ -216,6 +219,7 @@ const OFF_FILE = path.join(".omp", "ws-guard.off");
 
 async function guardDisabled(cwd: string): Promise<boolean> {
 	if (process.env.OMP_WS_GUARD === "off") return true;
+	if (!(await readWsSettings(cwd)).guard) return true;
 	try {
 		await fs.stat(path.join(cwd, OFF_FILE));
 		return true;

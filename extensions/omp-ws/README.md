@@ -1,13 +1,23 @@
 # @wsagency/omp-ws
 
-WS Agency native extension for [omp](https://omp.sh) (oh-my-pi). Ports the WS
-marketplace shell hooks to omp's ExtensionAPI and adds schema-validated tools
-for the WS conventions. Design doc: `dev-docs/omp-native-improvements.md` in
-the ws-claude-marketplace repo (Tier 1 + Tier 2).
+WS Agency **full-native suite** for [omp](https://omp.sh) (oh-my-pi). Since
+0.2.0 (ADR 0004) this package IS the complete WS surface on omp — one
+install, zero marketplace coupling:
 
-The WS commands, skills, and agents stay in the Claude-format `ws` plugin
-(omp reads it natively) — this package only carries what the compat layer
-cannot express: blocking hooks, UI widgets, and registered tools.
+- **Generated at build time** from `plugins/ws/` in the ws-claude-marketplace
+  repo (single source of truth): `commands/` (7), `skills/` (28), `agents/`
+  (14, with omp `@role` model aliases), `rules/` (4 TTSR/always-apply rules).
+  These directories are build artifacts — gitignored, wiped and rewritten by
+  `scripts/generate.ts` on every build, never hand-edited.
+- **Hand-written TS** (`src/` → `dist/index.js`): the behaviors markdown
+  cannot express — blocking hooks, UI widgets, compaction preservation, and
+  registered tools.
+
+omp discovers the generated directories natively from any enabled npm/link
+plugin (its `omp-plugins` provider scans `commands/*.md`, `skills/<name>/
+SKILL.md`, `rules/*.md`, and the task system scans `agents/*.md`). Claude
+Code users keep using the marketplace `ws` plugin; the two artifacts are
+independent, complete distributions generated from the same source.
 
 ## Install
 
@@ -16,22 +26,77 @@ Development flow (from a checkout of the marketplace repo):
 ```bash
 cd extensions/omp-ws
 bun install
-bun run build
+bun run build          # generate (commands/skills/agents/rules) + bundle dist/
 omp plugin link "$(pwd)"
 ```
 
-Restart omp. The `omp` field in `package.json` points the plugin loader at
-`dist/index.js`.
-
-Once published to npm, this becomes:
+Restart omp. Once published to npm:
 
 ```bash
 omp plugin install @wsagency/omp-ws
 ```
 
-To try a build without linking: `omp -e /path/to/extensions/omp-ws/dist/index.js`.
+**Rebuild after plugin changes:** any change to `plugins/ws/` (commands,
+skills, agents, rules) requires `bun run build` (or `bun run generate`) here
+— the linked package serves whatever was last generated. The release runbook
+carries a "rebuild omp-ws" step.
 
-## Behaviors
+## Migration from the marketplace plugin
+
+Running BOTH `ws@ws-marketplace` (Claude-format marketplace plugin) and this
+package in omp registers every command/skill/agent **twice**. The extension
+warns at session start when it detects this. Remedies (verified against the
+omp 17.1.5 source):
+
+- **On omp**, if you installed the marketplace plugin through omp: run
+  `omp plugin disable ws@ws-marketplace` (or uninstall it).
+- **On machines where Claude Code also has `ws` installed** (omp reads
+  Claude's `~/.claude/plugins/installed_plugins.json` too): add a disabled
+  entry for the id to `~/.omp/plugins/installed_plugins.json` — omp's own
+  registry is authoritative and drops the Claude-sourced root, while Claude
+  Code keeps its copy untouched:
+
+  ```json
+  { "version": 2, "plugins": { "ws@ws-marketplace": [
+    { "installPath": "", "version": "0", "installedAt": "", "lastUpdated": "", "enabled": false }
+  ] } }
+  ```
+
+  (Merge into the existing file if it already has entries.)
+- Note: `.omp/plugin-overrides.json` `disabled: []` does **not** work here —
+  it only applies to npm/link plugins, never to marketplace plugins.
+
+## Settings
+
+Declared in `package.json` under `omp.settings`; set globally via
+`omp plugin settings @wsagency/omp-ws` (stored in
+`~/.omp/plugins/omp-plugins.lock.json`) or per-project in
+`.omp/plugin-overrides.json`:
+
+```json
+{ "settings": { "@wsagency/omp-ws": { "guard": false, "dashboard": false, "jiraProject": "WSC" } } }
+```
+
+| Setting | Type | Default | Effect |
+|---|---|---|---|
+| `jiraProject` | string (env `JIRA_PROJECT`) | `""` | Jira project the dashboard scopes to; overrides the `.claude/ws-project.yaml` binding |
+| `guard` | boolean | `true` | fail-closed dangerous-git/rm guard |
+| `dashboard` | boolean | `true` | Jira workload widget on session start |
+
+omp 17.1.5 offers no ExtensionAPI settings accessor, so the extension reads
+the same two stores omp's own `getPluginSettings` reads (project overrides
+global, env fallback and defaults applied per the schema). Legacy
+off-switches keep working: `.omp/ws-guard.off` file or `OMP_WS_GUARD=off`
+for the guard; `hooks.session_start_dashboard` / `ui.session_start_dashboard`
+YAML toggles for the dashboard.
+
+No `features` split: omp's feature mechanism only gates `extensions`/`tools`
+manifest entry points — it cannot gate the directory-convention surface
+(commands/skills/agents/rules), which is the bulk of this package, so a
+split would toggle almost nothing. The `settings` booleans cover the real
+switches.
+
+## Behaviors (dist/index.js)
 
 ### ws-guard (tool_call, fail-closed)
 
@@ -43,10 +108,9 @@ Blocks dangerous bash invocations before they run:
 - `rm -rf` targeting paths outside the working-directory subtree (absolute
   paths, `~`, `..`-escapes; globs are judged by their directory prefix)
 
-The block reason always tells the agent what to do instead.
-
-Off-switches: create `.omp/ws-guard.off` in the project, or set
-`OMP_WS_GUARD=off` in the environment.
+The block reason always tells the agent what to do instead. Defense in
+depth: the generated `rules/ws-guard-git.md` TTSR rule interrupts the model
+in-stream; this hook is the enforcement layer.
 
 ### changelog-gate (tool_call on `git commit`)
 
@@ -61,12 +125,24 @@ extracted from `-m`, and `--allow-empty`.
 ### dashboard (session_start)
 
 Port of `session-start-dashboard.sh`, rendered as a persistent widget below
-the editor plus a one-line notification instead of injected context. Requires
-`./.claude/ws-project.yaml` and `~/.claude/ws/config.yaml`; honors the
-`hooks.session_start_dashboard` (project) / `ui.session_start_dashboard`
-(global) toggles. Fetches with the same jira-cli query `/ws-status` uses
-(3s timeout). Silent no-op on any failure — missing binary, unconfigured
-jira, timeout, headless mode.
+the editor plus a one-line notification. Requires `./.claude/ws-project.yaml`
+and `~/.claude/ws/config.yaml`; honors the `dashboard` plugin setting and the
+YAML toggles. Fetches with the same jira-cli query `/ws-status` uses (3s
+timeout). Silent no-op on any failure.
+
+### both-installed warning (session_start)
+
+Detects `ws@ws-marketplace` still enabled in omp (checks omp's user/project
+`installed_plugins.json` registries and Claude Code's, with omp's registry
+authoritative — same precedence as omp's loader) and shows a one-line
+warning with the right remedy (see Migration above).
+
+### compaction preservation (session.compacting)
+
+Injects a short preserved-context block into the compaction summary so long
+sessions keep WS state: open ticket file names under `dev-docs/tickets/open/`
+(max 5) and whether CHANGELOG.md has uncommitted changes. Non-fatal on any
+error.
 
 ### stop-nudge (session_stop, non-blocking)
 
@@ -74,20 +150,19 @@ Port of `enforce-stop.sh`, deliberately downgraded from a blocking stop hook
 to a visible reminder: when uncommitted code changes exist without a
 CHANGELOG.md update (and docs-config enforcement is on), it shows a warning
 notification and a banner. It never returns `continue`/`decision: "block"`,
-so the turn always settles. Debounced per drift set; the banner clears when
-the drift resolves.
+so the turn always settles.
 
 ### wiki-freshness (session_stop, non-blocking)
 
 Behavior-identical port of the per-project hook
 `plugins/ws/templates/omp/hooks/openwiki-freshness.ts`: warns when
 `<repo>/dev-docs/**` files are newer than `openwiki/.last-update.json`.
-Skips entirely when `<cwd>/.omp/hooks/post/openwiki-freshness.ts` exists —
-the per-project hook already covers that repo (no double banners).
+Skips when `<cwd>/.omp/hooks/post/openwiki-freshness.ts` exists (no double
+banners).
 
 ## Tools
 
-All three are OPTIONAL conveniences: the prose conventions in the ws plugin
+All three are OPTIONAL conveniences: the prose conventions in the generated
 skills remain authoritative, and free-form file edits stay equally valid.
 
 | Tool | What it does |
@@ -100,9 +175,10 @@ skills remain authoritative, and free-form file edits stay equally valid.
 
 ```bash
 bun install        # dev deps (typescript + @oh-my-pi/pi-coding-agent for types)
+bun run generate   # regenerate commands/skills/agents/rules from plugins/ws/
 bun run typecheck  # tsc --noEmit against the real omp 17.x types
-bun run build      # bundles src/index.ts -> dist/index.js
-bun test           # unit + integration tests for all pure logic
+bun run build      # generate + bundle src/index.ts -> dist/index.js
+bun test           # unit + integration tests (incl. the generator transforms)
 ```
 
 Smoke test against the installed omp (headless, throwaway directory):
@@ -115,7 +191,9 @@ omp -e /path/to/extensions/omp-ws/dist/index.js --no-session \
 
 Expected: the command is blocked and the model reports the ws-guard reason
 (suggesting `--force-with-lease`). Extension load errors, if any, appear in
-the newest `~/.omp/logs/omp.*.log`.
+the newest `~/.omp/logs/omp.*.log`. With the package linked, a plain
+`omp --no-session -p "/ws-help"` from any repo resolves the generated
+`/ws-help` command natively.
 
 Note: do NOT combine the smoke test with `--no-extensions` — as of omp
 17.1.5 that flag also drops explicit `-e` paths (despite its help text), so

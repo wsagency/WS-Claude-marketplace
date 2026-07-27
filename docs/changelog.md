@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-07-27
+
+### Added
+
+- `@wsagency/omp-ws` 0.2.0 is now the FULL-native omp distribution (ADR 0004): `scripts/generate.ts` builds the complete suite (7 commands, 28 skills, 14 agents with omp frontmatter transform — `@role` model aliases, `name` injection; 4 TTSR rules) from `plugins/ws/` at build time — one source of truth, two complete artifacts; on omp you install ONLY the npm package, no marketplace. Native discovery proven with the Claude-compat provider disabled
+- omp package improvements from the 17.1.5 source audit: typed plugin `settings` (jiraProject/guard/dashboard with env fallback), both-installed duplication warning with source-traced remedy (`omp plugin disable ws@ws-marketplace`), compaction preservation (open tickets + changelog state survive `session.compacting`); 139 tests
+- ADR 0004 (full-native omp package, generated from single source — supersedes the "stays compat" clause of ADR 0003); capability audit updated in dev-docs/omp-native-improvements.md
+
+### Changed
+
+- omp install docs (README, omp-setup, use-with-omp): native package is the recommended complete path; marketplace install demoted to compat alternative; never run both in omp
+
 ## [4.1.0] - 2026-07-27
 
 ### Added

@@ -14,6 +14,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { run } from "./lib/exec";
+import { readWsSettings } from "./lib/settings";
 import { sectionValue } from "./lib/yaml-lite";
 
 const WIDGET_KEY = "ws-jira-dashboard";
@@ -77,6 +78,9 @@ export function registerDashboard(pi: ExtensionAPI): void {
 		try {
 			if (!ctx.hasUI) return; // widget/notify have no surface in print/RPC mode
 
+			const settings = await readWsSettings(ctx.cwd);
+			if (!settings.dashboard) return; // plugin setting off-switch
+
 			const projectConfig = await readIfExists(path.join(ctx.cwd, ".claude", "ws-project.yaml"));
 			if (projectConfig === undefined) return;
 			const globalConfig = await readIfExists(path.join(os.homedir(), ".claude", "ws", "config.yaml"));
@@ -87,7 +91,8 @@ export function registerDashboard(pi: ExtensionAPI): void {
 				sectionValue(projectConfig, "hooks", "session_start_dashboard") ?? sectionValue(globalConfig, "ui", "session_start_dashboard");
 			if (toggle === "false") return;
 
-			const project = sectionValue(projectConfig, "jira", "project");
+			// Plugin setting (or JIRA_PROJECT env) overrides the ws-project.yaml binding.
+			const project = settings.jiraProject !== "" ? settings.jiraProject : sectionValue(projectConfig, "jira", "project");
 
 			// Same JQL as /ws-status, scoped to the bound project when present.
 			let jql = "assignee = currentUser() AND statusCategory != Done";

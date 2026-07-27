@@ -1,17 +1,47 @@
 # omp-Native Improvements — Capability Audit & Port Plan
 
 Living document. Maps every WS surface to omp's native capabilities (verified
-against omp 17.x source + docs, 2026-07), records what going native improves,
+against the omp 17.1.5 SOURCE, 2026-07), records what going native improves,
 and tiers the work. Supersedes the extension bullet in
 `omp-integration-backlog.md` (which now points here).
 
-## Principle: native where it adds power, compat where it adds nothing
+## Architecture (ADR 0004): full-native package, generated
 
-omp reads our Claude-format plugin natively (commands, skills, agents). A
-TypeScript rewrite of those would create a SECOND source of truth for huge
-prompt bodies — forbidden. Native work is reserved for capabilities the
-Claude-compat layer CANNOT express: process hooks, blocking policy, UI
-widgets, registered tools.
+Decision 2026-07-27: `@wsagency/omp-ws` carries the COMPLETE suite natively —
+one install, zero marketplace coupling on omp. Single source of truth stays
+in this repo (`dev-docs/` conventions + `plugins/ws/` markdown);
+`extensions/omp-ws/scripts/generate.ts` produces the native package dirs at
+build time (generated dirs are gitignored build artifacts, never hand-edited).
+
+Verified mechanism (omp scans these dirs inside every enabled npm/link
+plugin — `src/discovery/omp-plugins.ts`, provider priority 90):
+
+| Package dir | Loads as | Source → transform |
+|---|---|---|
+| `commands/*.md` | native slash commands; `$ARGUMENTS`/`$1` substitution compatible with Claude bodies | near-copy from `plugins/ws/commands/` |
+| `skills/<name>/SKILL.md` | native skills (`description` REQUIRED; `hide:` keeps prompt lean) | copy from `plugins/ws/skills/` |
+| `agents/*.md` | task subagents (`@role` model aliases, `spawns`, `output` schemas, `autoloadSkills`, `prewalk`) | frontmatter transform from `plugins/ws/agents/` |
+| `rules/*.md` | TTSR / always-apply / rulebook rules | copy from `plugins/ws/templates/omp/rules/` + `plugins/ws/rules/` |
+| `hooks/`, `tools/`, `extensions:` manifest | TS behaviors | hand-written (src/) |
+| `.mcp.json`, `prompts/*.md` | MCP servers, prompt templates | future use |
+
+Known traps (from source): manifest `commands:`/`hooks:` keys are DEAD
+in-tree (zero callers) — only directory conventions and the `extensions:` /
+`tools:` manifest keys are consumed; `.md` files under `tools/` are
+declarative metadata, not executable; agent `model:` must be omp specs or
+`@role` aliases, never Claude model names. Both-installed duplication: the
+marketplace `ws` plugin + this package would register everything twice — the
+extension warns at session start; omp users run ONLY the npm package.
+
+Churn risk: LOW — no experimental markers in `src/extensibility`; the
+17.1.3→17.1.5 delta touched no extensibility surface; the dir conventions
+date to 15.x/16.x.
+
+## Principle: one source, two complete artifacts
+
+The Claude plugin and the omp package are independent, complete
+distributions GENERATED from the same source. Hand-maintained copies remain
+forbidden — the generator is the only bridge.
 
 | Surface | Today in omp | Native gain |
 |---|---|---|
@@ -70,6 +100,26 @@ free-form file edits. Candidates, in value order:
 Each tool duplicates a convention that already exists as prose — so each is
 added ONLY when we see the prose version misfire in practice (evidence-driven,
 not speculative).
+
+## Adopted omp-specific improvements (from the 17.1.5 source audit)
+
+1. **Plugin `settings` schema + `features`** (`PluginManifest`): typed
+   settings with env fallback and secret masking (Jira project binding,
+   guard/dashboard toggles); bracket installs `ws[guard,jira]` for selective
+   features.
+2. **TTSR rules shipped by the package** — the guardrails run BOTH as
+   in-stream rules (interrupt while the model is typing) and as the
+   fail-safe `tool_call` hook (blocks execution) — defense in depth Claude
+   plugins cannot express.
+3. **Compaction preservation** — `session.compacting` injects preserved
+   context (active ticket, changelog state) so long sessions survive
+   compaction without losing WS state.
+4. **Both-installed detection** — session_start warns when the marketplace
+   `ws` plugin is also enabled in omp (duplication).
+5. Cataloged for later: `.mcp.json` bundling (jira/OpenWiki MCP zero-setup),
+   `askDialog` rich forms, `registerShortcut`/`registerFlag`, memory API
+   (`ctx.memory.save`), `resources_discover` conditional skill packs,
+   `before_agent_start` per-turn prompt shaping, `user_bash` interception.
 
 ## Tier 3 — config-level improvements (no code, document + preset)
 
