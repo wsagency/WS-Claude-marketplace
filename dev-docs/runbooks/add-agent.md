@@ -162,7 +162,7 @@ Use the code-analyzer agent to examine this codebase.
 
 ## Example: Complete Agent
 
-`plugins/docs-agent/agents/api-documenter.md`:
+`plugins/ws/agents/api-documenter.md`:
 
 ```markdown
 ---

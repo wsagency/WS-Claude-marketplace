@@ -97,12 +97,12 @@ Solutions for common issues with the WS Claude Marketplace.
 
 3. Check command prerequisites are met (e.g., git repo exists)
 
-## ws-commit-commands Issues
+## Git Flow Issues (`/ws-commit`)
 
 ### tea CLI not found
 
 **Symptoms:**
-- `/ws-commit-push-pr` fails with "tea: command not found"
+- `/ws-commit pr` fails with "tea: command not found"
 - PR creation doesn't work
 
 **Solutions:**
@@ -177,7 +177,7 @@ Solutions for common issues with the WS Claude Marketplace.
 
 5. Run `/ws-init` inside Claude Code — it checks the `jira` binary and `jira me`, prints the exact install/token/`jira init` steps if anything is missing, and binds the current project to a Jira project
 
-## docs-agent Issues
+## Docs Issues (`/ws-docs`)
 
 ### Changelog generation fails
 

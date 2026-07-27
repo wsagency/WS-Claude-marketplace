@@ -11,30 +11,18 @@ The marketplace is a **plugin registry** that distributes Claude Code plugins to
 │           WS Claude Marketplace             │
 ├─────────────────────────────────────────────┤
 │  marketplace.json (registry)                │
-│    ├── docs-agent                           │
-│    ├── ws-commit-commands                   │
-│    ├── ws-matt                              │
-│    └── ws-project-hub                       │
+│    └── ws                                   │
 ├─────────────────────────────────────────────┤
 │  plugins/                                   │
-│    ├── docs-agent/                          │
-│    │   ├── commands/                        │
-│    │   ├── agents/                          │
-│    │   └── skills/                          │
-│    ├── ws-commit-commands/                  │
-│    │   ├── commands/                        │
-│    │   ├── skills/                          │
-│    │   └── hooks/                           │
-│    ├── ws-matt/                             │
-│    │   ├── commands/                        │
-│    │   ├── agents/                          │
-│    │   ├── skills/                          │
-│    │   ├── rules/                           │
-│    │   └── docs/                            │
-│    └── ws-project-hub/                      │
+│    └── ws/                                  │
 │        ├── commands/                        │
 │        ├── agents/                          │
-│        └── skills/                          │
+│        ├── skills/                          │
+│        ├── hooks/                           │
+│        ├── rules/                           │
+│        ├── scripts/                         │
+│        ├── templates/                       │
+│        └── docs/                            │
 └─────────────────────────────────────────────┘
 ```
 
@@ -99,10 +87,10 @@ A **skill** is a knowledge resource that provides context, templates, or guideli
    claude plugin marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
 
 2. Install plugin
-   claude plugin install docs-agent@ws-marketplace
+   claude plugin install ws@ws-marketplace
 
 3. Plugin available
-   /ws-docs, /ws-docs changelog, etc.
+   /ws-help, /ws-docs, /ws-commit, etc.
 ```
 
 ### Command Execution
@@ -111,7 +99,7 @@ When you invoke `/ws-docs`:
 
 ```
 1. Claude Code finds the command
-   plugins/docs-agent/commands/ws-docs.md
+   plugins/ws/commands/ws-docs.md
 
 2. Reads YAML frontmatter
    - description
@@ -129,10 +117,10 @@ When a command uses the Task tool:
 
 ```
 1. Command requests agent
-   Task tool with subagent_type: "docs-agent:changelog-analyzer"
+   Task tool with subagent_type: "ws:changelog-analyzer"
 
 2. Claude Code finds the agent
-   plugins/docs-agent/agents/changelog-analyzer.md
+   plugins/ws/agents/changelog-analyzer.md
 
 3. Spawns subprocess with:
    - Agent's system prompt
@@ -217,11 +205,11 @@ The `marketplace.json` file serves as the central registry:
 {
   "plugins": [
     {
-      "name": "docs-agent",
-      "version": "3.5.1",
-      "source": "./plugins/docs-agent",
-      "category": "documentation",
-      "tags": ["docs", "changelog"]
+      "name": "ws",
+      "version": "4.0.0",
+      "source": "./plugins/ws",
+      "category": "development",
+      "tags": ["docs", "changelog", "git", "jira", "tdd", "hub"]
     }
   ]
 }
@@ -231,7 +219,7 @@ All plugins share a single version — the marketplace release version — so ev
 
 This enables:
 - **Discovery**: `claude plugin marketplace list`
-- **Installation**: `claude plugin install docs-agent@ws-marketplace`
+- **Installation**: `claude plugin install ws@ws-marketplace`
 - **Updates**: `claude plugin marketplace update ws-marketplace`
 
 ## Design Principles

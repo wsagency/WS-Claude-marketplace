@@ -33,7 +33,7 @@ See [dev-docs/runbooks/create-plugin.md](runbooks/create-plugin.md) for the comp
 
 The marketplace is markdown and JSON only — no compiled code.
 
-- **Markdown prose** — Follow the [style-guide skill](../plugins/docs-agent/skills/style-guide/SKILL.md) for documentation tone, structure, and formatting
+- **Markdown prose** — Follow the [style-guide skill](../plugins/ws/skills/style-guide/SKILL.md) for documentation tone, structure, and formatting
 - **Hook scripts** — Bash scripts in `plugins/*/hooks/` use `set -euo pipefail` at the top and target bash 3.2+ for macOS compatibility (no `mapfile`, no associative arrays)
 - **JSON** — Keep `.claude-plugin/marketplace.json` and `plugin.json` files valid and human-readable
 
@@ -84,7 +84,7 @@ There is no automated test harness for markdown plugins. Verification is manual:
 - **JSON validity** — Ensure `marketplace.json` and all `plugin.json` files are valid JSON
 - **Markdown syntax** — Check that command and agent files have valid YAML frontmatter
 - **Bash scripts** — Run `bash -n script.sh` to check for syntax errors
-- **Dogfooding** — The marketplace is self-hosting; if a change breaks the marketplace's own `/ws-docs` or `/ws-commit-commands` workflows, that's a failure
+- **Dogfooding** — The marketplace is self-hosting; if a change breaks the marketplace's own `/ws-docs` or `/ws-commit` workflows, that's a failure
 
 ## Release / push
 

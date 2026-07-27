@@ -12,10 +12,7 @@ omp's plugin marketplace natively reads the Claude Code registry format this rep
 # omp reads .claude-plugin/marketplace.json as a Claude-compatible catalog
 omp
 /marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
-/plugin install docs-agent
-/plugin install ws-commit-commands
-/plugin install ws-matt
-/plugin install ws-project-hub
+/plugin install ws
 ```
 
 (Consult `omp.sh/docs/marketplace` for the current commands — omp also picks up plugins
@@ -35,18 +32,18 @@ reports "all plugins are up to date" even when the marketplace has moved on —
 always refresh the marketplace first. In-session equivalents: `/marketplace
 update ws-marketplace`, then `/plugin upgrade`. Restart open omp sessions to
 load the new command definitions. Versioning is lockstep, so one update brings
-all four plugins to the same repo version.
+the ws plugin to the current repo version.
 
 ## What works
 
-- **Commands** — all `/ws-*` and `/ws-hub-*` commands (also addressable as
-  `<plugin>:<command>`). omp does not pre-execute the `` !`cmd` `` context lines
+- **Commands** — all seven `/ws-*` commands (also addressable as
+  `ws:<command>`). omp does not pre-execute the `` !`cmd` `` context lines
   Claude Code expands; each command carries a fallback note instructing the model to
   run those commands itself, so behavior converges.
 - **Skills** — all plugin skills, plus skills vendored into projects under
   `.claude/skills/` (omp reads that directory too).
 - **Agents** — plugin `agents/` definitions are read by omp's task system.
-- **Jira flows** — `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit-push-pr`
+- **Jira flows** — `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit pr`
   use jira-cli (a plain binary), fully agent-neutral.
 - **Outline publish** — `/ws-docs publish` runs `outline-sync.py`
   (Python 3 stdlib, one-way), agent-neutral.
@@ -61,17 +58,17 @@ all four plugins to the same repo version.
 ## ws-matt in omp
 
 The skill graph runs well in omp: plugin skills load through omp's Claude-compatible
-providers, the worker agents (`ws-matt-reviewer`, `ws-matt-researcher`,
-`ws-matt-tdd-runner`) carry `output` JSON schemas and `autoloadSkills` for omp's task
+providers, the worker agents (`reviewer`, `researcher`,
+`tdd-runner` — canonical `ws:<agent>`) carry `output` JSON schemas and `autoloadSkills` for omp's task
 system, and `/ws-matt setup` installs the edge-discipline rule (`alwaysApply`) into
 `.omp/rules/` so the two-tier topology (entry nodes never chain into entry nodes) and
 the `DONE|{path}` file-handoff protocol are enforced session-wide.
 
 ## Known gaps in omp
 
-- **SessionStart Jira dashboard** (ws-commit-commands hook) does not run — omp hooks
+- **SessionStart Jira dashboard** (ws plugin hook) does not run — omp hooks
   are TypeScript modules, not Claude's shell-hook JSON. Run `/ws-status` manually.
-- **docs-agent enforcement hooks** (PreToolUse/Stop) likewise do not run; they are
+- **Docs enforcement hooks** (PreToolUse/Stop) likewise do not run; they are
   opt-in even in Claude Code.
 - **Sibling-pathed hub repos** (`path: ../<name>`, legacy layout) are unreachable —
   omp has no `--add-dir`. Use the nested layout.

@@ -12,15 +12,16 @@ marketplace.json (registry)
   └─ static → plugins/ (discoverable components)
   
 plugins/ (source directories)
-  ├── docs-agent/
-  │   ├── .claude-plugin/plugin.json
-  │   ├── commands/*.md (slash-invocable)
-  │   ├── agents/*.md (Task-spawned)
-  │   ├── skills/*/SKILL.md (knowledge bases)
-  │   ├── hooks/ (optional: PreToolUse, Stop)
-  │   ├── scripts/ (optional: setup/init)
-  │   └── templates/ (optional: scaffolding)
-  └── ... (other plugins)
+  └── ws/ (the single ws plugin)
+      ├── .claude-plugin/plugin.json
+      ├── commands/*.md (slash-invocable)
+      ├── agents/*.md (Task-spawned)
+      ├── skills/*/SKILL.md (knowledge bases)
+      ├── hooks/ (PreToolUse, Stop, SessionStart)
+      ├── rules/ (omp rules installed into projects)
+      ├── scripts/ (deterministic helpers)
+      ├── templates/ (hub scaffolding)
+      └── docs/ (graph.md — ws-matt graph map)
 
 ~/.claude/plugins/cache/ws-marketplace/
   └── <plugin>/<version>/ (installed copies)
@@ -72,7 +73,7 @@ description: What the agent does
 tools: [Tool1, Tool2, ...]
 ```
 
-The agent's content is the system prompt. Agents are identified by dotted paths like `docs-agent:changelog-analyzer` (plugin-name:agent-file-name).
+The agent's content is the system prompt. Agents are identified by dotted paths like `ws:changelog-analyzer` (plugin-name:agent-file-name).
 
 **Execution model:** Task tool spawns subprocess with the agent's system prompt and specified tools. Agent works autonomously and returns results to parent.
 
@@ -97,23 +98,23 @@ description: What the skill knows and when to use it
 
 JSON-based hook configurations for PreToolUse and Stop callbacks. Enables plugins to intercept tool calls or session state changes.
 
-**Example:** `docs-agent/hooks/hooks.json` wires `enforce-changelog.sh` (PreToolUse on Bash) and `enforce-stop.sh` (Stop) — opt-in enforcement that blocks commits and session stops when CHANGELOG.md is out of sync. The watcher agents (arch-watcher, public-api-watcher) are not hooks; they are Task-dispatched by `/ws-docs audit`.
+**Example:** `ws/hooks/hooks.json` wires `enforce-changelog.sh` (PreToolUse on Bash) and `enforce-stop.sh` (Stop) — opt-in enforcement that blocks commits and session stops when CHANGELOG.md is out of sync — plus `session-start-dashboard.sh` (SessionStart Jira dashboard) and `openwiki-freshness.sh`. The watcher agents (arch-watcher, public-api-watcher) are not hooks; they are Task-dispatched by `/ws-docs audit`.
 
 ### `templates/` (Optional)
 
 Scaffolding and boilerplate for plugin-specific workflows. Used during initialization or project setup.
 
-**Example:** `ws-project-hub/templates/` contains AGENTS.md/CLAUDE.md templates and hub initialization scripts.
+**Example:** `ws/templates/` contains hub AGENTS.md/CLAUDE.md templates and hub initialization scripts.
 
 ### `scripts/` (Optional)
 
 Scripts the plugin's commands shell out to for deterministic work.
 
-**Example:** `docs-agent/scripts/` holds `outline-sync.py` (Outline publish/pull-back sync), `parse-git-log.sh`, and `validate-changelog.sh`.
+**Example:** `plugins/ws/scripts/` holds `outline-sync.py` (Outline publish/pull-back sync), `test_outline_sync.py` (its test suite), `parse-git-log.sh`, and `validate-changelog.sh`.
 
-### Plugin example: ws-matt
+### The ws-matt skill graph (inside the ws plugin)
 
-`ws-matt` vendors [Matt Pocock's engineering skills](https://github.com/mattpocock/skills) (MIT, with attribution) as a graph-engineered skill set: 19 interlinked `ws-*` skill nodes in two tiers (user-invoked entry orchestrators, model-invoked worker disciplines), a single `/ws-matt` entry command, and worker agents (`ws-matt-reviewer`, `ws-matt-researcher`, `ws-matt-tdd-runner`). Beyond the standard directories it adds `rules/` (the omp edge-discipline rule installed by `/ws-matt setup`) and `docs/` (`graph.md`, the mermaid graph map; `UPSTREAM.md` tracks upstream sync).
+The ws plugin vendors [Matt Pocock's engineering skills](https://github.com/mattpocock/skills) (MIT, with attribution) as a graph-engineered skill set: 19 interlinked `ws-*` skill nodes in two tiers (user-invoked entry orchestrators, model-invoked worker disciplines), a single `/ws-matt` entry command, and worker agents (`reviewer`, `researcher`, `tdd-runner` — canonical `ws:<agent>`). Beyond the standard directories the plugin adds `rules/` (the omp edge-discipline rule installed by `/ws-matt setup`) and `docs/` (`graph.md`, the mermaid graph map; `UPSTREAM.md` at the plugin root tracks upstream sync).
 
 ## Registration Mechanics
 
@@ -163,9 +164,9 @@ The `marketplace.json` at the repository root is the single source of truth for 
    → Reads marketplace.json, lists all plugins with descriptions
 
 3. Install plugin
-   claude plugin install docs-agent@ws-marketplace
-   → Clones marketplace repo, copies plugins/docs-agent/ to
-     ~/.claude/plugins/cache/ws-marketplace/docs-agent/<version>/
+   claude plugin install ws@ws-marketplace
+   → Clones marketplace repo, copies plugins/ws/ to
+     ~/.claude/plugins/cache/ws-marketplace/ws/<version>/
 
 4. Session reload
    Claude Code session must reload for new commands/agents to be available
@@ -191,16 +192,16 @@ After installation, Claude Code discovers components from the cached plugin dire
 | **Use case** | Simple, linear tasks | Multi-step exploration | Shared standards/templates |
 | **Example** | `/ws-commit` (create commit) | `changelog-analyzer` (analyze history, propose changes) | `diataxis` (documentation framework) |
 
-## Cross-Plugin Dependencies
+## External Tools and Composition
 
-Plugins can reference or depend on capabilities from other plugins:
+The ws plugin composes with external tools and vendors knowledge into projects:
 
 ### External CLI Tools
-- `ws-commit-commands` performs all Jira access through jira-cli (the `jira` binary, called via Bash) — no MCP server involved
+- The `/ws-commit` flows perform all Jira access through jira-cli (the `jira` binary, called via Bash) — no MCP server involved
 - PR creation goes through the tea CLI (Gitea)
 
 ### Vendored Skills
-- `ws-project-hub` vendors its own `project-hub-conventions` skill into each hub (`<hub>/.claude/skills/`) at init time
+- The ws plugin vendors its `project-hub-conventions` skill into each hub (`<hub>/.claude/skills/`) at init time
 - Hubs stay self-documenting even when the marketplace plugin isn't installed
 
 ### Subagent Spawning
@@ -211,7 +212,7 @@ Plugins can reference or depend on capabilities from other plugins:
 
 ## Dual-Track Docs Adoption
 
-The marketplace itself uses the **dual-track documentation convention** (see `docs-agent` skill `dual-track-docs`):
+The marketplace itself uses the **dual-track documentation convention** (see the ws plugin's `dual-track-docs` skill):
 
 - **`docs/`** - User-facing documentation (how to use plugins, install, troubleshoot)
 - **`dev-docs/`** - Maintainer-facing documentation (architecture, decisions, runbooks)

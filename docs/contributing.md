@@ -17,12 +17,12 @@ File your report here: https://github.com/wsagency/WS-Claude-marketplace/issues
 
 ## Requesting a plugin or feature
 
-Have an idea for a new plugin? Check the existing set first to avoid duplication:
+Have an idea for a new plugin? Check what the existing **ws** plugin already covers first to avoid duplication:
 
-- **docs-agent** — documentation generation, ADRs, changelogs, style guides
-- **ws-commit-commands** — Jira-aware git workflows via jira-cli (status, commit, PR, ticket writing)
-- **ws-matt** — Matt Pocock's engineering skills as a graph-engineered skill set (`/ws-matt`)
-- **ws-project-hub** — multi-repo hub management: register sub-repos, aggregate status, generate cross-repo docs, launch agents across them
+- **Docs suite** (`/ws-docs`) — documentation generation, ADRs, changelogs, style guides
+- **Git flows** (`/ws-commit`, `/ws-status`, `/ws-init`) — Jira-aware git workflows via jira-cli (status, commit, PR, ticket writing)
+- **ws-matt skill graph** (`/ws-matt`) — Matt Pocock's engineering skills as a graph-engineered skill set
+- **Project hubs** (`/ws-hub`) — multi-repo hub management: register sub-repos, aggregate status, generate cross-repo docs, launch agents across them
 
 If your idea is new, please open an issue with:
 

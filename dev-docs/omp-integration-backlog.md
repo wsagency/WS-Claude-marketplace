@@ -18,7 +18,7 @@ checklist. Remaining, prioritized:
 
 1. **`.omp/config.yml` preset in the hub template** (M) — modelRoles preset,
    `tools.approvalMode: write`, bash guard patterns, compaction threshold;
-   written by `/ws-hub-init` alongside the omp rules.
+   written by `/ws-hub init` alongside the omp rules.
 2. **WS rules pack — TTSR** (M) — hard conventions as stream-interrupting rules
    (`condition:`/`astCondition:` frontmatter): no force-push, Jira key in
    commits, no edits to generated files. Lands in the hub template's

@@ -1,3 +1,5 @@
+> **Historical.** The plugin/command surface described here was superseded by the single `ws` plugin — see `2026-07-27-single-ws-plugin-design.md` (v4.0.0, ADR 0003).
+
 # Design — Marketplace consolidation (commands, skills, agents)
 
 **Date:** 2026-07-21

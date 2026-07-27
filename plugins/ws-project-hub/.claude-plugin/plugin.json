@@ -1,7 +1,0 @@
-{
-  "name": "ws-project-hub",
-  "description": "Multi-repo project hub: single source of truth for projects spanning multiple git repos (app, web, design, docs), managed via the consolidated ws-hub-* commands (init, status, repos, add-repo, describe, docs, explained), with a role: docs product-docs sub-repo convention",
-  "author": {
-    "name": "WS Agency"
-  }
-}

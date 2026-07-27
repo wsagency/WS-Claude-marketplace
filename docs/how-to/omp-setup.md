@@ -46,9 +46,9 @@ bash:
 ```
 
 Personal standing rules: create `~/.omp/agent/RULES.md` (e.g. "Never commit or
-push unless asked"). Project rules live in `.omp/rules/` — our plugins install
+push unless asked"). Project rules live in `.omp/rules/` — the ws plugin installs
 `omp-edge-discipline` and `openwiki-freshness` there via `/ws-matt setup` and
-`/ws-hub-init`.
+`/ws-hub init`.
 
 ## Features worth switching on (one-liners)
 
@@ -66,6 +66,7 @@ omp config set collab.displayName "Kristijan"
 
 ```bash
 omp plugin marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
+omp plugin install ws
 # or: plugins installed via Claude Code are auto-visible in omp
 ```
 

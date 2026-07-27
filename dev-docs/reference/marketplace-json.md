@@ -48,20 +48,12 @@ Array of plugin entries.
 {
   "plugins": [
     {
-      "name": "docs-agent",
-      "version": "3.5.1",
-      "source": "./plugins/docs-agent",
-      "description": "Documentation generation using Diataxis framework",
-      "category": "documentation",
-      "tags": ["docs", "changelog", "diataxis", "tutorials"]
-    },
-    {
-      "name": "ws-commit-commands",
-      "version": "3.5.1",
-      "source": "./plugins/ws-commit-commands",
-      "description": "Jira-aware git workflows via jira-cli",
-      "category": "git",
-      "tags": ["git", "commits", "pull-requests", "jira"]
+      "name": "ws",
+      "version": "4.0.0",
+      "source": "./plugins/ws",
+      "description": "The WS Agency engineering suite in one plugin: ws-matt graph-engineered skills, Jira-aware git flows via jira-cli, dual-track docs with /ws-docs, and multi-repo project hubs via /ws-hub",
+      "category": "development",
+      "tags": ["documentation", "changelog", "git", "jira", "tdd", "multi-repo"]
     }
   ]
 }
@@ -125,7 +117,7 @@ done
    ```json
    {
      "name": "your-plugin",
-     "version": "3.5.1",
+     "version": "4.0.0",
      "source": "./plugins/your-plugin",
      "description": "What your plugin does",
      "category": "appropriate-category",

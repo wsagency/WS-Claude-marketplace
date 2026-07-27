@@ -8,78 +8,33 @@
   },
   "plugins": [
     {
-      "name": "docs-agent",
-      "description": "Dual-track documentation suite with unified /ws-docs entry (discovery, init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes, explain, publish), hub-aware product-docs routing, one-way Outline publishing via outline-sync.py, opt-in PreToolUse/Stop hooks, and background subagent dispatch",
-      "version": "3.13.0",
-      "source": "./plugins/docs-agent",
+      "name": "ws",
+      "description": "The WS Agency engineering suite in one plugin: ws-matt graph-engineered skills (grill, spec, tickets, implement, TDD, review — Matt Pocock's skills MIT-vendored), Jira-aware git flows via jira-cli (/ws-commit with pr and clean verbs, tea PRs), dual-track docs with /ws-docs (Outline publishing, changelog, ADRs), and multi-repo project hubs via /ws-hub (init, doctor, status, repos, add, describe, docs, explained)",
+      "version": "4.0.0",
+      "source": "./plugins/ws",
       "category": "development",
       "author": {
-        "name": "WS Agency"
+        "name": "WS Agency AI suite",
+        "email": "ai@ws.agency"
       },
       "tags": [
         "documentation",
         "changelog",
-        "api-docs",
         "adr",
-        "contributing",
-        "architecture",
-        "release-notes",
-        "conventional-commits",
-        "style-guide",
-        "tsdoc",
-        "graphql",
-        "outline"
-      ]
-    },
-    {
-      "name": "ws-commit-commands",
-      "description": "Jira-aware git workflows via jira-cli: Conventional Commits with ticket suffix, worklogs and transitions, automatic Keep-a-Changelog updates, and PR creation via tea (Gitea)",
-      "version": "3.13.0",
-      "source": "./plugins/ws-commit-commands",
-      "category": "development",
-      "author": {
-        "name": "WS Agency"
-      },
-      "tags": [
+        "outline",
         "git",
         "commit",
         "pr",
         "jira",
         "jira-cli",
-        "conventional-commits"
-      ]
-    },
-    {
-      "name": "ws-matt",
-      "description": "Matt Pocock's engineering skills (MIT, vendored) interlinked as a graph-engineered skill set: entry orchestrator nodes + worker discipline nodes, worker agents with structured output, omp edge-discipline rule. /ws-matt entry.",
-      "version": "3.13.0",
-      "source": "./plugins/ws-matt",
-      "category": "development",
-      "author": {
-        "name": "WS Agency"
-      },
-      "tags": [
+        "conventional-commits",
         "skills",
         "graph-engineering",
         "matt-pocock",
         "tdd",
         "code-review",
-        "tickets"
-      ]
-    },
-    {
-      "name": "ws-project-hub",
-      "description": "Multi-repo project hub: single source of truth for projects spanning multiple git repos (app, web, design, docs), managed via the consolidated ws-hub-* commands (init, status, repos, add-repo, describe, docs, explained), with a role: docs product-docs sub-repo convention",
-      "version": "3.13.0",
-      "source": "./plugins/ws-project-hub",
-      "category": "development",
-      "author": {
-        "name": "WS Agency"
-      },
-      "tags": [
+        "tickets",
         "multi-repo",
-        "project-management",
-        "monorepo-alternative",
         "hub",
         "agent-launcher"
       ]

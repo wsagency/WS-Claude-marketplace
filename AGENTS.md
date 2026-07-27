@@ -35,7 +35,7 @@ This is the WS Agency internal Claude Code-compatible marketplace - a registry o
 
 ## Documentation maintenance
 
-This project uses the WS dual-track-docs convention (docs-agent plugin v3.0.0+).
+This project uses the WS dual-track-docs convention (ws plugin — formerly docs-agent v3.0.0+).
 
 - `docs/` — user-facing (VitePress-publishable)
 - `dev-docs/` — internal contributor (maintainers, plugin authors)
@@ -45,7 +45,7 @@ This project uses the WS dual-track-docs convention (docs-agent plugin v3.0.0+).
 
 ### Always do
 
-- After completing a group of code changes, append an entry to `CHANGELOG.md` under `[Unreleased]` using the `keep-a-changelog` skill (auto-loads on the word "changelog"). Map: feat→Added, fix→Fixed, perf/refactor→Changed, security→Security, breaking→**BREAKING:** prefix. Changelog timing convention for WS projects: **PR-time is canonical** (entries land via `/ws-commit-push-pr`); per-commit enforcement is opt-in.
+- After completing a group of code changes, append an entry to `CHANGELOG.md` under `[Unreleased]` using the `keep-a-changelog` skill (auto-loads on the word "changelog"). Map: feat→Added, fix→Fixed, perf/refactor→Changed, security→Security, breaking→**BREAKING:** prefix. Changelog timing convention for WS projects: **PR-time is canonical** (entries land via `/ws-commit pr`); per-commit enforcement is opt-in.
 - When introducing a new architectural pattern, framework choice, or breaking convention, propose `/ws-docs adr "<decision>"` before finishing. ADRs are **two-tier** (all in `dev-docs/decisions/`, one numbering): lightweight (1-3 sentences) by default; full MADR v4.0.0 when the decision is breaking, costly to undo, or had multiple serious options.
 - Skill precedence in WS projects: **ws-matt discipline skills are authoritative** for TDD, code review, and research flows; superpowers process skills (brainstorming, systematic-debugging) remain complementary for other activities.
 - Design specs and implementation plans live in `dev-docs/superpowers/` (internal track), not `docs/`.

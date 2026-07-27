@@ -19,4 +19,4 @@ This is the internal documentation for **maintainers and plugin contributors** t
 
 ## Conventions
 
-This project follows the **dual-track docs** convention. User-facing docs live in `docs/`; this folder is for internal contributor docs only. See the `dual-track-docs` skill in the docs-agent plugin for the full convention.
+This project follows the **dual-track docs** convention. User-facing docs live in `docs/`; this folder is for internal contributor docs only. See the `dual-track-docs` skill in the ws plugin for the full convention.

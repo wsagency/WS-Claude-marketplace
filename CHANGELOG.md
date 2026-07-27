@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-07-27
+
+### Changed
+
+- **BREAKING:** the four plugins (docs-agent, ws-commit-commands, ws-matt, ws-project-hub) are merged into ONE plugin **`ws`** (ADR 0003). Migrate — Claude Code: `claude plugin uninstall docs-agent@ws-marketplace ws-commit-commands@ws-marketplace ws-matt@ws-marketplace ws-project-hub@ws-marketplace && claude plugin marketplace update ws-marketplace && claude plugin install ws@ws-marketplace`; omp: `omp plugin marketplace update ws-marketplace && omp plugin uninstall docs-agent ws-commit-commands ws-matt ws-project-hub && omp plugin install ws` (restart sessions after)
+- **BREAKING:** command surface consolidated 15 → 7: `/ws-commit-push-pr` → `/ws-commit pr`; `/ws-clean-gone` → `/ws-commit clean`; `/ws-hub-init|-status|-repos|-add-repo|-describe|-docs|-explained` → `/ws-hub init|status|repos|add|describe|docs|explained` (+ new explicit `/ws-hub doctor`); `/ws-help`, `/ws-matt`, `/ws-docs`, `/ws-status`, `/ws-init` keep their names
+- **BREAKING:** worker agents lose the double prefix: `ws-matt:ws-matt-reviewer|researcher|tdd-runner` → `ws:reviewer|researcher|tdd-runner`; all docs agents and hub-architect are now `ws:<name>`
+- All content moved via `git mv` (history preserved); merged hooks.json carries the Jira session dashboard (SessionStart), docs enforcement (PreToolUse + Stop), and OpenWiki freshness (Stop); the union allowed-tools of merged routers is unrestricted Bash — the former read-only guards of ws-hub-status and ws-clean-gone are given up consciously
+
+### Removed
+
+- docs-agent UPGRADE-NOTES.md (v2→v3 history lives in git and this changelog)
+
 ## [3.13.0] - 2026-07-27
 
 ### Added

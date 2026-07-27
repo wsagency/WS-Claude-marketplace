@@ -1,3 +1,5 @@
+> **Historical.** The plugin/command surface described here was superseded by the single `ws` plugin — see `2026-07-27-single-ws-plugin-design.md` (v4.0.0, ADR 0003).
+
 # Design — `/ws-docs` unified entry + automatic docs maintenance
 
 **Date:** 2026-05-29

@@ -1,7 +1,0 @@
-{
-  "name": "docs-agent",
-  "description": "Dual-track documentation suite with unified /ws-docs entry (discovery, init, audit, catchup, repair, write, adr, architecture, contributing, changelog, release-notes, explain, publish), hub-aware product-docs routing, one-way Outline publishing via outline-sync.py, opt-in PreToolUse/Stop hooks, and background subagent dispatch",
-  "author": {
-    "name": "WS Agency"
-  }
-}

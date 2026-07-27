@@ -43,9 +43,9 @@ The plugin metadata file that defines a plugin's identity.
 
 ```json
 {
-  "name": "docs-agent",
-  "description": "Documentation generation using the Diataxis framework",
-  "author": { "name": "WS Agency", "email": "dev@ws.agency" },
+  "name": "ws",
+  "description": "The WS Agency engineering suite in one plugin: ws-matt graph-engineered skills, Jira-aware git flows via jira-cli, dual-track docs with /ws-docs, and multi-repo project hubs via /ws-hub",
+  "author": { "name": "WS Agency AI suite", "email": "ai@ws.agency" },
   "repository": "https://github.com/wsagency/WS-Claude-marketplace"
 }
 ```

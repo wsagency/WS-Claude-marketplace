@@ -22,7 +22,7 @@ Practical guides for common tasks:
 
 Technical reference documentation:
 
-- [Command Reference](reference/commands.md) — All available slash commands across the installed plugins
+- [Command Reference](reference/commands.md) — All seven slash commands of the ws plugin
 
 ## Understanding the Marketplace
 

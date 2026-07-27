@@ -76,7 +76,7 @@ Add your plugin to `.claude-plugin/marketplace.json`:
   "plugins": [
     {
       "name": "my-plugin",
-      "version": "3.5.1",
+      "version": "4.0.0",
       "source": "./plugins/my-plugin",
       "category": "utilities",
       "tags": ["tag1", "tag2"],

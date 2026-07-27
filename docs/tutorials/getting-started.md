@@ -8,8 +8,8 @@ Before starting, ensure you have:
 
 - **Claude Code CLI** installed and configured
 - **Git** with SSH access to `github.com`
-- **tea CLI** (required for ws-commit-commands plugin)
-- **jira-cli** (required for ws-commit-commands plugin)
+- **tea CLI** (required for the ws plugin's git flows)
+- **jira-cli** (required for the ws plugin's git flows)
 
 ### Installing Dependencies
 
@@ -19,7 +19,7 @@ Follow the [official installation guide](https://docs.anthropic.com/en/docs/clau
 
 #### tea CLI (for Git workflow commands)
 
-The `ws-commit-commands` plugin requires the tea CLI for Gitea integration:
+The ws plugin's git flows require the tea CLI for Gitea integration:
 
 ```bash
 # macOS (Homebrew)
@@ -34,7 +34,7 @@ tea login add --url https://git.wsagency.io --token YOUR_TOKEN
 
 #### jira-cli (for Jira-aware workflows)
 
-The `ws-commit-commands` plugin uses [jira-cli](https://github.com/ankitpokhrel/jira-cli) for all Jira access:
+The ws plugin's git flows use [jira-cli](https://github.com/ankitpokhrel/jira-cli) for all Jira access:
 
 ```bash
 # macOS (Homebrew)
@@ -57,12 +57,12 @@ claude plugin marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
 
 This registers the marketplace so you can install plugins from it.
 
-## Step 2: Install a Plugin
+## Step 2: Install the Plugin
 
-Install the `docs-agent` plugin to try documentation generation:
+Install the `ws` plugin — the whole WS engineering suite ships in this one plugin:
 
 ```bash
-claude plugin install docs-agent@ws-marketplace
+claude plugin install ws@ws-marketplace
 ```
 
 You should see confirmation that the plugin was installed.
@@ -75,7 +75,7 @@ List installed plugins to confirm:
 claude plugin list
 ```
 
-You should see `docs-agent` in the output.
+You should see `ws` in the output.
 
 ## Step 4: Use Your First Command
 
@@ -94,17 +94,12 @@ Inside Claude Code, try updating the changelog:
 
 Claude will analyze recent commits and add an entry to your CHANGELOG.md (or create one if it doesn't exist).
 
-## Step 5: Install More Plugins
+## Step 5: Explore More Commands
 
-Install the git workflow plugin for commit and PR automation:
+The same install already includes the git workflow commands for commit and PR automation:
 
-```bash
-claude plugin install ws-commit-commands@ws-marketplace
-```
-
-Now you can use commands like:
 - `/ws-commit` - Create a conventional commit
-- `/ws-commit-push-pr` - Commit, push, and create a PR in one step
+- `/ws-commit pr` - Commit, push, and create a PR in one step
 
 ### Using omp instead of (or alongside) Claude Code
 
@@ -113,7 +108,7 @@ Claude Code are auto-visible there, or add directly inside omp:
 
 ```
 /marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
-/plugin install ws-matt
+/plugin install ws
 ```
 
 See [Use the marketplace with omp](../how-to/use-with-omp.md) and
@@ -124,13 +119,8 @@ See [Use the marketplace with omp](../how-to/use-with-omp.md) and
 Run **`/ws-help`** — a one-screen guide that adapts to your project and tells
 you where to start (spoiler: `/ws-matt grill`).
 
-Install the ws-matt plugin for Matt Pocock's engineering skill graph:
-
-```bash
-claude plugin install ws-matt@ws-marketplace
-```
-
-Then run `/ws-matt` for a graph status, or `/ws-matt setup` to bootstrap a project.
+The ws plugin also ships Matt Pocock's engineering skill graph: run `/ws-matt`
+for a graph status, or `/ws-matt setup` to bootstrap a project.
 
 ## What's Next?
 

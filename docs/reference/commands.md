@@ -1,12 +1,36 @@
 # Command Reference
 
-All available commands in the WS Claude Marketplace.
+All available commands in the WS Claude Marketplace. Everything ships in the single **ws** plugin; all operations route through seven commands: `/ws-help`, `/ws-matt`, `/ws-docs`, `/ws-hub`, `/ws-commit`, `/ws-status`, `/ws-init`.
 
-## docs-agent
+## /ws-help
 
-Dual-track documentation suite. All operations route through the single `/ws-docs` entry.
+One-screen orientation guide to the WS system (start here: /ws-matt grill). Adapts to the project — hub, OpenWiki, omp keywords sections appear only when applicable. Display-only.
 
-### /ws-docs
+---
+
+## /ws-matt
+
+Matt Pocock's engineering skills (MIT, vendored) as a graph-engineered skill set: 19 `ws-*` skill nodes (18 vendored + ws-graph-engineering) in two tiers (entry orchestrators / worker disciplines), each SKILL.md carrying a `## Graph node` contract. Full graph: `plugins/ws/docs/graph.md`.
+
+Single entry for the skill graph.
+
+**Arguments:**
+| Name | Required | Description |
+|------|----------|-------------|
+| `entry` | No | None = graph status; `ask`, `implement`, `spec`, `tickets`, `triage`, `grill`, `architecture`, `wayfinder` route to the matching entry node; `setup` bootstraps the project (issue tracker conventions + omp edge-discipline rule) |
+
+**Examples:**
+```
+/ws-matt
+/ws-matt implement
+/ws-matt setup
+```
+
+---
+
+## /ws-docs
+
+Dual-track documentation suite. All documentation operations route through the single `/ws-docs` entry.
 
 Unified documentation command. Run with no verb for discovery (artifact status table, no writes).
 
@@ -47,52 +71,142 @@ In a hub with a `role: docs` sub-repo, `/ws-docs` enters hub mode: user-audience
 
 ---
 
+## /ws-hub
 
-## ws-commit-commands
+Multi-repo project hubs. A hub is a small meta-repo (`<project>-main`) that registers all sub-repos (mobile app, marketing site, design, docs, etc.) of a project and launches your agent harness across them (Claude Code with `--add-dir` mounts; omp at the hub root). Sub-repos live as gitignored subfolders, each with its own independent git history. All hub tooling is harness-agnostic — new harnesses plug in via the launcher's agent registry.
 
-Jira-aware git workflows via [jira-cli](https://github.com/ankitpokhrel/jira-cli). Detects ticket from branch name, composes Conventional Commits with `(TICKET)` suffix, applies worklogs and transitions with explicit jira-cli calls. PR creation via tea CLI. Ticket breakdown lives in ws-matt (`ws-to-tickets`, local-first tracker in `dev-docs/tickets/`).
+Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-hub status`). The launcher opens an interactive agent picker (Claude Code / omp; extensible registry) — bypass with `--agent <name>` or `WS_HUB_AGENT`.
+
+**Verbs:**
+| Verb | Effect |
+|---|---|
+| `init` | Initialize a new hub (offers doctor when one already exists) |
+| `doctor` | Diagnose + repair an existing hub; ready-for-development verdict |
+| `status` | Read-only aggregated git status across all sub-repos |
+| `repos <pull\|clone>` | One git operation across all registered sub-repos |
+| `add [--scan]` | Register a sub-repo; `--scan` discovers unregistered repos first |
+| `describe` | Refresh `description`/`tech` fields from repo contents |
+| `docs` | Cross-repo docs via the hub-architect agent (+ wiki refresh offer) |
+| `explained` | Generate the `role: explained` product explainer artefact |
+
+### /ws-hub init
+
+Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register. Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml`, `AGENTS.md` (+ thin `CLAUDE.md` import), `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), and vendors `.claude/skills/project-hub-conventions/`. Offers to scaffold a `role: docs` product docs repo (`<project>-docs`), initialize a hub-level OpenWiki knowledge wiki (with pointers written into every sub-repo's AGENTS.md), and set up herdr (global skill install). Registration details (schema, managed block, tech inference, docs-repo layout) are defined in the project-hub-conventions skill.
+
+Invoked inside an already-initialized hub (detected via `project.yaml`), it does not re-scaffold — it offers the **doctor** flow instead.
+
+**Example:**
+```
+/ws-hub init
+```
+
+---
+
+### /ws-hub doctor
+
+Diagnose and repair an existing hub: pull the hub and every sub-repo (`--ff-only`, clean repos only), offer clones for registered-but-missing repos, verify registry integrity (roles, `.gitignore` block, AGENTS.md markers, thin CLAUDE.md), refresh drifted generated files (`invoke-ai.sh`, vendored skill, omp rules/hooks), check OpenWiki freshness, and end with a ready-for-development verdict. Diagnose-only posture available; dirty/diverged repos and user-owned config are never touched — only reported.
+
+**Example:**
+```
+/ws-hub doctor
+```
+
+---
+
+### /ws-hub status
+
+Aggregated git status report across all registered sub-repos: branch, ahead/behind upstream, uncommitted count, recent commits. Read-only; ends with the `./invoke-ai.sh` launch hint (harness-agnostic) and, when problems surfaced, a pointer to `/ws-hub doctor`.
+
+**Example:**
+```
+/ws-hub status
+```
+
+---
+
+### /ws-hub repos
+
+One traversal over all registered sub-repos, verb picks the git operation.
+
+**Arguments:**
+| Name | Required | Description |
+|------|----------|-------------|
+| `verb` | Yes | `pull` — `git pull --ff-only` across all sub-repos; `clone` — clone every registered URL into a missing subfolder |
+
+**Examples:**
+```
+/ws-hub repos pull
+/ws-hub repos clone
+```
+
+---
+
+### /ws-hub add
+
+Register a new sub-repo (clone-URL, adopt-nested, register-sibling, or move-sibling-in). With `--scan`, first discovers nested/sibling git repos not yet in `project.yaml` and offers them for registration through the same flow. A repo can be marked `role: docs` (product docs repo, max one per hub).
+
+**Arguments:**
+| Name | Required | Description |
+|------|----------|-------------|
+| `--scan` | No | Run discovery before registration |
+
+**Examples:**
+```
+/ws-hub add
+/ws-hub add --scan
+```
+
+---
+
+### /ws-hub describe
+
+Refresh `description` and `tech` fields in `project.yaml` by reading each sub-repo's README and manifest files. Shows a diff before writing, then regenerates the AGENTS.md repos region.
+
+**Example:**
+```
+/ws-hub describe
+```
+
+---
+
+### /ws-hub docs
+
+Generate cross-repo documentation (architecture, contracts, deployment topology) via the `hub-architect` agent. When the hub has an OpenWiki (`<hub>/openwiki/`), offers a prompted wiki refresh afterwards (sub-repo commits are invisible to hub git, so the refresh names the sub-repos explicitly). Targets the `role: docs` repo's `dev-docs/` when one is registered, else the hub's `docs/`.
+
+**Example:**
+```
+/ws-hub docs
+```
+
+---
+
+### /ws-hub explained
+
+Generate/refresh the product explainer artefact in the hub's `role: explained` repo — one self-contained HTML (ws-artefacts contract: all inline, WS chrome palette, inline-SVG diagrams) + tokenless `meta.json`, synthesized from openwiki, dev-docs, and project.yaml. Audience: product owner + dev team. Prints the `projects/<name>/git-source.yml` registration block for ws-artefacts (tokens are minted there).
+
+**Example:**
+```
+/ws-hub explained
+```
+
+---
+
+## /ws-commit
+
+Jira-aware git flows via [jira-cli](https://github.com/ankitpokhrel/jira-cli). Detects ticket from branch name, composes Conventional Commits with `(TICKET)` suffix, applies worklogs and transitions with explicit jira-cli calls. PR creation via tea CLI. Ticket breakdown lives in the ws-matt skill graph (`ws-to-tickets`, local-first tracker in `dev-docs/tickets/`).
 
 **Prerequisites:** [tea CLI](https://gitea.com/gitea/tea); [jira-cli](https://github.com/ankitpokhrel/jira-cli) (`brew install ankitpokhrel/jira-cli/jira-cli`, `export JIRA_API_TOKEN=<token>`, `jira init`)
 
-### /ws-init
+**Verbs:**
+| Verb | Effect |
+|---|---|
+| (none) | Single Jira-aware commit (Conventional Commits + ticket suffix, optional worklog and transition) |
+| `pr` | End-to-end flow: commit + CHANGELOG.md + push + PR via tea + optional ticket transition |
+| `clean` | Prune branches marked `[gone]` and their worktrees |
 
-Verify jira-cli setup and configure the marketplace for this user. If run inside a git repo, also binds that project to a specific Jira project key.
-
-**Arguments:** None
-
-**Behavior:**
-1. Checks the `jira` binary and `jira me`; if missing, prints install/token/`jira init` steps and aborts
-2. Writes `~/.claude/ws/config.yaml` (site host + defaults; auth stays in jira-cli)
-3. If in a git repo, asks which Jira project to bind (`jira project list`); writes `./.claude/ws-project.yaml`
-4. Reports summary and suggests next commands
-
-**Example:**
-```
-/ws-init
-```
-
----
-
-### /ws-status
-
-Show the user's Jira workload (assigned tickets grouped by status) and suggest the next task to pick up. Marks the ticket matching the current branch as "(you're here)".
-
-**Arguments:** None
-
-**Prerequisites:** `/ws-init` already run
-
-**Example:**
-```
-/ws-status
-```
-
----
-
-### /ws-commit
+### /ws-commit (no verb — commit flow)
 
 Jira-aware commit. Detects ticket key from branch name (`WSC-123-feature`), composes Conventional Commits with `(WSC-123)` suffix, optionally logs a worklog and transitions the ticket via jira-cli.
-
-**Arguments:** None
 
 **Behavior:**
 1. Parses current branch for `^([A-Z]+-\d+)`; if none, asks user for ticket (or proceeds without one)
@@ -122,11 +236,9 @@ WSC-142 #time 2h 30m #in-progress
 
 ---
 
-### /ws-commit-push-pr
+### /ws-commit pr
 
 End-to-end Jira-aware flow: commit, push, open PR with Jira link, optionally transition ticket to In Review.
-
-**Arguments:** None
 
 **Prerequisites:** tea CLI installed and authenticated; remote configured
 
@@ -143,22 +255,14 @@ End-to-end Jira-aware flow: commit, push, open PR with Jira link, optionally tra
 
 **Example:**
 ```
-/ws-commit-push-pr
+/ws-commit pr
 ```
 
 ---
 
-### /ws-help
-
-One-screen orientation guide to the WS system (start here: /ws-matt grill). Adapts to the project — hub, OpenWiki, omp keywords sections appear only when applicable. Display-only.
-
----
-
-### /ws-clean-gone
+### /ws-commit clean
 
 Clean up git branches marked as [gone] (deleted on remote but exist locally).
-
-**Arguments:** None
 
 **Behavior:**
 1. Lists branches marked as [gone]
@@ -167,138 +271,48 @@ Clean up git branches marked as [gone] (deleted on remote but exist locally).
 
 **Example:**
 ```
-/ws-clean-gone
+/ws-commit clean
 ```
 
 ---
 
+## /ws-status
 
-## ws-matt
+Show the user's Jira workload (assigned tickets grouped by status) and suggest the next task to pick up. Marks the ticket matching the current branch as "(you're here)".
 
-Matt Pocock's engineering skills (MIT, vendored) as a graph-engineered skill set: 19 `ws-*` skill nodes (18 vendored + ws-graph-engineering) in two tiers (entry orchestrators / worker disciplines), each SKILL.md carrying a `## Graph node` contract. Full graph: `plugins/ws-matt/docs/graph.md`.
+**Arguments:** None
 
-### /ws-matt
-
-Single entry for the skill graph.
-
-**Arguments:**
-| Name | Required | Description |
-|------|----------|-------------|
-| `entry` | No | None = graph status; `ask`, `implement`, `spec`, `tickets`, `triage`, `grill`, `architecture`, `wayfinder` route to the matching entry node; `setup` bootstraps the project (issue tracker conventions + omp edge-discipline rule) |
-
-**Examples:**
-```
-/ws-matt
-/ws-matt implement
-/ws-matt setup
-```
-
----
-
-
-## ws-project-hub
-
-Multi-repo project hubs. A hub is a small meta-repo (`<project>-main`) that registers all sub-repos (mobile app, marketing site, design, docs, etc.) of a project and launches your agent harness across them (Claude Code with `--add-dir` mounts; omp at the hub root). Sub-repos live as gitignored subfolders, each with its own independent git history. All hub tooling is harness-agnostic — new harnesses plug in via the launcher's agent registry.
-
-Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-hub-status`). The launcher opens an interactive agent picker (Claude Code / omp; extensible registry) — bypass with `--agent <name>` or `WS_HUB_AGENT`.
-
-### /ws-hub-init
-
-Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register. Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml`, `AGENTS.md` (+ thin `CLAUDE.md` import), `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), and vendors `.claude/skills/project-hub-conventions/`. Offers to scaffold a `role: docs` product docs repo (`<project>-docs`), initialize a hub-level OpenWiki knowledge wiki (with pointers written into every sub-repo's AGENTS.md), and set up herdr (global skill install). Registration details (schema, managed block, tech inference, docs-repo layout) are defined in the project-hub-conventions skill.
-
-**Doctor mode:** invoked inside an already-initialized hub (detected via `project.yaml`), it does not re-scaffold — it asks whether to run **doctor**: pull the hub and every sub-repo (`--ff-only`, clean repos only), offer clones for registered-but-missing repos, verify registry integrity (roles, `.gitignore` block, AGENTS.md markers, thin CLAUDE.md), refresh drifted generated files (`invoke-ai.sh`, vendored skill, omp rules/hooks), check OpenWiki freshness, and end with a ready-for-development verdict. Diagnose-only posture available; dirty/diverged repos and user-owned config are never touched — only reported.
+**Prerequisites:** `/ws-init` already run
 
 **Example:**
 ```
-/ws-hub-init
+/ws-status
 ```
 
 ---
 
-### /ws-hub-status
+## /ws-init
 
-Aggregated git status report across all registered sub-repos: branch, ahead/behind upstream, uncommitted count, recent commits. Read-only; ends with the `./invoke-ai.sh` launch hint (harness-agnostic) and, when problems surfaced, a pointer to `/ws-hub-init` doctor mode.
+Verify jira-cli setup and configure the marketplace for this user. If run inside a git repo, also binds that project to a specific Jira project key.
+
+**Arguments:** None
+
+**Behavior:**
+1. Checks the `jira` binary and `jira me`; if missing, prints install/token/`jira init` steps and aborts
+2. Writes `~/.claude/ws/config.yaml` (site host + defaults; auth stays in jira-cli)
+3. If in a git repo, asks which Jira project to bind (`jira project list`); writes `./.claude/ws-project.yaml`
+4. Reports summary and suggests next commands
 
 **Example:**
 ```
-/ws-hub-status
+/ws-init
 ```
 
 ---
-
-### /ws-hub-repos
-
-One traversal over all registered sub-repos, verb picks the git operation.
-
-**Arguments:**
-| Name | Required | Description |
-|------|----------|-------------|
-| `verb` | Yes | `pull` — `git pull --ff-only` across all sub-repos; `clone` — clone every registered URL into a missing subfolder |
-
-**Examples:**
-```
-/ws-hub-repos pull
-/ws-hub-repos clone
-```
-
----
-
-### /ws-hub-add-repo
-
-Register a new sub-repo (clone-URL, adopt-nested, register-sibling, or move-sibling-in). With `--scan`, first discovers nested/sibling git repos not yet in `project.yaml` and offers them for registration through the same flow. A repo can be marked `role: docs` (product docs repo, max one per hub).
-
-**Arguments:**
-| Name | Required | Description |
-|------|----------|-------------|
-| `--scan` | No | Run discovery before registration |
-
-**Examples:**
-```
-/ws-hub-add-repo
-/ws-hub-add-repo --scan
-```
-
----
-
-### /ws-hub-describe
-
-Refresh `description` and `tech` fields in `project.yaml` by reading each sub-repo's README and manifest files. Shows a diff before writing, then regenerates the AGENTS.md repos region.
-
-**Example:**
-```
-/ws-hub-describe
-```
-
----
-
-### /ws-hub-docs
-
-Generate cross-repo documentation (architecture, contracts, deployment topology) via the `hub-architect` agent. When the hub has an OpenWiki (`<hub>/openwiki/`), offers a prompted wiki refresh afterwards (sub-repo commits are invisible to hub git, so the refresh names the sub-repos explicitly). Targets the `role: docs` repo's `dev-docs/` when one is registered, else the hub's `docs/`.
-
-**Example:**
-```
-/ws-hub-docs
-```
-
----
-
-### /ws-hub-explained
-
-Generate/refresh the product explainer artefact in the hub's `role: explained` repo — one self-contained HTML (ws-artefacts contract: all inline, WS chrome palette, inline-SVG diagrams) + tokenless `meta.json`, synthesized from openwiki, dev-docs, and project.yaml. Audience: product owner + dev team. Prints the `projects/<name>/git-source.yml` registration block for ws-artefacts (tokens are minted there).
-
-**Example:**
-```
-/ws-hub-explained
-```
-
----
-
 
 ## Agents
 
-These agents are spawned via the Task tool, typically by commands.
-
-### docs-agent Agents
+These agents are spawned via the Task tool, typically by commands. All ship in the ws plugin — canonical reference is `ws:<agent>`.
 
 | Agent | Description |
 |-------|-------------|
@@ -312,19 +326,9 @@ These agents are spawned via the Task tool, typically by commands.
 | `contributing-generator` | Generates the 3-file CONTRIBUTING set |
 | `arch-watcher` | Detects commits that warrant an ADR |
 | `public-api-watcher` | Detects public API surface changes |
-
-### ws-matt Agents
-
-| Agent | Description |
-|-------|-------------|
-| `ws-matt-reviewer` | Reviews one diff slice per ws-code-review; orchestrator fans out N reviewers |
-| `ws-matt-researcher` | Investigates one question per ws-research, sourced summary |
-| `ws-matt-tdd-runner` | Executes one red-green cycle per ws-tdd |
-
-### ws-project-hub Agents
-
-| Agent | Description |
-|-------|-------------|
+| `reviewer` | Reviews one diff slice per ws-code-review; orchestrator fans out N reviewers |
+| `researcher` | Investigates one question per ws-research, sourced summary |
+| `tdd-runner` | Executes one red-green cycle per ws-tdd |
 | `hub-architect` | Analyzes all sub-repos and generates cross-repo architecture/contracts/deployment docs |
 
 ### Usage
@@ -333,7 +337,7 @@ Agents are invoked through the Task tool:
 
 ```
 Task tool with:
-  subagent_type: "docs-agent:diataxis-writer"
+  subagent_type: "ws:diataxis-writer"
   prompt: "Write a tutorial on setting up the development environment"
 ```
 
@@ -341,9 +345,9 @@ Task tool with:
 
 ## Skills
 
-Skills provide knowledge and templates, loaded on demand.
+Skills provide knowledge and templates, loaded on demand. All ship in the ws plugin.
 
-### docs-agent Skills
+### Docs Skills
 
 | Skill | Purpose |
 |-------|---------|
@@ -354,7 +358,7 @@ Skills provide knowledge and templates, loaded on demand.
 | `adr` | Architecture Decision Records |
 | `dual-track-docs` | The `docs/` + `dev-docs/` dual-track convention; where a new doc belongs |
 
-### ws-commit-commands Skills
+### Git / Jira Skills
 
 | Skill | Triggers on |
 |-------|-------------|
@@ -368,13 +372,13 @@ Skills provide knowledge and templates, loaded on demand.
 | `ws-ask-matt` + 8 entry nodes | User-invoked orchestrators (implement, to-spec, to-tickets, triage, grill-with-docs, improve-codebase-architecture, wayfinder, setup) |
 | `ws-tdd` + 8 worker nodes | Model-invoked disciplines (code-review, research, prototype, diagnosing-bugs, domain-modeling, codebase-design, resolving-merge-conflicts, grilling) |
 
-### ws-project-hub Skills
+### Project Hub Skills
 
 | Skill | Triggers on |
 |-------|-------------|
 | `project-hub-conventions` | project hub, multi-repo, `<name>-main` |
 | `ws-artefacts-explained` | explained artefact contract (ws-artefacts format, palette, meta.json, git-source.yml) |
 
-This skill is also vendored into every hub at init time (`<hub>/.claude/skills/`), so hubs remain self-documenting even when the marketplace plugin isn't installed.
+The `project-hub-conventions` skill is also vendored into every hub at init time (`<hub>/.claude/skills/`), so hubs remain self-documenting even when the marketplace plugin isn't installed.
 
 Skill loading is description-based: each SKILL.md declares in its `description` frontmatter what it knows and when it applies, and Claude loads it when the conversation matches.

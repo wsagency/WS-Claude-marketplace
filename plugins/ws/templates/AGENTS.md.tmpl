@@ -1,0 +1,88 @@
+# __PROJECT_NAME__ — Project Hub
+
+> Single source of truth for the __PROJECT_NAME__ project. Sub-repos live as subfolders here, each with its own git and its own `AGENTS.md`.
+
+## What this is
+
+__PROJECT_DESCRIPTION__
+
+Each sub-repo is a self-contained git repo in a subfolder. The hub itself is a small git repo that tracks only this `AGENTS.md`, the thin `CLAUDE.md` import, `project.yaml`, `invoke-ai.sh`, `README.md`, and `.gitignore`. The sub-repo directories are listed in the managed block of `.gitignore` so they don't pollute the hub's git history.
+
+## How agents load context
+
+This file (`AGENTS.md` at the hub root) is the canonical, agent-neutral project map. The hub's `CLAUDE.md` is a thin `@AGENTS.md` import kept for compatibility — never put content there.
+
+- **Claude Code** — `./invoke-ai.sh` (agent `claude`) launches with `--add-dir` for every sub-repo present locally; Claude auto-loads this file plus each mounted sub-repo's context file.
+- **omp** — finds this file by walking up from the current directory; it has no `--add-dir`, so sub-repo context files are NOT auto-loaded.
+
+When working inside `<sub-repo>/`, read `<sub-repo>/AGENTS.md` first — runtimes without multi-dir auto-load (omp) do not load it automatically.
+
+Per-repo rules live in the repo they apply to: each sub-repo keeps its own `AGENTS.md` (plus a thin `CLAUDE.md` import). Edit `acme-app/AGENTS.md` for app-specific conventions, etc.
+
+## Sub-repos
+
+<!-- ws-hub:repos:start -->
+<!-- generated from project.yaml — edit `description` / `tech` fields there, then re-run /ws-hub describe to refresh this section -->
+
+__REPO_SECTIONS__
+
+<!-- ws-hub:repos:end -->
+
+## Cross-repo notes
+
+<!-- Hand-written. Document how the repos interact: shared contracts, deploy order, design-token flow, API boundaries. -->
+
+- _Add cross-repo dependencies, shared contracts, and workflow notes here._
+
+## Working with this hub
+
+- `./invoke-ai.sh` — pick an agent (claude, omp, …) and launch it from the hub
+- `/ws-hub repos clone` — clone every registered repo URL into a missing subfolder
+- `/ws-hub repos pull` — `git pull` across all sub-repos
+- `/ws-hub status` — aggregated git status across all sub-repos
+- `/ws-hub add --scan` — detect un-registered sub-repos
+- `/ws-hub add` — register a new sub-repo (clone or adopt)
+- `/ws-hub describe` — refresh sub-repo descriptions from their READMEs
+
+## Documentation
+
+Product-level documentation lives in the `role: docs` sub-repo (see
+`project.yaml`): user docs (`docs/`, synced to Outline) and cross-repo
+dev docs (`dev-docs/` — product ADRs, architecture, client materials).
+Write product-level docs THERE, not in the hub and not in feature repos.
+Repo-specific dev docs stay in each sub-repo's own `dev-docs/`.
+
+## Knowledge wiki (OpenWiki)
+
+<!-- Prune this section if the hub was initialized without OpenWiki. -->
+
+This hub maintains an OpenWiki at `openwiki/` — the knowledge repository for the
+WHOLE product (all sub-repos). Entry point: `openwiki/quickstart.md`. **Consult it
+before exploring code or answering cross-repo questions**; every sub-repo's
+AGENTS.md points here too.
+
+Refreshing is **AI-driven — no CI**: agents run it occasionally, BEFORE starting
+major cross-repo work when the wiki is stale (compare `openwiki/.last-update.json`
+against recent sub-repo activity) and AFTER completing major changes. Sub-repo
+commits are invisible to the hub's git, so a refresh is ALWAYS prompted with the
+sub-repo list — `openwiki --update "Refresh; re-scan sub-repos: <name>, <name>, ..."`
+(`/ws-hub docs` offers this). Coverage scope lives in `openwiki/INSTRUCTIONS.md`.
+Do not hand-edit generated pages; the `<!-- OPENWIKI:START/END -->` blocks in
+AGENTS.md/CLAUDE.md are tool-managed (a permitted exception to the
+thin-CLAUDE.md rule).
+
+## Herdr
+
+<!-- Prune this section if the hub was initialized without herdr. -->
+
+Agent fleets for this hub run under [herdr](https://herdr.dev). If `HERDR_ENV=1`
+is set you are inside a herdr-managed pane — the globally installed `herdr`
+skill governs fleet control. Hub pattern: one workspace per sub-repo
+(`herdr workspace create --cwd <hub>/<repo> --label <repo>`); worktrees via
+`herdr worktree create`. Works with both Claude Code and omp agent kinds.
+
+## Access notes
+
+Sub-repos you don't have git access to will simply be missing from disk and `invoke-ai.sh` will skip them with a warning. The hub itself contains no sensitive code — it's a meta repo, safe to share broadly.
+
+Hub conventions are documented in `.claude/skills/project-hub-conventions/SKILL.md` (vendored locally — works without the ws-marketplace plugin installed).
