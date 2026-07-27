@@ -106,6 +106,24 @@ Now you can use commands like:
 - `/ws-commit` - Create a conventional commit
 - `/ws-commit-push-pr` - Commit, push, and create a PR in one step
 
+### Using omp instead of (or alongside) Claude Code
+
+The marketplace works in [omp](https://omp.sh) too — plugins installed via
+Claude Code are auto-visible there, or add directly inside omp:
+
+```
+/marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
+/plugin install ws-matt
+```
+
+See [Use the marketplace with omp](../how-to/use-with-omp.md) and
+[Set up omp for the WS stack](../how-to/omp-setup.md).
+
+### Your first command
+
+Run **`/ws-help`** — a one-screen guide that adapts to your project and tells
+you where to start (spoiler: `/ws-matt grill`).
+
 Install the ws-matt plugin for Matt Pocock's engineering skill graph:
 
 ```bash

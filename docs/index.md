@@ -14,6 +14,8 @@ New to the marketplace? Start here:
 
 Practical guides for common tasks:
 
+- [Use the marketplace with omp](how-to/use-with-omp.md) — Install and run everything in omp; what works and known gaps
+- [Set up omp for the WS stack](how-to/omp-setup.md) — Machine setup: model roles, safety posture, feature toggles
 - [Troubleshooting](how-to/troubleshooting.md) — Fix common installation and runtime issues
 
 ## Reference

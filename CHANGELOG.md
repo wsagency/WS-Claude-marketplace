@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.11.1] - 2026-07-27
+
+### Changed
+
+- README rewritten for newcomers: "How the system fits together" overview (work enters through the ws-matt graph, branches close through ws-commit, knowledge lives in three layers, hubs for multi-repo), omp installation section, /ws-help and local-tracker/orchestration/omp-preset notes in plugin details; docs index links the omp guides; getting-started gains the omp path and "your first command: /ws-help"
+
 ## [3.11.0] - 2026-07-26
 
 ### Added
