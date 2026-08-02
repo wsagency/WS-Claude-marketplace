@@ -14,6 +14,14 @@ ws-wayfinder, ws-setup-matt-pocock-skills) or spawning the worker agents
   (model-invoked) nodes and worker agents only. When an entry node's output should
   feed another entry node, end the run and tell the user which entry to invoke next
   — the handoff travels through state (files), never through a nested invocation.
+- **Exit report — the shape of that telling.** When a node ends its run it tells the
+  user, in two or three sentences, what landed and where it went, then the single most
+  likely next move plus one alternative — each a concrete entry point (`/ws-command`
+  or `ws-skill-name`) taken from the node's own declared edges. Never a bullet dump,
+  never "let me know how you'd like to proceed". This is the entry → entry handoff
+  above, made concrete: it recommends the next entry; it never auto-invokes it (ADR
+  0008). Per-node routing lives in each skill's `## Graph node` section; the format is
+  stated once in `ws-graph-engineering`.
 - **Workers return state deltas.** A worker reads shared state and returns only what
   it adds (findings, sources, cycle result). It never mutates artifacts owned by
   other nodes. Worker AGENTS are leaves — they never spawn further workers; worker

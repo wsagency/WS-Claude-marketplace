@@ -121,6 +121,8 @@ REPO_NAMES=(); while IFS= read -r line; do REPO_NAMES+=("$line"); done < <(yaml_
 REPO_PATHS=(); while IFS= read -r line; do REPO_PATHS+=("$line"); done < <(yaml_repos_field path)
 REPO_DESCS=(); while IFS= read -r line; do REPO_DESCS+=("$line"); done < <(yaml_repos_field description)
 REPO_TECHS=(); while IFS= read -r line; do REPO_TECHS+=("$line"); done < <(yaml_repos_field tech)
+REPO_TYPES=(); while IFS= read -r line; do REPO_TYPES+=("$line"); done < <(yaml_repos_field type)
+REPO_PURPOSES=(); while IFS= read -r line; do REPO_PURPOSES+=("$line"); done < <(yaml_repos_field purpose)
 
 # ─── colors ────────────────────────────────────────────────────────────────
 if [[ -t 1 ]]; then
@@ -302,6 +304,13 @@ print_summary() {
       printf '    %b✓%b %b%-22s%b %b%s%b\n' "$GRN" "$R" "$B" "$name" "$R" "$DIM" "$desc" "$R"
     fi
     [[ -n "$tech" ]] && printf '      %btech:%b %s\n' "$DIM" "$R" "$tech"
+    local rtype="${REPO_TYPES[$i]:-}"
+    local rpurpose="${REPO_PURPOSES[$i]:-}"
+    if [[ -n "$rtype" ]]; then
+      local type_label="$rtype"
+      [[ -n "$rpurpose" ]] && type_label="$rtype/$rpurpose"
+      printf '      %btype:%b %s\n' "$DIM" "$R" "$type_label"
+    fi
   done
   echo
 }

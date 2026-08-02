@@ -22,3 +22,4 @@ description: "Use when you need to resolve an in-progress git merge/rebase confl
   - then → discover and run the project's automated checks (typecheck, then tests, then format) and fix what the merge broke
   - then → done: staged, committed, and any rebase continued to completion (terminal worker — no outward skill edges)
 - **Handoff protocol:** the resolution is the merge commit itself; note non-obvious intent trade-offs in the commit message (DONE|{merge commit}).
+- **Exit report:** conflicts resolved and the tree builds → `/ws-commit`; a resolution changed behaviour → `/ws-code-review`. (Format: `ws-graph-engineering`.)

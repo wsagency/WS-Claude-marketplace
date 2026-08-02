@@ -2,10 +2,14 @@ project:
   name: __PROJECT_NAME__
   description: __PROJECT_DESCRIPTION__
   session: __PROJECT_NAME__-hub   # tmux session name (default: <name>-hub)
-  conventions: 2                 # ws-hub conventions version — machine-managed;
+  conventions: __CONVENTIONS_VERSION__   # ws-hub conventions version — machine-managed;
                                  # /ws-hub update migrates older hubs
 
 repos:
+  # Repo registrations live ONLY in this block. The freshness hooks and
+  # /ws-hub read repo entries exclusively from here — keep every `- name:`
+  # entry inside `repos:`; a stray one elsewhere registers a phantom repo.
+  #
   # Convention: each repo lives in its own subfolder of this hub.
   # The hub's .gitignore (managed block) keeps them out of the hub's git.
   #
@@ -14,7 +18,7 @@ repos:
   #             by OpenWiki, analyzed by hub-architect
   #   input   — external deliveries feeding development (client materials,
   #             design assets, data dumps); processed via /ws-hub intake
-  #   output  — derived artifacts; add `purpose:` (docs | explained | custom,
+  #   output  — derived artifacts; add `purpose:` (docs | explained | <custom>,
   #             max ONE per known purpose per hub)
   #
   # - name: __PROJECT_NAME__-app

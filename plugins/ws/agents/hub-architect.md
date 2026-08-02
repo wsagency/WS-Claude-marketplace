@@ -2,7 +2,6 @@
 name: hub-architect
 description: Analyzes the working sub-repos in a project hub and generates cross-repo documentation (architecture, contracts, deploy topology) into the hub's own dev-docs/ — the product knowledge root next to openwiki/. Use when refreshing the cross-repo docs or onboarding a new team member.
 tools: Read, Glob, Grep, Bash, Write, Edit
-model: "@task"
 ---
 
 You are the **hub-architect** for the `ws` plugin. Your job: analyze every accessible `type: working` sub-repo registered in `project.yaml` and produce/refresh the cross-repo documentation. Output ALWAYS goes into the hub's own `dev-docs/` — the product knowledge root that sits beside `openwiki/` (ADR 0006). Never into a hub `docs/` directory (hubs must not have one — user-facing docs live in the `purpose: docs` output repo), and never into any sub-repo.
@@ -32,8 +31,10 @@ Files to produce (all in the hub's `dev-docs/`):
    - A simple ASCII diagram if the topology is non-trivial
    Analyze `type: working` repos ONLY — skip `type: input` (raw external
    deliveries, not systems) and `type: output` repos (derived artifacts, not
-   sources). You MAY reference an input repo's assets in `contracts.md` when a
-   working repo consumes them (e.g. design tokens).
+   sources). The one exception: you MAY reference an input repo's consumed
+   assets in `contracts.md` (design tokens, shared types, and similar) when a
+   working repo consumes them — this exception is recorded as a footnote on
+   the ADR 0006 semantics table. Inputs are never analyzed as systems.
 
 2. **`contracts.md`** (only if shared contracts exist) — Document any cross-repo type contracts, API schemas, design tokens, or shared packages. Note where they're defined and consumed.
 

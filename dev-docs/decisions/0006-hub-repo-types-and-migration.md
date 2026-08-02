@@ -55,8 +55,15 @@ Option 1. Semantics per type:
 | type | `/ws-docs` sweep | OpenWiki coverage | hub-architect analysis | cardinality |
 |---|---|---|---|---|
 | `working` (default) | yes | yes | yes | unlimited |
-| `input` | no | no | no | unlimited |
+| `input` | no | no | no† | unlimited |
 | `output` | no | no | no | unlimited, max 1 per known purpose |
+
+† `input` → hub-architect analysis is "no" with one exception: hub-architect
+  MAY reference an input repo's consumed assets in `contracts.md` (design
+  tokens, shared types, and similar) when a working repo consumes them — see
+  the `hub-architect` agent; inputs are never analyzed as systems. The living
+  semantics table lives in the `project-hub-conventions` skill (vendored into
+  every hub); this copy records the table as accepted on 2026-07-27.
 
 - Knowledge flow is one-directional: `input` → processed into hub `dev-docs/`
   (scoping docs, ADRs, specs) → `working` repos build it → `output` repos
@@ -66,7 +73,8 @@ Option 1. Semantics per type:
   the wiki maps as-built state; raw deliveries would mix "requested" with
   "built". Processed truth lands in hub `dev-docs/` beside the wiki.
 - All staleness detection (Claude Stop hook, omp per-project hook template,
-  omp extension `wiki-freshness.ts`, `/ws-hub doctor` check 6, the
+  omp extension `wiki-freshness.ts`, the `/ws-hub doctor` knowledge-freshness
+  check, the
   `openwiki-freshness` TTSR rule) walks `type: working` repos only, parsed
   from `project.yaml` — output/input repos never raise the stale-wiki banner.
 - The docs repo shrinks to the user track (`docs/` + README + writing rules);

@@ -5,7 +5,44 @@ description: Conventions for WS Agency multi-repo project hubs (subfolder layout
 
 # Project Hub Conventions
 
-The WS Agency `ws` plugin organizes multi-repo projects under a single hub repo (`<project>-main`). Each sub-repo (mobile app, marketing site, design assets, client deliveries, docs, etc.) lives in a **subfolder of the hub** with its own independent git history.
+The WS Agency `ws` plugin grows with a project: it runs on a single repo or a few loose repos from day one and adopts a `<project>-main` hub later, when the work demands one (see [Project shape detection](#project-shape-detection) below). In the hub shape, each sub-repo (mobile app, marketing site, design assets, client deliveries, docs, etc.) lives in a **subfolder of the hub** with its own independent git history.
+
+## Project shape detection
+
+A WS project is in exactly one of three shapes, detected by walking up from
+the working directory looking for `project.yaml`, stopping at the filesystem
+root:
+
+- **`project.yaml` found in the working directory → hub root.** This
+  directory is a `<project>-main` hub; its subfolders are the sub-repos.
+- **`project.yaml` found in an ancestor directory → hub sub-repo.** That
+  ancestor is the hub; this directory is one of its registered sub-repos.
+- **`project.yaml` not found → standalone repo.** No hub — a valid,
+  first-class, permanent-until-chosen state.
+
+This procedure is defined ONCE here; every other hub-aware surface references
+it by name ("project shape detection, see `project-hub-conventions`") rather
+than restating the walk (ADR 0007). **Having no hub is never an error:** no
+command, skill, agent, hook, rule, or template may abort, warn, or nag merely
+because `project.yaml` is absent, and every hub-aware surface states its
+standalone behaviour explicitly next to its hub behaviour.
+
+### Standalone routing (no hub)
+
+While there is no hub, whatever would live in the hub's `dev-docs/` —
+cross-repo architecture, product ADRs, runbooks, scoping docs — lives in the
+standalone repo's OWN `dev-docs/`, using the identical directory names and
+layout described below. Adopting a hub later is therefore a **move, not a
+rewrite**: `/ws-hub init` detects sibling git repos in the working directory,
+proposes registering each with an inferred `type` (confirming each), and
+offers to lift each adopted repo's product-level `dev-docs/` content into the
+new hub knowledge root — per file, refusing to overwrite, using the same
+collision-safe machinery as the `/ws-hub update` migration. Adoption is
+always opt-in and never silent (ADR 0007).
+
+The rest of this file describes the **hub-root** shape in full; the sub-repo
+and standalone shapes reuse the same conventions, scoped to a single repo's
+own `dev-docs/` and `docs/`.
 
 ## Layout
 
@@ -40,8 +77,9 @@ project:
   name: <kebab-case-project-name>
   description: <one-line description>
   session: <tmux-session-name>  # optional, default <name>-hub
-  conventions: 2                # ws-hub conventions version — machine-managed;
-                                # /ws-hub update migrates older hubs
+  conventions: <N>              # ws-hub conventions version — machine-managed;
+                                # the /ws-hub update migration table is the
+                                # sole authority for the current value
 
 repos:
   - name: <repo-name>           # required, matches directory name
@@ -49,16 +87,18 @@ repos:
     url: <git-remote-url>       # optional but recommended (enables /ws-hub repos clone)
     description: <purpose>      # required (may be "TODO" temporarily)
     tech: <stack-keywords>      # optional, e.g. "react-native, typescript"
-    type: working               # required; working | input | output (see below)
-    purpose: docs               # only for type: output — docs | explained | <future>;
+    type: working               # required (v2+); working | input | output (see below)
+    purpose: docs               # only for type: output — docs | explained | <custom>;
                                 # max ONE output per known purpose per hub
 ```
+
+**Changing a convention here is a versioned event:** every convention change MUST add a row (and a `Migration N→M steps:` block) to the `/ws-hub update` table and bump `conventions` (ADR 0006) — that migration table is the sole authority for the current version.
 
 **Repo types** (ADR 0006) — every repo is exactly one of:
 
 | type | `/ws-docs` sweep | OpenWiki coverage | hub-architect analysis | what it is |
 |---|---|---|---|---|
-| `working` (default) | yes | yes | yes | the product's software — where development happens |
+| `working` (default for legacy hubs) | yes | yes | yes | the product's software — where development happens |
 | `input` | no | no | no | material that FEEDS development from outside: client deliveries, design assets, data dumps |
 | `output` | no | no | no | artifacts DERIVED from the product: user docs (purpose `docs`), generated explainers (purpose `explained`) |
 
@@ -119,7 +159,7 @@ CHANGELOG.md stays per-repo.
 Material arriving from outside that must be PROCESSED into project knowledge:
 client deliveries, design assets, data dumps. Named by source:
 `<project>-client`, `<project>-design`, … (unlimited). Scaffold: README,
-AGENTS.md with the convention note below, `history.md`.
+AGENTS.md carrying the **dated-folder convention** (see `### Dated folders` below), `history.md`.
 
 Input repos are **immutable raw** — nothing writes into them except new
 dated delivery folders and `history.md`. All distillation lands in the hub's
@@ -203,8 +243,9 @@ The plugin maintains a single block in the hub's `.gitignore`:
 ```gitignore
 # === ws-project-hub: sub-repos (auto-managed, do not edit) ===
 /<project>-app/
-/<project>-marketing/
 /<project>-design/
+/<project>-client/
+/<project>-docs/
 # === /ws-project-hub ===
 ```
 
@@ -235,6 +276,7 @@ A hub MAY carry an [OpenWiki](https://github.com/langchain-ai/openwiki) at `<hub
 - **Refresh is AI-driven — no CI**: agents run it occasionally, before major cross-repo work when the wiki is stale (`openwiki/.last-update.json` vs recent sub-repo activity) and after completing major changes. It is always prompted — `openwiki --update "Refresh; re-scan sub-repos: <list>"` — because sub-repo commits are invisible to the hub's git (plain `--update` would skip as "no changes"). `/ws-hub docs` offers this after generating cross-repo docs.
 - Generated pages are never hand-edited; the wiki is a DERIVED index, never the source of truth — authored truth lives in the dual-track docs (hub `dev-docs/` + per-repo `dev-docs/`); when wiki and dev-docs disagree, dev-docs wins and the wiki gets regenerated. The wiki is internal (not part of the `docs/` Outline track).
 - The wiki indexes `type: working` repos only — never inputs (raw, unprocessed) and never outputs (derived).
+- **Standalone repos count too (ADR 0007):** with no hub, the repo's own `dev-docs/` IS the product knowledge root, so the freshness detectors walk it (plus any immediate sub-directory `dev-docs/`) for staleness — excluding `openwiki/` and `dev-docs/tickets/`. In hub-root mode the hub's own `dev-docs/` is excluded (authored truth is not wiki input) and only `type: working` repos are walked.
 
 ## omp preset — conventions as enforcement
 

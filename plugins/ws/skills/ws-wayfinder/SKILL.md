@@ -140,3 +140,4 @@ The user may run unblocked tickets in parallel, so expect other sessions to be e
   - when the map is clear → hand off to ws-to-spec, which collapses the linked decisions into a buildable plan (user-mediated — wayfinder hands off, it never builds)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** the map and its tickets on the tracker are the shared state; assets are linked from issues, never pasted; claim a ticket by assignment before working it (DONE|{map link}).
+- **Exit report:** frontier ticket resolved, more remain → re-invoke `/ws-wayfinder` on the next; map clear, nothing left to decide → `/ws-to-spec`; open research tickets from charting → `/ws-research`. (Format: `ws-graph-engineering`.)

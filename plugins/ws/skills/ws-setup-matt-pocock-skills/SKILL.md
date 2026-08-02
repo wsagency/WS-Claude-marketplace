@@ -23,7 +23,7 @@ Look at the current repo to understand its starting state. Read whatever exists;
 
 - `git remote -v` and `.git/config` — is this a GitHub repo? Which one?
 - `.claude/ws-project.yaml` — a WS Jira binding (`jira.project`)? If present, **Local + Jira sync** is the natural tracker default for this repo (local working store, stakeholder mirror in the bound Jira project).
-- A hub `project.yaml` (checked the same way as `.claude/ws-project.yaml` — look in the parent hub repo when this repo is a registered sub-repo) — if found, this repo sits in a WS project hub: PRODUCT-level decisions belong in the HUB's `dev-docs/decisions/`, and only repo-specific decisions stay in this repo's `dev-docs/decisions/`.
+- Project shape (project shape detection, see `project-hub-conventions`): walk up for `project.yaml`. **Hub sub-repo** (found in an ancestor): PRODUCT-level decisions belong in the HUB's `dev-docs/decisions/`; only repo-specific decisions stay here. **Standalone repo** (not found): this repo's own `dev-docs/decisions/` holds everything — it IS the product knowledge root (ADR 0007). Repo-specific decisions always stay local in every shape.
 - `AGENTS.md` and `CLAUDE.md` at the repo root — does either exist? Is `CLAUDE.md` a thin `@AGENTS.md` import? Is there already an `## Agent skills` section in either?
 - `CONTEXT.md` and `CONTEXT-MAP.md` at the repo root
 - `dev-docs/decisions/` and any `src/*/dev-docs/decisions/` directories
@@ -67,7 +67,7 @@ The defaults are the five canonical roles, each label string equal to its name: 
 
 Offer **multi-context** — a root `CONTEXT-MAP.md` pointing to per-context `CONTEXT.md` files — only when exploration found monorepo signals. Then confirm which layout they want.
 
-When exploration found a hub `project.yaml` in a parent directory, note (in `dev-docs/agents/domain.md` and to the user) that PRODUCT-level decisions belong in the hub's `dev-docs/decisions/` — only repo-specific decisions stay in this repo's `dev-docs/decisions/`.
+Per project shape detection (`project-hub-conventions`): in a **hub sub-repo**, note (in `dev-docs/agents/domain.md` and to the user) that PRODUCT-level decisions belong in the hub's `dev-docs/decisions/` — only repo-specific decisions stay in this repo's `dev-docs/decisions/`. In a **standalone repo**, this repo's own `dev-docs/decisions/` is the product knowledge root and holds everything (ADR 0007). Repo-specific decisions always stay local.
 
 ### 3. Confirm and edit
 
@@ -134,3 +134,4 @@ Tell the user the setup is complete and which engineering skills will now read f
   - data edges: the emitted config is the shared state read by ws-triage, ws-to-spec, ws-to-tickets, ws-wayfinder and ws-code-review
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** all output is config files in the repo, referenced by path (DONE|{dev-docs/agents/*.md}).
+- **Exit report:** setup complete and a large multi-repo effort is scoped → `/ws-wayfinder`; a single feature or change is ready to specify → `/ws-to-spec`; a bug report is on hand → `/ws-triage`. (Format: `ws-graph-engineering`.)

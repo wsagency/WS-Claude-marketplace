@@ -9,7 +9,7 @@
   "plugins": [
     {
       "name": "ws",
-      "description": "The WS Agency engineering suite in one plugin: ws-matt graph-engineered skills (grill, spec, tickets, implement, TDD, review — Matt Pocock's skills MIT-vendored), Jira-aware git flows via jira-cli (/ws-commit with pr and clean verbs, tea PRs), dual-track docs with /ws-docs (Outline publishing, changelog, ADRs), and multi-repo project hubs via /ws-hub (init, doctor, status, repos, add, describe, docs, explained)",
+      "description": "The WS Agency engineering suite in one plugin: ws-matt graph-engineered skills (grill, spec, tickets, implement, TDD, review — Matt Pocock's skills MIT-vendored), Jira-aware git flows via jira-cli (/ws-commit with pr and clean verbs, tea PRs), dual-track docs with /ws-docs (Outline publishing, changelog, ADRs), and multi-repo project hubs via /ws-hub (init, doctor, update, intake, status, repos, add, describe, docs, explained)",
       "version": "4.4.0",
       "source": "./plugins/ws",
       "category": "development",

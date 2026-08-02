@@ -11,6 +11,10 @@ interlinked per the **ws-graph-engineering** methodology. Dispatch on:
 
 $ARGUMENTS
 
+This command is hub-independent: it routes into skill graphs and never reads
+`project.yaml`, so it runs identically in a standalone repo, a hub sub-repo,
+or at the hub root.
+
 ### No arguments — graph status
 
 1. List the nodes by tier:
@@ -78,3 +82,11 @@ Entry nodes may invoke worker nodes, **never another entry node**. Workers retur
 state deltas and hand large artifacts back by path (`DONE|{path}`). The
 ws-graph-engineering skill is the contract — consult it before orchestrating any
 fan-out.
+
+## When you finish
+
+In two or three sentences, tell the user what you did — rendered the graph map
+and suggested an entry (no args), or routed into a skill (`/ws-matt <entry>`)
+that runs to its own exit report — then name the next move: for status, run the
+suggested `/ws-matt <entry>` (often `/ws-matt ask` or `/ws-matt implement`);
+for a routed entry, follow the skill it loaded.

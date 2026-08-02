@@ -28,6 +28,10 @@ The verb is `$1`:
 - **`clean`** → the **clean flow** (prune `[gone]` branches and their worktrees)
 - anything else → print usage `/ws-commit [pr | clean]` and stop
 
+This command is hub-independent: it reads only the Jira config and the current
+git repo, never `project.yaml`, so it runs identically in a standalone repo
+or a hub sub-repo.
+
 ## Commit flow (no verb)
 
 Create a single git commit with a Jira-aware message. Steps below.
@@ -310,3 +314,10 @@ Clean up all git branches marked as `[gone]` (branches that have been deleted on
 5. Report what was cleaned up.
 
 Do not delete the current branch. Switch to main/master first if the current branch is marked as gone. Use only git commands in this flow — no other shell operations are needed.
+
+## When you finish
+
+In two or three sentences, state what the verb did — committed, pushed + opened
+a PR, or pruned branches — and where it landed, then point at the next move:
+after a plain commit, run `/ws-commit pr` to push and open the PR (and write
+the changelog); or `/ws-status` to see what to pick up next.

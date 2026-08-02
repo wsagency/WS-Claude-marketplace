@@ -142,3 +142,4 @@ Required before declaring done:
   - when no correct seam exists to lock the bug down → ws-improve-codebase-architecture with the specifics (user-mediated, and only after the fix is in)
   - then → done: the original repro re-run green and every `[DEBUG-...]` probe removed
 - **Handoff protocol:** the loop command is the contract — name the one command, paste its single invocation and output as evidence; everything else lands in the fix commit (DONE|{fix commit}).
+- **Exit report:** root cause found → `/ws-tdd` for the failing regression test then the fix (or `/ws-implement` for a trivial one); no correct seam exists to lock the bug → `/ws-improve-codebase-architecture`; the bug won't reproduce → `/ws-research`. (Format: `ws-graph-engineering`.)

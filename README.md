@@ -10,7 +10,7 @@ One plugin ([ws](./plugins/ws)), one workflow:
 
 - **Work enters through the ws-matt skill graph** (`/ws-matt`) — idea → `grill` (interview) → `to-spec` → `to-tickets` → `implement` (TDD + review). Tickets live **locally in `dev-docs/tickets/`** (fastest for agents; optional Jira mirror via jira-cli).
 - **Every branch closes through the git flows** (`/ws-commit`) — Conventional Commits with the Jira key, worklog, CHANGELOG at PR time (`/ws-commit pr`).
-- **Knowledge maintains itself in three layers**: authored truth in `dev-docs/` (ADRs, runbooks, client materials — written as decisions happen), a derived **OpenWiki** at the hub level (the map agents read *before* exploring code, refreshed by agents — no CI), and generated outputs for humans (user docs → Outline via `/ws-docs publish`; product explainer via `/ws-hub explained`).
+- **Knowledge maintains itself in three layers**: authored truth in `dev-docs/` (ADRs, runbooks, scoping docs distilled from client deliveries — written as decisions happen), a derived **OpenWiki** at the hub level (the map agents read *before* exploring code, refreshed by agents — no CI), and generated outputs for humans (user docs → Outline via `/ws-docs publish`; product explainer via `/ws-hub explained`).
 - **Multi-repo products live in a hub** (`/ws-hub`) — one meta-repo registering all sub-repos, with an agent-picker launcher and, on omp, a config preset + stream-interrupting convention rules.
 
 **Start here after installing: run `/ws-help`** — a one-screen guide that adapts to your project. First skill to learn: `/ws-matt grill`.
@@ -19,7 +19,7 @@ One plugin ([ws](./plugins/ws)), one workflow:
 
 | Plugin | Description | Commands |
 |--------|-------------|----------|
-| [ws](./plugins/ws) | The WS Agency engineering suite in one plugin: ws-matt graph-engineered skills, Jira-aware git flows via jira-cli, dual-track docs, and multi-repo project hubs | `/ws-help`, `/ws-matt <entry>`, `/ws-docs <verb>`, `/ws-hub <verb>` (init, doctor, status, repos, add, describe, docs, explained), `/ws-commit [pr \| clean]`, `/ws-status`, `/ws-init` |
+| [ws](./plugins/ws) | The WS Agency engineering suite in one plugin: ws-matt graph-engineered skills, Jira-aware git flows via jira-cli, dual-track docs, and multi-repo project hubs | `/ws-help`, `/ws-matt <entry>`, `/ws-docs <verb>`, `/ws-hub <verb>` (init, doctor, update, intake, status, repos, add, describe, docs, explained), `/ws-commit [pr \| clean]`, `/ws-status`, `/ws-init` |
 
 ## Prerequisites
 
@@ -103,7 +103,7 @@ Dual-track documentation suite with a single unified `/ws-docs` entry covering t
 - `/ws-docs explain` — Regenerate `docs/explained.md`, a generated Outline-safe onboarding page (mermaid diagrams, roles, quickstart)
 - `/ws-docs publish` — Lint the Outline-safe profile, then push `docs/` to an Outline collection (docs.wsagency.io) via `outline-sync.py`
 
-In a multi-repo hub (see [Project hubs](#project-hubs-ws-hub)) with a `role: docs` sub-repo, `/ws-docs` routes product-level writes (user docs, product ADRs, architecture) to that docs repo automatically.
+In a multi-repo hub (see [Project hubs](#project-hubs-ws-hub)), `/ws-docs` routes user-facing product docs to the `type: output, purpose: docs` repo, while product-internal writes (ADRs, architecture) go to the hub's own `dev-docs/` knowledge root (ADR 0006).
 
 **Agents:** `diataxis-writer`, `api-documenter`, `changelog-analyzer`, `adr-writer`, `arch-watcher`, `contributing-generator`, `architecture-documenter`, `docs-doctor`, `public-api-watcher`, `release-notes-writer`
 
@@ -183,19 +183,31 @@ Tickets default to the **local tracker** (`dev-docs/tickets/open|done/` — fast
 
 ### Project hubs (`/ws-hub`)
 
-Manage multi-repo projects (mobile app, marketing site, design, docs, etc.) through a single hub repo. Generates a `<project>-main` folder with a registry of all sub-repos, an auto-built `AGENTS.md` project map (with a thin `CLAUDE.md` import), and an `invoke-ai.sh` launcher with an interactive agent picker — Claude Code (mounts sub-repos via `--add-dir`) or omp (runs at the hub root). Sub-repos live as gitignored subfolders, each with its own independent git.
+Manage multi-repo projects (mobile app, marketing site, design, docs, etc.) through a single hub repo. Generates a `<project>-main` folder with a registry of all sub-repos, an auto-built `AGENTS.md` project map (with a thin `CLAUDE.md` import), the hub's own `dev-docs/` knowledge root (product ADRs, runbooks, cross-repo architecture, scoping), and an `invoke-ai.sh` launcher with an interactive agent picker — Claude Code (mounts sub-repos via `--add-dir`) or omp (runs at the hub root). Sub-repos live as gitignored subfolders, each with its own independent git.
+
+#### Hub or no hub — your choice
+
+A hub is **optional**. Nothing nags you to create one, and no command requires a `project.yaml` to run. Three shapes are all first-class:
+
+- **A single repo with no hub** — the normal starting point. Everything works standalone; the repo's own `dev-docs/` is the product knowledge root, using the same layout a hub would (ADR 0007).
+- **Several loose repos with no hub** — each repo is fully self-contained and works the same way. Nothing couples them until you choose to.
+- **A hub** — when the work grows into a multi-repo product, run `/ws-hub init` **in the parent directory**: it detects the existing sibling repos, proposes registering each with an inferred type (confirm each), and offers to lift every adopted repo's product-level `dev-docs/` into the new hub knowledge root — per file, never overwriting. Adoption is always opt-in.
+
+Because a standalone repo's `dev-docs/` already uses the hub layout, adopting a hub later is a move, not a rewrite (ADR 0007).
 
 **Commands** (all via the single `/ws-hub` entry):
 - `/ws-hub init` — Initialize a new project hub (interactive); in an existing hub it offers **doctor**
 - `/ws-hub doctor` — Pull everything, verify integrity, refresh drifted generated files, ready-for-development verdict
+- `/ws-hub update` — Migrate hub conventions to the latest version (interactive, per-migration confirm)
+- `/ws-hub intake` — Process `type: input` deliveries into the hub's `dev-docs/scoping/` knowledge
 - `/ws-hub status` — Aggregated git status report (read-only), ends with the launch hint
 - `/ws-hub repos <pull|clone>` — `git pull` across all sub-repos, or clone every registered URL into a missing subfolder
 - `/ws-hub add [--scan]` — Register a new sub-repo; `--scan` first discovers unregistered repos in/near the hub
 - `/ws-hub describe` — Refresh sub-repo descriptions from their READMEs
-- `/ws-hub docs` — Generate cross-repo architecture/contracts/deployment docs (hub-architect agent; targets the `role: docs` repo's `dev-docs/` when one is registered)
-- `/ws-hub explained` — Generate the product explainer artefact (ws-artefacts format) in the hub's `role: explained` repo — audience: product owner + dev team
+- `/ws-hub docs` — Generate cross-repo architecture/contracts/deployment docs (hub-architect agent; written into the hub's own `dev-docs/`; analyzes `type: working` repos only)
+- `/ws-hub explained` — Generate the product explainer artefact (ws-artefacts format) in the hub's `type: output, purpose: explained` repo — audience: product owner + dev team
 
-One sub-repo per hub can be marked `role: docs` — the product docs repo (`<project>-docs`), single source of truth for user docs (synced to Outline via `/ws-docs publish`) and cross-repo dev docs. `/ws-hub init` offers to scaffold it — plus optional hub-level [OpenWiki](https://github.com/langchain-ai/openwiki) (one knowledge wiki for all sub-repos, referenced from every sub-repo's AGENTS.md, refreshed via `/ws-hub docs`) and [herdr](https://herdr.dev) fleet setup (the ws plugin ships the vendored `herdr` skill; works with Claude Code and omp).
+One sub-repo per hub can be marked `type: output, purpose: docs` — the product docs repo (`<project>-docs`), source of truth for the USER track only (synced to Outline via `/ws-docs publish`); cross-repo internal docs live in the hub's own `dev-docs/`. `/ws-hub init` offers to scaffold it — plus optional hub-level [OpenWiki](https://github.com/langchain-ai/openwiki) (one knowledge wiki for all sub-repos, referenced from every sub-repo's AGENTS.md, refreshed via `/ws-hub docs`) and [herdr](https://herdr.dev) fleet setup (the ws plugin ships the vendored `herdr` skill; works with Claude Code and omp).
 
 On omp, `/ws-hub init` also writes a project preset: `.omp/config.yml` (yolo approval by default — init asks; per-project model roles), the **WS TTSR rules pack** (stream-interrupting rules for dangerous git ops, commit format, and hand-edits of generated files) and a native TypeScript hook that shows a banner when dev-docs changed since the last OpenWiki refresh.
 

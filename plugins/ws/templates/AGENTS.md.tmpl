@@ -37,24 +37,36 @@ __REPO_SECTIONS__
 ## Working with this hub
 
 - `./invoke-ai.sh` — pick an agent (claude, omp, …) and launch it from the hub
+- `/ws-hub status` — aggregated git status across all sub-repos
 - `/ws-hub repos clone` — clone every registered repo URL into a missing subfolder
 - `/ws-hub repos pull` — `git pull` across all sub-repos
-- `/ws-hub status` — aggregated git status across all sub-repos
-- `/ws-hub add --scan` — detect un-registered sub-repos
-- `/ws-hub add` — register a new sub-repo (clone or adopt)
+- `/ws-hub add [--scan]` — register a sub-repo (clone / adopt / sibling / mark output)
 - `/ws-hub describe` — refresh sub-repo descriptions from their READMEs
+- `/ws-hub docs` — generate/refresh cross-repo docs via hub-architect
+- `/ws-hub intake` — process a client delivery from a `type: input` repo into `dev-docs/scoping/`
+- `/ws-hub explained` — generate the `purpose: explained` product artefacts
+- `/ws-hub doctor` — diagnose and repair the hub
+- `/ws-hub update` — migrate the hub to the latest conventions version
 
 ## Documentation
 
 Product-level INTERNAL documentation lives in this hub's own `dev-docs/` —
 the knowledge root beside `openwiki/`: cross-repo architecture (written by
 `/ws-hub docs`), product ADRs (`decisions/`), runbooks, and processed client
-deliveries (`scoping/`). USER-facing docs live in the `type: output,
-purpose: docs` repo (see `project.yaml`; its `docs/` track syncs to
-Outline) — write end-user documentation THERE. Raw external deliveries
-(client materials, design assets) live in `type: input` repos and are
-processed into `dev-docs/scoping/` via `/ws-hub intake`. Repo-specific dev
-docs stay in each working sub-repo's own `dev-docs/`.
+deliveries (`scoping/`). Repo-specific dev docs stay in each working
+sub-repo's own `dev-docs/`. This hub knowledge root is always present,
+whether or not any output or input repos are registered.
+
+<!-- Prune the sentence below if this hub has no `purpose: docs` output repo. -->
+USER-facing docs live in the `type: output, purpose: docs` repo (see
+`project.yaml`; its `docs/` track syncs to Outline) — write end-user
+documentation there. With no docs repo registered, user-track product targets
+are unavailable until `/ws-hub add` registers one; product-internal targets
+(hub `dev-docs/`) always are.
+
+<!-- Prune the sentence below if this hub has no `type: input` repo. -->
+Raw external deliveries (client materials, design assets) live in `type:
+input` repos and are processed into `dev-docs/scoping/` via `/ws-hub intake`.
 
 ## Knowledge wiki (OpenWiki)
 
@@ -87,6 +99,6 @@ skill governs fleet control. Hub pattern: one workspace per sub-repo
 
 ## Access notes
 
-Sub-repos you don't have git access to will simply be missing from disk and `invoke-ai.sh` will skip them with a warning. The hub itself contains no sensitive code — it's a meta repo, safe to share broadly.
+Sub-repos you don't have git access to will simply be missing from disk and `invoke-ai.sh` will skip them with a warning. The hub contains no product source code, but it DOES track the product's internal `dev-docs/` (architecture, ADRs, scoping) — share it at the same level as the dev team, not publicly. Raw client deliveries live in separate `type: input` repos with their own git access, precisely so their access stays separable from the hub's.
 
 Hub conventions are documented in `.claude/skills/project-hub-conventions/SKILL.md` (vendored locally — works without the ws-marketplace plugin installed).

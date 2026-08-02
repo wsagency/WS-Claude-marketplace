@@ -34,3 +34,4 @@ The two branches produce very different artifacts — getting this wrong wastes 
   - when the question is "does this logic/state model feel right" → the LOGIC.md branch; when it's "what should this look like" → the UI.md branch (internal conditional)
   - then → return the verdict to the invoking node (a ws-grill-with-docs detour or a ws-wayfinder prototype ticket); the main branch keeps only the validated decision
 - **Handoff protocol:** keep the answer, delete the code from main — the prototype lives on its throwaway branch, referenced by branch name and issue pointer (DONE|{throwaway branch}).
+- **Exit report:** prototype validated the shape → return the verdict to the node that asked (`/ws-wayfinder` or `/ws-grill-with-docs`); prototype rejected the shape → reopen the question with `/ws-grilling`. (Format: `ws-graph-engineering`.)

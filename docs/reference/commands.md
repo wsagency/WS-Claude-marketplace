@@ -117,7 +117,7 @@ Diagnose and repair an existing hub: pull the hub and every sub-repo (`--ff-only
 
 ### /ws-hub update
 
-Migrate an existing hub to the latest ws-hub conventions. Reads the `project.conventions` version marker in `project.yaml` (absent → inferred from legacy probes like `role:` fields), lists pending migrations from the authoritative table, and applies them interactively — per migration: apply / skip / abort; ambiguous steps (e.g. which repo receives client materials) are always asked, never guessed. The v1→v2 migration (ADR 0006) renames `role:`→`type:`/`purpose:`, scaffolds the hub `dev-docs/` knowledge root, moves product dev-docs out of the docs repo, and relocates client materials into an input repo. Idempotent; re-run resumes cleanly; never commits on your behalf.
+Migrate an existing hub to the latest ws-hub conventions. Reads the `project.conventions` version marker in `project.yaml` (absent → inferred from legacy probes like `role:` fields), lists pending migrations from the authoritative table, and applies them interactively — per migration: apply / skip / abort; ambiguous steps (e.g. which repo receives client materials) are always asked, never guessed. The v1→v2 migration (ADR 0006) renames `role:`→`type:`/`purpose:`, scaffolds the hub `dev-docs/` knowledge root, moves product dev-docs out of the docs repo, relocates client materials into an input repo, and refreshes the generated + harness files (`invoke-ai.sh`, vendored skill, `.omp/` rules and hook). Idempotent; re-run resumes cleanly; never commits on your behalf.
 
 **Example:**
 ```
@@ -128,7 +128,7 @@ Migrate an existing hub to the latest ws-hub conventions. Reads the `project.con
 
 ### /ws-hub intake
 
-Process external deliveries into product knowledge. Scans `type: input` repos for dated delivery folders (`YYYY-MM-DD/`) that no scoping doc references yet, then per delivery: diffs against the previous folder, drafts a scoping doc (summary, extracted requirements, scope of work in/out, open questions, decisions, tickets) into the hub's `dev-docs/scoping/`, appends the input repo's `history.md`, and offers the follow-ups — product ADRs (`/ws-docs adr`), `ws-to-spec`, and `ws-to-tickets` into the working repo where the change lands. Input repos stay immutable raw (only `history.md` is written there).
+Process external deliveries into product knowledge. With no `type: input` repo registered, offers to create and register `<project>-client` first. Scans `type: input` repos for dated delivery folders (`YYYY-MM-DD/`) that no scoping doc references yet, then per delivery: diffs against the previous folder, drafts a scoping doc (summary, extracted requirements, scope of work in/out, open questions, decisions, tickets) into the hub's `dev-docs/scoping/`, appends the input repo's `history.md`, and offers the follow-ups — product ADRs (`/ws-docs adr`), `ws-to-spec`, and `ws-to-tickets` into the working repo where the change lands. Input repos stay immutable raw (only `history.md` is written there).
 
 **Example:**
 ```
@@ -206,7 +206,12 @@ Generate cross-repo documentation (architecture, contracts, deployment topology)
 
 ### /ws-hub explained
 
-Generate/refresh the product explainer artefact in the hub's `type: output, purpose: explained` repo — one self-contained HTML (ws-artefacts contract: all inline, WS chrome palette, inline-SVG diagrams) + tokenless `meta.json`, synthesized from openwiki, the hub's `dev-docs/`, working repos, and project.yaml. Audience: product owner + dev team. Prints the `projects/<name>/git-source.yml` registration block for ws-artefacts (tokens are minted there).
+Generate/refresh the product explainer artefact in the hub's `type: output, purpose: explained` repo. With no `purpose: explained` repo registered, offers to create and register `<project>-explained` first. The artefact is one self-contained HTML (ws-artefacts contract: all inline, WS chrome palette, inline-SVG diagrams) + tokenless `meta.json`, synthesized from openwiki, the hub's `dev-docs/`, working repos, and project.yaml. Audience: product owner + dev team. Prints the `projects/<name>/git-source.yml` registration block for ws-artefacts (tokens are minted there).
+
+**Arguments:**
+| Name | Required | Description |
+|------|----------|-------------|
+| `topic` | No | Write `<topic>.html` instead of the whole-product `<project>-explained.html` |
 
 **Example:**
 ```

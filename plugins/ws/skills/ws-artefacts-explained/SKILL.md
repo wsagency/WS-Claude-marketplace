@@ -22,6 +22,13 @@ sub-repo READMEs. When it drifts, **regenerate it — never hand-edit**.
 Commits go to the explained repo itself (its own git; the hub ignores it like
 any sub-repo).
 
+**Standalone repos (no hub).** With no `project.yaml`, there is no registered
+`type: output, purpose: explained` sub-repo, so generate the artefact directly
+in the standalone repo and synthesize it from that repo's own `dev-docs/` +
+`docs/` + README (and `openwiki/` if present) — the repo's own `dev-docs/` IS
+the product knowledge root (ADR 0007). Adopting a hub later moves the source
+with the rest of the product `dev-docs/` and registers the explained sub-repo.
+
 ## Artefact HTML contract
 
 Verified against the ws-artefacts repo (`build.mjs` consumer, `templates/`,

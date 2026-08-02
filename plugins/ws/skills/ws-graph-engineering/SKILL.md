@@ -98,6 +98,15 @@ contract. When an entry node's output should feed another entry node (e.g.
 entry to invoke next — the handoff travels through state (the spec file), not through
 a nested invocation.
 
+**Exit report.** That telling has a shape. A node ends its run by telling the user, in
+two or three sentences, what landed and where it went, then the single most likely
+next move plus one alternative — each a concrete entry point (`/ws-command` or
+`ws-skill-name`) drawn from the node's own declared edges. Never a bullet dump, never
+"let me know how you'd like to proceed". The recommendation is the entry → entry
+handoff above, made concrete — it points at the next entry; it never auto-invokes it.
+Each vendored skill carries its own routing in one `**Exit report:**` bullet at the end
+of its `## Graph node` section (ADR 0008).
+
 ## Per-harness execution
 
 **Claude Code** — the model orchestrates by following edges; workers spawn via the

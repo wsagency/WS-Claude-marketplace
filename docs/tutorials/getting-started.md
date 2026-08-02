@@ -126,6 +126,10 @@ you where to start (spoiler: `/ws-matt grill`).
 The ws plugin also ships Matt Pocock's engineering skill graph: run `/ws-matt`
 for a graph status, or `/ws-matt setup` to bootstrap a project.
 
+### One repo, or many? A hub is optional
+
+You don't need a hub to use the WS stack. A single repo — or several loose repos — works fully standalone: each repo's own `dev-docs/` is its knowledge root, using the same layout a hub would. When a project grows into multiple repos, run `/ws-hub init` in the parent directory — it adopts the existing repos (registering each with an inferred type) and offers to lift their product-level `dev-docs/` into a shared hub knowledge root. Nothing nags you to create a hub, and no command requires one. See the README's [Project hubs](../../README.md#project-hubs-ws-hub) section and ADR 0007.
+
 ## What's Next?
 
 - Browse the [Command Reference](../reference/commands.md) to discover all available commands

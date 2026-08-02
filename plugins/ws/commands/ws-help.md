@@ -29,10 +29,12 @@ DOCUMENTATION (writes itself as you work)
   /ws-docs              status of all docs artifacts
   openwiki/quickstart.md  ← READ BEFORE exploring code (hub)
 
-HUB (multi-repo projects)
+HUB (optional — multi-repo only; run /ws-hub init later to adopt existing repos)
   ./invoke-ai.sh        launcher with agent picker (claude/omp)
   /ws-hub status        git overview across all repos
   /ws-hub doctor        pull everything + readiness check
+  /ws-hub update        migrate hub conventions to the latest version
+  /ws-hub intake        process a client delivery into hub knowledge
   /ws-hub docs          cross-repo docs + wiki refresh
 
 omp KEYWORDS (just write the word in your prompt)

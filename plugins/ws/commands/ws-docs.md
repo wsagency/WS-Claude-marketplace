@@ -18,24 +18,31 @@ Project state lives in `.claude/docs-config.yaml`. Hooks (PreToolUse + Stop) rea
 - `style-guide` — prose + code style
 - `adr` — MADR format (loaded for adr verb)
 
-## Hub mode
+## Repo shape — standalone vs hub
 
-Before dispatching any verb, look for a `project.yaml` with a `repos:` list
-(cwd, then parent directories up to $HOME). If found, you are in a WS project
-hub (ADR 0006 — every repo has a `type: working | input | output`). Resolve
-`DOCS_REPO` = the hub-relative path of the `type: output, purpose: docs`
-repo when one is registered (legacy spelling: `role: docs`) — it receives
-only USER-track product writes. Product-level INTERNAL writes always go to
-the hub's own `dev-docs/` (the knowledge root), whether or not a docs repo
-exists. **Position** then decides behavior:
+Run **project shape detection** (see `project-hub-conventions`) — it returns
+one of three shapes. The result decides behavior before any verb dispatches:
 
-- **Sub-repo position** — `project.yaml` was found in a PARENT directory: run
+- **Standalone repo** — no `project.yaml` found (ADR 0007): a valid, permanent
+  state, not a gap. Operate entirely repo-locally — the repo's own `docs/`
+  (user track) and `dev-docs/` (internal track), product ADRs into this repo's
+  own `dev-docs/decisions/`. No hub, no sweep, no warning: every verb below
+  runs at repo level, so skip the hub scope routing and the Hub sweep section
+  entirely.
+- **Hub sub-repo** — `project.yaml` was found in a PARENT directory: run
   repo-level with the product scope routing below (the original hub mode).
-- **Hub-root position** — `./project.yaml` belongs to the cwd itself: there is
-  no local repo to document (hubs never carry `docs/`), so verbs run as a
-  **hub sweep** across the sub-repos (section below).
+- **Hub root** — `./project.yaml` belongs to the cwd itself: there is no local
+  repo to document (hubs never carry `docs/`), so verbs run as a **hub sweep**
+  across the sub-repos (section below).
 
-Scope routing in sub-repo position (repo-level behavior is unchanged outside hubs):
+In a hub (ADR 0006 — every repo has a `type: working | input | output`),
+resolve `DOCS_REPO` = the hub-relative path of the `type: output, purpose:
+docs` repo when one is registered (legacy spelling: `role: docs`) — it
+receives only USER-track product writes. Product-level INTERNAL writes always
+go to the hub's own `dev-docs/` (the knowledge root), whether or not a docs
+repo exists.
+
+Scope routing in a hub sub-repo (repo-level behavior is unchanged outside hubs):
 - `write` with user audience → ALWAYS `DOCS_REPO/docs/` (user docs are
   product-level by definition; requires a registered `purpose: docs` repo)
 - `write` with dev audience → ask scope: **this repo** (local `dev-docs/`) or
@@ -57,14 +64,15 @@ The scope answer may be cached in `.claude/docs-config.yaml` as
 
 ### Hub sweep (invoked at the hub root)
 
-Sweep targets: every `type: working` repo in `project.yaml` that exists on
-disk (`type: input` and `type: output` repos are excluded — inputs are raw
-deliveries processed via `/ws-hub intake`, outputs are covered by the
-product-level rows). Each working repo is its own git, so per-repo subagents
-cannot conflict: dispatch **one subagent per target repo in parallel**
-(`run_in_background: true`), passing the repo's absolute path as its working
-root, and aggregate when all report. Each subagent honors that repo's own
-`.claude/docs-config.yaml` (the hub has none).
+Sweep targets: every `type: working` repo (legacy hubs: entries with neither
+`type` nor `role`) in `project.yaml` that exists on disk — `type: input` and
+`type: output` repos are excluded (inputs are raw deliveries processed via
+`/ws-hub intake`, outputs are covered by the product-level rows). Each working
+repo is its own git, so per-repo subagents cannot conflict: dispatch **one
+subagent per target repo in parallel** (`run_in_background: true`), passing
+the repo's absolute path as its working root, and aggregate when all report.
+Each subagent honors that repo's own `.claude/docs-config.yaml` (the hub has
+none).
 
 Verb behavior at the hub root:
 
@@ -261,7 +269,7 @@ Pass `destination_track` and `destination_path` inputs to the agent (plus `quadr
 
 `$2` = decision text (required; AskUserQuestion if missing).
 
-1. Scan `dev-docs/decisions/` for the highest existing number; new number = highest + 1, zero-padded to 4 digits.
+1. Scan the **resolved destination directory** for the highest existing number; new number = highest + 1, zero-padded to 4 digits. (In a hub sub-repo at product scope this is the hub's `dev-docs/decisions/`; in a standalone repo or at repo scope it is the current repo's own `dev-docs/decisions/`.)
 2. Slug the decision text to kebab-case for the filename: `dev-docs/decisions/<NNNN>-<slug>.md`
 3. Dispatch `adr-writer` foreground with the decision, target path, and project context. Two-tier rule (see the `adr` skill): the lightweight template (`# NNNN — Title` + 1-3 sentences) is the default; full MADR v4.0.0 only for big decisions (breaking / costly to undo / multiple serious options). Both tiers share the same home and numbering.
 4. Print "✓ wrote `<path>`".
@@ -354,4 +362,15 @@ docs:
 - Never overwrite files without prompt + confirmation (except in `init` when files are missing).
 - Never push or commit on the user's behalf without explicit verb authorization (only `catchup` commits automatically after user triage; `publish` commits `.outline-sync.json`).
 - All file paths are relative to the project root unless explicitly noted.
-- Background verbs (`init`, `audit`, `catchup`, `architecture`, `contributing`) dispatch agents with `run_in_background: true`; all other verbs (`repair`, `write`, `adr`, `changelog`, `release-notes`, `explain`, `publish`) run foreground. This is the single authoritative list for the repo-level position — the per-verb sections above follow it; at the hub root, dispatch per the Hub sweep section instead.
+- Background verbs (`init`, `audit`, `catchup`, `architecture`, `contributing`) dispatch agents with `run_in_background: true`; all other verbs (`repair`, `write`, `adr`, `changelog`, `release-notes`, `explain`, `publish`) run foreground. This is the single authoritative list for the repo-level case (standalone repo or hub sub-repo) — the per-verb sections above follow it; at the hub root, dispatch per the Hub sweep section instead.
+
+
+## When you finish
+
+In two or three sentences, name what the verb wrote or changed and where it
+landed (`docs/`, `dev-docs/`, `CHANGELOG.md`, or the published Outline page),
+then point at the next move. After a writing verb (`write`, `adr`,
+`architecture`, `contributing`) the files are uncommitted — run `/ws-commit`
+to capture them; after `publish` or `explain` the artefact is live, so re-run
+`/ws-docs` (discovery) or `/ws-docs catchup` if more docs are stale. Routes
+are real `/ws-*` commands in this plugin.

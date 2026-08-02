@@ -18,6 +18,9 @@ If any Context value above still shows an unexpanded shell command (an exclamati
 
 Bootstrap the WS marketplace for this user and (if in a project folder) bind the current project to a Jira project. Jira access goes through [jira-cli](https://github.com/ankitpokhrel/jira-cli) — this command verifies the setup but never drives `jira init` itself (it's an interactive TUI).
 
+This command is hub-independent: it never reads `project.yaml`, so it runs
+identically whether the repo is standalone or part of a hub.
+
 ### 1. jira-cli readiness
 
 Check the context above:
@@ -100,3 +103,10 @@ Next steps:
 - Never write tokens or secrets to `~/.claude/ws/config.yaml`. Auth lives entirely in jira-cli (`JIRA_API_TOKEN` + its own config); our config stores only the site host, which is not sensitive.
 - If jira-cli setup is incomplete, abort cleanly with the exact steps — no partial config writes.
 - If the user already has a valid config, ask whether to reconfigure or just bind a new project.
+
+## When you finish
+
+In two or three sentences, state that the WS suite is configured — Jira user,
+site, and the project binding, with the config paths — then point at the next
+move: run `/ws-docs init` to scaffold this repo's dual-track docs, then
+`/ws-status` to verify the dashboard renders your assignments.

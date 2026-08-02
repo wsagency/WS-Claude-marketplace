@@ -20,3 +20,4 @@ Its job:
   - fan-out: runs as a background agent so the caller keeps working (schema: the findings file path)
   - then → the findings file feeds the caller: a ws-wayfinder research ticket, or the main flow at ws-grill-with-docs (user-mediated — research feeds the thinking, it doesn't replace it)
 - **Handoff protocol:** findings live in the file and are referenced by path — the background agent reports the path, not the content (DONE|{findings path}).
+- **Exit report:** findings captured and cited → hand the file back to the node that asked (`/ws-wayfinder` or `/ws-grill-with-docs`); the findings overturned a prior decision → `/ws-docs adr`. (Format: `ws-graph-engineering`.)

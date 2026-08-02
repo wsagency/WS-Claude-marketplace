@@ -6,6 +6,11 @@
  *  `.omp/extensions/openwiki-freshness.ts` works identically — both paths load
  *  the same default-export factory through the extension-module pipeline.)
  *
+ * TWIN: extensions/omp-ws/src/wiki-freshness.ts is the global-extension port of
+ * this hook. The parser/walker region marked @twin-start..@twin-end is kept
+ * byte-identical (export keywords aside) and guarded by the "twin parity" test
+ * in extensions/omp-ws/test/wiki-freshness.test.ts.
+ *
  * Behavior: on `session_stop` (main-agent turn settling), if
  * `<cwd>/openwiki/.last-update.json` exists and any `<repo>/dev-docs/**` file
  * (excluding `openwiki/` and any `dev-docs/tickets/` subtree) is newer than it,
@@ -21,6 +26,8 @@ const WIDGET_KEY = "openwiki-freshness";
 const MAX_LISTED = 3;
 // Dirs never worth descending into while walking a dev-docs tree.
 const SKIP_DIR_NAMES = new Set(["node_modules", ".git", "tickets"]);
+
+// @twin-start (keep byte-identical with the twin .ts; "twin parity" test enforces it)
 
 /** Walk one repo's dev-docs tree; return repo-relative paths newer than markerMtime. */
 async function staleFilesInDevDocs(devDocsDir: string, markerMtimeMs: number, hubRel: string): Promise<string[]> {
@@ -57,33 +64,42 @@ async function staleFilesInDevDocs(devDocsDir: string, markerMtimeMs: number, hu
 
 /**
  * Collect dev-docs files newer than the marker.
- * With a hub registry (`repos` defined — ADR 0006): only those working repos'
- * dev-docs trees are walked (input/output repos and the hub's own dev-docs are
- * not wiki input). Without a project.yaml (`repos` undefined): legacy
- * fallback — walk every top-level subdir's dev-docs (hub's own excluded).
+ * Hub mode (`repos` defined — ADR 0006): only `type: working` repos' dev-docs
+ * trees are walked; input/output repos and the hub's own dev-docs are not wiki
+ * input (the hub's own dev-docs is authored truth). Standalone mode (`repos`
+ * undefined — no project.yaml, ADR 0007): the repo's own dev-docs/ IS the product
+ * knowledge root and counts, plus each immediate sub-directory's dev-docs/;
+ * excludes openwiki/ and any dev-docs/tickets/ subtree.
  */
 async function collectStale(cwd: string, markerMtimeMs: number, repos: HubRepo[] | undefined): Promise<string[]> {
 	if (repos !== undefined) {
 		const stale: string[] = [];
 		for (const repo of repos) {
-			const devDocs = path.join(cwd, repo.dir, "dev-docs");
+			const devDocs = path.join(cwd, repo.path, "dev-docs");
 			try {
 				const st = await fs.stat(devDocs);
 				if (!st.isDirectory()) continue;
 			} catch {
 				continue; // repo not on disk or no dev-docs
 			}
-			stale.push(...(await staleFilesInDevDocs(devDocs, markerMtimeMs, repo.name)));
+			stale.push(...(await staleFilesInDevDocs(devDocs, markerMtimeMs, repo.path.replace(/^\.\//, ""))));
 		}
 		return stale;
+	}
+	// Standalone (no project.yaml — ADR 0007): own dev-docs counts, plus sub-dirs'.
+	const stale: string[] = [];
+	try {
+		const st = await fs.stat(path.join(cwd, "dev-docs"));
+		if (st.isDirectory()) stale.push(...(await staleFilesInDevDocs(path.join(cwd, "dev-docs"), markerMtimeMs, "")));
+	} catch {
+		// no own dev-docs — fine
 	}
 	let top;
 	try {
 		top = await fs.readdir(cwd, { withFileTypes: true });
 	} catch {
-		return [];
+		return stale;
 	}
-	const stale: string[] = [];
 	for (const entry of top) {
 		if (!entry.isDirectory()) continue;
 		if (entry.name.startsWith(".") || entry.name === "openwiki" || entry.name === "node_modules") continue;
@@ -99,13 +115,17 @@ async function collectStale(cwd: string, markerMtimeMs: number, repos: HubRepo[]
 	return stale;
 }
 
-interface HubRepo { name: string; dir: string }
+interface HubRepo { name: string; path: string }
+
+/** Surface a silently-malformed project.yaml once per process. */
+let warnedMalformedRepos = false;
 
 /**
  * Cheap line-based parse of project.yaml, returning `type: working` repos
- * (ADR 0006): explicit `type: working`, or legacy entries with neither type
- * nor role. An empty array means a hub with no working repos (walk nothing);
- * undefined means no project.yaml at all (standalone repo — legacy fallback).
+ * (ADR 0006): explicit `type: working`, or legacy entries with neither type nor
+ * role. An entry carrying `purpose:` is an output repo and never counts. An
+ * empty array means a hub with no working repos (walk nothing); undefined means
+ * no project.yaml at all (standalone — see collectStale's standalone mode).
  */
 async function readWorkingRepos(cwd: string): Promise<HubRepo[] | undefined> {
 	let text: string;
@@ -115,29 +135,57 @@ async function readWorkingRepos(cwd: string): Promise<HubRepo[] | undefined> {
 		return undefined;
 	}
 	const repos: HubRepo[] = [];
-	let name = "", dir = "", type = "", role = "", have = false;
-	const clean = (v: string) => v.replace(/\s+#.*$/, "").replace(/["']/g, "").trim();
+	let name = "", dir = "", type = "", role = "", purpose = "", have = false;
+	let inRepos = false, sawReposBlock = false, sawNameEntry = false;
+	const clean = (v: string) => {
+		let value = v.trim();
+		const hash = value.search(/\s+#/);
+		if (hash !== -1) value = value.slice(0, hash).trim();
+		return value.replace(/^["']|["']$/g, "");
+	};
 	const flush = () => {
-		if (have && (type === "working" || (type === "" && role === ""))) {
-			repos.push({ name, dir: dir || `./${name}` });
+		if (have && name !== "" && purpose === "" &&
+			(type === "working" || (type === "" && role === ""))) {
+			repos.push({ name, path: dir || `./${name}` });
 		}
 	};
-	for (const line of text.split("\n")) {
-		// repos entries look like: `  - name: repo-name` (project.name has no leading dash)
-		const m = /^\s*-\s*name:\s*(.+)$/.exec(line);
-		if (m?.[1]) {
-			flush(); have = true; type = ""; role = ""; dir = "";
-			name = clean(m[1]); continue;
+	for (const raw of text.split("\n")) {
+		const line = raw.replace(/\r$/, ""); // tolerate CRLF project.yaml
+		// A column-0 key ends the current top-level block (lib/yaml-lite.ts uses this rule).
+		if (/^[^\s]/.test(line)) {
+			if (have) { flush(); have = false; }
+			inRepos = line.trim() === "repos:";
+			if (inRepos) sawReposBlock = true;
+			continue;
 		}
-		const kv = /^\s+(type|role|path):\s*(.+)$/.exec(line);
-		if (have && kv?.[1] && kv[2]) {
-			const v = clean(kv[2]);
-			if (kv[1] === "type") type = v; else if (kv[1] === "role") role = v; else dir = v;
+		if (!inRepos) continue;
+		// `- name: <repo>` opens an entry (value optional; an empty name is dropped in flush).
+		const m = /^\s*-\s*name:\s*(.*)$/.exec(line);
+		if (m) {
+			if (have) flush();
+			have = true; type = ""; role = ""; purpose = ""; dir = "";
+			name = clean(m[1] ?? "");
+			if (name !== "") sawNameEntry = true;
+			continue;
+		}
+		const kv = /^\s+(type|role|path|purpose):\s*(.*)$/.exec(line);
+		if (have && kv) {
+			const v = clean(kv[2] ?? "");
+			if (kv[1] === "type") type = v;
+			else if (kv[1] === "role") role = v;
+			else if (kv[1] === "purpose") purpose = v;
+			else dir = v;
 		}
 	}
 	flush();
+	if (sawReposBlock && !sawNameEntry && !warnedMalformedRepos) {
+		warnedMalformedRepos = true;
+		console.warn("openwiki-freshness: project.yaml has a `repos:` block but no list entries were recognised (expected `- name: <repo>`). Sub-repo scanning may be misconfigured — see ADR 0006.");
+	}
 	return repos;
 }
+
+// @twin-end
 
 export default function openwikiFreshness(pi: ExtensionAPI) {
 	// Debounce: only re-announce when the set of stale files actually changes.

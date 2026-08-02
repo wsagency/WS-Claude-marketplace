@@ -45,3 +45,4 @@ Ask: "What's the public interface, and which seams should we test?"
   - then → ws-code-review (refactoring belongs to the review stage, not the red → green loop)
   - when naming or seam-design vocabulary is needed → ws-codebase-design (worker: the deep-module vocabulary)
 - **Handoff protocol:** slices land in the working tree; the confirmed seam list is the shared state with the caller (DONE|{test files}).
+- **Exit report:** last seam green → `/ws-code-review`; cycle stuck red → `/ws-diagnosing-bugs`; seam or naming vocabulary unclear → `/ws-codebase-design`. (Format: `ws-graph-engineering`.)

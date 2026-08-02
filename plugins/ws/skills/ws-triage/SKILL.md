@@ -123,3 +123,4 @@ If prior triage notes exist on the issue or PR, read them, check whether the rep
   - then (data edge) → issues this node marks `ready-for-agent` become the input ws-implement picks up in a later session (user-mediated pickup)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** every outcome is posted to the tracker and referenced by issue; nothing triage produces lives only in conversation (DONE|{issue link}).
+- **Exit report:** issue verified and marked ready-for-agent → `/ws-implement` (build the brief in a fresh session); request needs deeper grilling than one pass → `/ws-grilling` with `/ws-domain-modeling`; queue cleared → re-invoke `/ws-triage` when new issues arrive. (Format: `ws-graph-engineering`.)

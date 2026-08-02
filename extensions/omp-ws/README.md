@@ -161,7 +161,9 @@ Behavior-identical port of the per-project hook
 `type: working` repo's `dev-docs/**` files are newer than
 `openwiki/.last-update.json` (repo types parsed from `project.yaml`, ADR
 0006 — input/output repos and the hub's own `dev-docs/` never trigger it;
-standalone repos without `project.yaml` keep the legacy walk).
+standalone repos without `project.yaml` walk their own `dev-docs/` plus each
+immediate sub-directory's, per ADR 0007 — with no hub, the repo's own
+`dev-docs/` IS the product knowledge root).
 Skips when `<cwd>/.omp/hooks/post/openwiki-freshness.ts` exists (no double
 banners).
 

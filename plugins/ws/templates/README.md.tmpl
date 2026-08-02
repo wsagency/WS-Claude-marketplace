@@ -6,6 +6,7 @@ Project hub for **__PROJECT_NAME__**. A small meta-repo that holds:
 - `AGENTS.md` — project map for AI-assisted work (canonical, agent-neutral)
 - `CLAUDE.md` — thin `@AGENTS.md` import (Claude Code compatibility)
 - `invoke-ai.sh` — agent picker launcher (claude, omp, …) run across the sub-repos
+- `dev-docs/` — product knowledge root: cross-repo architecture, product ADRs, runbooks, processed client deliveries
 - `.claude/skills/` — vendored conventions (works without the marketplace plugin)
 
 The actual code lives in subfolders, each its own git repo. The hub's `.gitignore` keeps them out of this repo's history.
@@ -25,18 +26,37 @@ The actual code lives in subfolders, each its own git repo. The hub's `.gitignor
 
 ```
 __PROJECT_NAME__-main/
-├── project.yaml         # repo registry
+├── project.yaml         # repo registry + conventions version
 ├── AGENTS.md            # AI project map (canonical, agent-neutral)
 ├── CLAUDE.md            # thin @AGENTS.md import
 ├── invoke-ai.sh         # launcher (agent picker)
 ├── README.md
 ├── .gitignore           # managed block ignores sub-repo subfolders
-├── .claude/skills/      # vendored conventions
-├── __PROJECT_NAME__-app/        # own git, gitignored
-├── __PROJECT_NAME__-marketing/  # own git, gitignored
-└── ...
+├── .claude/skills/      # vendored conventions (works without the plugin)
+├── dev-docs/            # product knowledge root (tracked by hub git)
+│   ├── architecture.md  # cross-repo synthesis (written by /ws-hub docs)
+│   ├── decisions/       # product ADRs
+│   ├── runbooks/        # product-level operational runbooks
+│   └── scoping/         # processed client deliveries (from /ws-hub intake)
+├── openwiki/            # optional derived wiki (only if initialized)
+├── __PROJECT_NAME__-app/      # type: working — own git, gitignored
+├── __PROJECT_NAME__-design/   # type: input — own git, gitignored
+├── __PROJECT_NAME__-client/   # type: input — own git, gitignored
+├── __PROJECT_NAME__-docs/     # type: output — own git, gitignored
+└── ...                        # add repos via /ws-hub add
 ```
 
 ## Managing the hub
 
-Use the `ws` plugin hub verbs: `/ws-hub repos <pull|clone>`, `/ws-hub status`, `/ws-hub add [--scan]`, `/ws-hub describe`.
+Use the `ws` plugin hub verbs (`/ws-hub <verb>`):
+
+- `init` — initialize a new hub (or adopt existing repos)
+- `doctor` — diagnose and repair the hub
+- `update` — migrate hub conventions to the latest version (interactive)
+- `intake` — process a client delivery into `dev-docs/scoping/`
+- `status` — read-only git sweep across all sub-repos
+- `repos <pull|clone>` — one git operation across all registered repos
+- `add [--scan]` — register a sub-repo (clone / adopt / sibling / mark output)
+- `describe` — refresh sub-repo descriptions from their READMEs
+- `docs` — generate cross-repo docs via hub-architect (+ wiki refresh offer)
+- `explained` — generate the `purpose: explained` product artefacts

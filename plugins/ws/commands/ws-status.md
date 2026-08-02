@@ -15,6 +15,10 @@ If any Context value above still shows an unexpanded shell command (an exclamati
 
 Show the user their current Jira workload and suggest what to pick up next.
 
+This command is hub-independent: it reads only the Jira config and the current
+git branch, never `project.yaml`, so it runs identically in a standalone repo,
+a hub sub-repo, or at the hub root.
+
 ### 1. Verify setup
 
 If `~/.claude/ws/config.yaml` is missing, abort and tell the user to run `/ws-init` first. If `jira me` fails, same — `/ws-init` walks them through jira-cli setup.
@@ -79,3 +83,11 @@ For "Suggested next":
 After rendering, cache the result to `~/.cache/ws-hub/status.txt` with a timestamp header so the SessionStart hook can show a stale snapshot quickly without a Jira roundtrip.
 
 Read-only — no Jira writes.
+
+## When you finish
+
+In two or three sentences, summarize the user's headline workload (counts per
+status category) and name the single suggested next ticket with its
+`git checkout -b` command, then point at the move: pick the ticket up via
+`/ws-matt implement` (or `/ws-matt ask` to re-rank); if a branch is already
+in flight, run `/ws-commit pr` to land it first.

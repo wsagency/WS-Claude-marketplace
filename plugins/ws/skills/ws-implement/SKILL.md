@@ -29,3 +29,4 @@ Commit your work to the current branch. Commits follow the WS conventions — Co
   - then → /ws-commit pr at branch completion (WS command: Conventional Commit + ticket reference, CHANGELOG entry, push, PR, Jira transition when bound)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** the work lands as commits on the current branch; close out on the driving ticket and reference it by id (DONE|{branch@commit}).
+- **Exit report:** implementation green → `/ws-code-review`; review returned blockers → re-run `/ws-implement` on just those findings; a mid-build decision the spec didn't cover → `/ws-domain-modeling`. (Format: `ws-graph-engineering`.)
