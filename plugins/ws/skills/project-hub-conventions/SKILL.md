@@ -1,28 +1,34 @@
 ---
 name: project-hub-conventions
-description: Conventions for WS Agency multi-repo project hubs (subfolder layout, project.yaml schema, context-file cascade, .gitignore managed block, invoke-ai.sh contract). Use when creating, extending, or troubleshooting a `<project>-main` hub repo, or when asked about "project hub", "multi-repo", or `<name>-main` repos.
+description: Conventions for WS Agency multi-repo project hubs (subfolder layout, project.yaml schema with repo types, hub dev-docs knowledge root, input/output repos, context-file cascade, .gitignore managed block, invoke-ai.sh contract). Use when creating, extending, or troubleshooting a `<project>-main` hub repo, or when asked about "project hub", "multi-repo", or `<name>-main` repos.
 ---
 
 # Project Hub Conventions
 
-The WS Agency `ws` plugin organizes multi-repo projects under a single hub repo (`<project>-main`). Each sub-repo (mobile app, marketing site, design assets, docs, etc.) lives in a **subfolder of the hub** with its own independent git history.
+The WS Agency `ws` plugin organizes multi-repo projects under a single hub repo (`<project>-main`). Each sub-repo (mobile app, marketing site, design assets, client deliveries, docs, etc.) lives in a **subfolder of the hub** with its own independent git history.
 
 ## Layout
 
 ```
 <project>-main/
-├── .git/                     # hub's git — tracks meta files only
+├── .git/                     # hub's git — tracks meta files + hub dev-docs
 ├── .gitignore                # managed block excludes sub-repo subfolders
 ├── .claude/skills/           # vendored conventions (this file)
-├── project.yaml              # registry of all sub-repos
+├── project.yaml              # registry of all sub-repos (+ conventions version)
 ├── AGENTS.md                 # project map (canonical, agent-neutral)
 ├── CLAUDE.md                 # thin @AGENTS.md import
 ├── invoke-ai.sh              # agent picker launcher (claude / omp)
 ├── README.md
-├── <project>-app/.git/       # own git, gitignored
-├── <project>-marketing/.git/ # own git, gitignored
-├── <project>-design/.git/    # own git, gitignored
-└── <project>-docs/.git/      # own git, gitignored
+├── dev-docs/                 # PRODUCT knowledge root (tracked by hub git)
+│   ├── architecture.md       # cross-repo synthesis, written by hub-architect
+│   ├── decisions/            # product ADRs
+│   ├── runbooks/             # product-level operational runbooks
+│   └── scoping/              # processed client deliveries (see Input repos)
+├── openwiki/                 # optional derived wiki (see below)
+├── <project>-app/.git/       # type: working — own git, gitignored
+├── <project>-design/.git/    # type: input — own git, gitignored
+├── <project>-client/.git/    # type: input — own git, gitignored
+└── <project>-docs/.git/      # type: output — own git, gitignored
 ```
 
 Sibling layout (`path: ../<name>`) is still supported for back-compat, but new repos default to nested subfolders.
@@ -34,6 +40,8 @@ project:
   name: <kebab-case-project-name>
   description: <one-line description>
   session: <tmux-session-name>  # optional, default <name>-hub
+  conventions: 2                # ws-hub conventions version — machine-managed;
+                                # /ws-hub update migrates older hubs
 
 repos:
   - name: <repo-name>           # required, matches directory name
@@ -41,13 +49,27 @@ repos:
     url: <git-remote-url>       # optional but recommended (enables /ws-hub repos clone)
     description: <purpose>      # required (may be "TODO" temporarily)
     tech: <stack-keywords>      # optional, e.g. "react-native, typescript"
-    role: docs                  # optional; product docs repo (max ONE per hub)
-    # role: explained           # optional; generated human-facing output repo (visual
-    #                             product explainer for PO + dev team, ws-artefacts format).
-    # Repos with role docs|explained are OUTPUTS: excluded from the OpenWiki
-    # coverage scope and from hub-architect analysis — the wiki and cross-repo
-    # docs derive FROM development repos, outputs derive from them in turn.
+    type: working               # required; working | input | output (see below)
+    purpose: docs               # only for type: output — docs | explained | <future>;
+                                # max ONE output per known purpose per hub
 ```
+
+**Repo types** (ADR 0006) — every repo is exactly one of:
+
+| type | `/ws-docs` sweep | OpenWiki coverage | hub-architect analysis | what it is |
+|---|---|---|---|---|
+| `working` (default) | yes | yes | yes | the product's software — where development happens |
+| `input` | no | no | no | material that FEEDS development from outside: client deliveries, design assets, data dumps |
+| `output` | no | no | no | artifacts DERIVED from the product: user docs (purpose `docs`), generated explainers (purpose `explained`) |
+
+Knowledge flow is one-directional: `input` → processed into hub `dev-docs/` →
+built in `working` repos → derived into `output` repos. Nothing consumes an
+output as a source; inputs are processed, never indexed (OpenWiki maps
+as-built state — raw deliveries would mix "requested" with "built").
+
+Legacy mapping (pre-v2 hubs): `role: docs` ≡ `type: output, purpose: docs`;
+`role: explained` ≡ `type: output, purpose: explained`; no role ≡ `type:
+working`. `/ws-hub update` rewrites these.
 
 Path rules:
 - Nested (recommended): `./<name>` — auto-added to `.gitignore` managed block
@@ -69,11 +91,85 @@ The `tech` field is inferred best-effort from manifest files at the repo root:
 
 If multiple manifests are present, list all matches; if none match, leave `tech` empty (or ask the user).
 
-## Product docs repo (`role: docs`)
+## Hub `dev-docs/` — the product knowledge root
 
-At most one registered repo may carry `role: docs`. It is the product-level
-documentation source of truth — an ordinary sub-repo (own git, mounted by
-invoke-ai.sh) with this layout:
+The hub carries its own `dev-docs/` — the ONLY place product-level internal
+documentation lives — beside `openwiki/` (the derived map). Authored truth is
+here; derived structure is there; both are fed by `working` repos.
+
+```
+dev-docs/
+├── architecture.md      # cross-repo synthesis — hub-architect writes here
+│                        # (THIN when openwiki/ exists: boundaries + contracts + pointer)
+├── contracts.md         # optional — shared cross-repo contracts, when they exist
+├── deployment.md        # optional — deploy topology, when deployment files exist
+├── decisions/           # PRODUCT ADRs (two-tier; concern >1 repo or the client)
+├── runbooks/            # product-level operational runbooks
+└── scoping/             # processed client deliveries — one dated doc per
+                         # delivery, written by /ws-hub intake (see Input repos)
+```
+
+Split rule: **an end user reads it → the `purpose: docs` output repo. It
+concerns more than one repo, or the client, and is internal → hub
+`dev-docs/`.** Working sub-repos keep only repo-specific `dev-docs/`.
+CHANGELOG.md stays per-repo.
+
+## Input repos (`type: input`)
+
+Material arriving from outside that must be PROCESSED into project knowledge:
+client deliveries, design assets, data dumps. Named by source:
+`<project>-client`, `<project>-design`, … (unlimited). Scaffold: README,
+AGENTS.md with the convention note below, `history.md`.
+
+Input repos are **immutable raw** — nothing writes into them except new
+dated delivery folders and `history.md`. All distillation lands in the hub's
+`dev-docs/`.
+
+### Dated folders
+
+Deliveries arrive successively and newer deliveries supersede older ones:
+
+- One folder per delivery, named by date: `2026-07-12/`, `2026-07-20/`, …
+- **The latest date is the most accurate truth**; older folders are preserved
+  history and are never deleted or edited.
+- Change requests from the client land in the dated folder they arrived with;
+  a top-level `history.md` logs the request trail (date → what changed → which
+  ADR/spec/ticket it triggered).
+- When processing a new delivery: diff it against the previous dated folder,
+  record what changed in `history.md`, and raise ADRs/spec updates for anything
+  that alters agreed scope.
+
+### Processing pipeline (`/ws-hub intake`)
+
+A delivery is **unprocessed** while no scoping doc references it. The intake
+verb detects unprocessed dated folders and drives:
+
+1. **Intake** — diff vs previous delivery; append the `history.md` entry.
+2. **Scoping doc** — `dev-docs/scoping/YYYY-MM-DD-<slug>.md` in the HUB:
+   delivery reference, plain-language summary, extracted requirements, scope
+   of work (in / explicitly out), open questions for the client, decisions
+   raised, tickets raised. Dated like the delivery — never edited retroactively;
+   a new delivery produces a new scoping doc.
+3. **Decisions** — product ADRs into hub `dev-docs/decisions/` (`/ws-docs adr`).
+4. **Spec & tickets** — `ws-to-spec` / `ws-to-tickets` into the tracker of the
+   WORKING repo where the change lands (local `dev-docs/tickets/` or Jira);
+   the scoping doc references the keys.
+5. **Development** — `/ws-matt` flow in the working repo(s). Unchanged.
+6. **Loop close** — `history.md` records which ADRs/specs/tickets the
+   delivery triggered.
+
+## Output repos (`type: output`)
+
+Derived artifacts, regenerated rather than hand-maintained where a generator
+exists. `purpose` selects the consuming tool; the vocabulary is open (unknown
+purposes are legal — tooling ignores them, doctor reports them), but each
+KNOWN purpose is unique per hub: commands that write `project.yaml` must
+refuse a second `purpose: docs` or `purpose: explained` entry.
+
+### Product docs repo (`purpose: docs`)
+
+The product's USER-facing documentation source of truth — an ordinary
+sub-repo (own git, mounted by invoke-ai.sh) with this layout:
 
 ```
 <project>-docs/
@@ -86,35 +182,19 @@ invoke-ai.sh) with this layout:
 │   ├── tutorials/  how-to/  reference/  explanation/
 │   ├── assets/              # images (uploaded as Outline attachments)
 │   └── release-notes/
-├── dev-docs/                # PRODUCT-level internal (never synced)
-│   ├── architecture.md      # cross-repo, written by hub-architect
-│   ├── decisions/           # product ADRs
-│   ├── client-materials/     # DATED folders: YYYY-MM-DD/ per delivery (see below)
-│   └── runbooks/
 └── .outline-sync.json       # sync state (committed)
 ```
 
-Split rule: **concerns more than one repo, the client, or any end user → docs
-repo.** Sub-repos keep only repo-specific `dev-docs/`; user docs are always
-product-level. CHANGELOG.md stays per-repo.
+Audience: **end users only.** It carries NO product-level `dev-docs/` —
+those live in the hub (see above). Like any repo it MAY keep its own
+repo-level `dev-docs/` for maintaining the docs repo itself (dual-track),
+but nothing is scaffolded there.
 
-Validation: commands that write `project.yaml` must refuse a second
-`role: docs` entry.
+### Explained repo (`purpose: explained`)
 
-### Client materials — dated folders
-
-Client documentation arrives successively and newer deliveries supersede older
-ones. Convention for `dev-docs/client-materials/`:
-
-- One folder per delivery, named by date: `2026-07-12/`, `2026-07-20/`, …
-- **The latest date is the most accurate truth**; older folders are preserved
-  history and are never deleted or edited.
-- Change requests from the client land in the dated folder they arrived with;
-  a top-level `history.md` logs the request trail (date → what changed → which
-  ADR/spec it triggered).
-- When processing a new delivery: diff it against the previous dated folder,
-  record what changed in `history.md`, and raise ADRs/spec updates for anything
-  that alters agreed scope.
+Generated human-facing visual documentation (ws-artefacts HTML) — see the
+`ws-artefacts-explained` skill. Synthesized FROM the hub's `project.yaml`,
+`openwiki/`, hub `dev-docs/`, and working-repo `dev-docs/` + READMEs.
 
 ## `.gitignore` managed block
 
@@ -150,10 +230,11 @@ Hub tooling is **harness-agnostic**. Commands and generated files never assume a
 
 A hub MAY carry an [OpenWiki](https://github.com/langchain-ai/openwiki) at `<hub>/openwiki/` — the knowledge repository for the whole product. Detection is filesystem presence (no config flag). Conventions:
 
-- Initialized once at the hub root (`openwiki --init`; `/ws-hub init` step 5a offers it, and the same flow retrofits an existing hub). Init also writes the **coverage scope into `openwiki/INSTRUCTIONS.md`** (all registered sub-repos, each a separate nested git repo — without this OpenWiki tends to document only the largest repo) and **deletes the generated CI workflow**.
-- Every sub-repo's `AGENTS.md` carries a "Hub knowledge wiki" pointer section at `../openwiki/quickstart.md` — consult the wiki BEFORE exploring code or answering cross-repo questions. `/ws-hub add` writes the pointer for new repos (and adds the repo to the INSTRUCTIONS.md scope).
+- Initialized once at the hub root (`openwiki --init`; `/ws-hub init` step 5a offers it, and the same flow retrofits an existing hub). Init also writes the **coverage scope into `openwiki/INSTRUCTIONS.md`** (all registered `type: working` sub-repos, each a separate nested git repo — without this OpenWiki tends to document only the largest repo) and **deletes the generated CI workflow**.
+- Every sub-repo's `AGENTS.md` carries a "Hub knowledge wiki" pointer section at `../openwiki/quickstart.md` — consult the wiki BEFORE exploring code or answering cross-repo questions. `/ws-hub add` writes the pointer for new repos (and adds `type: working` repos to the INSTRUCTIONS.md scope).
 - **Refresh is AI-driven — no CI**: agents run it occasionally, before major cross-repo work when the wiki is stale (`openwiki/.last-update.json` vs recent sub-repo activity) and after completing major changes. It is always prompted — `openwiki --update "Refresh; re-scan sub-repos: <list>"` — because sub-repo commits are invisible to the hub's git (plain `--update` would skip as "no changes"). `/ws-hub docs` offers this after generating cross-repo docs.
-- Generated pages are never hand-edited; the wiki is a DERIVED index, never the source of truth — authored truth lives in the dual-track docs (`role: docs` repo + per-repo `dev-docs/`); when wiki and dev-docs disagree, dev-docs wins and the wiki gets regenerated. The wiki is internal (not part of the `docs/` Outline track).
+- Generated pages are never hand-edited; the wiki is a DERIVED index, never the source of truth — authored truth lives in the dual-track docs (hub `dev-docs/` + per-repo `dev-docs/`); when wiki and dev-docs disagree, dev-docs wins and the wiki gets regenerated. The wiki is internal (not part of the `docs/` Outline track).
+- The wiki indexes `type: working` repos only — never inputs (raw, unprocessed) and never outputs (derived).
 
 ## omp preset — conventions as enforcement
 
@@ -165,11 +246,12 @@ Hubs used with omp carry a project `.omp/` preset written by `/ws-hub init`:
   `/ws-hub init` asks about both, plus whether to fill the per-project
   `modelRoles` block. Earlier compaction is on by default.
 - `.omp/hooks/post/openwiki-freshness.ts` — a native omp TypeScript hook: on
-  every session settle it compares `*/dev-docs/**` mtimes (excluding
-  `dev-docs/tickets/`) against `openwiki/.last-update.json` and shows a
-  persistent banner + toast with the exact prompted `openwiki --update`
-  command (repo list parsed from project.yaml). Non-blocking; omp-only
-  (Claude Code uses the plugin's shell Stop hook for the same purpose).
+  every session settle it compares `type: working` repos' `dev-docs/**` mtimes
+  (excluding `dev-docs/tickets/`) against `openwiki/.last-update.json` and
+  shows a persistent banner + toast with the exact prompted `openwiki
+  --update` command (working-repo list parsed from project.yaml).
+  Non-blocking; omp-only (Claude Code uses the plugin's shell Stop hook for
+  the same purpose).
   Caveat: never park loose `.ts`/`.sh` files in `.claude/hooks/pre|post/`
   directories — omp's Claude-compat provider scans them.
 - `.omp/rules/` — the WS rules pack, TTSR stream-interrupting rules:
@@ -248,17 +330,21 @@ Filesystem presence is the source of truth for access — never check git permis
 | Find unregistered sub-repos | `/ws-hub add --scan` |
 | Refresh sub-repo descriptions | `/ws-hub describe` |
 | Generate cross-repo docs | `/ws-hub docs` |
+| Process a client delivery | `/ws-hub intake` |
+| Upgrade hub conventions | `/ws-hub update` |
 
 ## Access control model
 
 There is no explicit access control. It relies on git permissions of each underlying repo:
 
-- The hub repo (`<project>-main`) is typically broadly accessible — it contains only metadata
+- The hub repo (`<project>-main`) is typically broadly accessible — it contains metadata plus the product `dev-docs/`
 - `/ws-hub repos clone` tries to clone each registered URL; repos the user can't access fail and are skipped
 - `invoke-ai.sh` skips sub-repos missing from disk
 - PO has access to all → sees everything; marketing has only marketing → mounts only marketing
 
-No config branching needed. The filesystem reflects access.
+No config branching needed. The filesystem reflects access. Client deliveries
+and design assets live in dedicated input repos precisely so their git access
+stays separable from the hub's.
 
 ## When NOT to use a hub
 

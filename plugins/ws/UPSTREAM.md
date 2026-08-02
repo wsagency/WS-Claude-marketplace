@@ -109,9 +109,9 @@ and all `/grilling` references are rewritten to `/ws-grilling`.
   Only a legacy fat `CLAUDE.md` with no `AGENTS.md` gets the block, with a
   migration recommendation. Upstream prefers `CLAUDE.md` — invert on sync.
 - **Hub awareness** — setup exploration also checks for a WS project-hub
-  `project.yaml` with a `role: docs` repo (alongside the `.claude/ws-project.yaml`
-  check); in a hub sub-repo, PRODUCT-level decisions belong in the docs repo's
-  `dev-docs/decisions/` and only repo-specific ones stay local.
+  `project.yaml` in a parent directory (alongside the `.claude/ws-project.yaml`
+  check); in a hub sub-repo, PRODUCT-level decisions belong in the hub's
+  `dev-docs/decisions/` (ADR 0006) and only repo-specific ones stay local.
 - **Worker alignment** — `ws-code-review` names `reviewer` for both axis
   reviewers (not `general-purpose`); `agents/reviewer.md` scopes to one
   review assignment (a single axis over the whole diff, or a single slice);

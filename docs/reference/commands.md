@@ -34,7 +34,7 @@ Dual-track documentation suite. All documentation operations route through the s
 
 Unified documentation command. Run with no verb for discovery (artifact status table, no writes).
 
-Position-aware in WS project hubs: invoked **inside a sub-repo** it runs repo-level with product routing (user docs and product ADRs go to the `role: docs` repo); invoked **at the hub root** it runs a **hub sweep** — `discovery`/`audit`/`catchup`/`repair` fan out one subagent per dev sub-repo in parallel and aggregate (catchup commits per repo), `write`/`adr`/`architecture` default to product scope, `init` never scaffolds docs in the hub itself (offers per-repo init instead).
+Position-aware in WS project hubs (repo types per ADR 0006): invoked **inside a sub-repo** it runs repo-level with product routing (user docs go to the `purpose: docs` output repo; product ADRs and architecture go to the hub's `dev-docs/`); invoked **at the hub root** it runs a **hub sweep** — `discovery`/`audit`/`catchup`/`repair` fan out one subagent per `type: working` sub-repo in parallel and aggregate (catchup commits per repo), `write`/`adr`/`architecture` default to product scope, `init` never scaffolds docs in the hub itself (offers per-repo init instead). Input and output repos are never swept.
 
 **Arguments:**
 | Name | Required | Description |
@@ -56,10 +56,10 @@ Position-aware in WS project hubs: invoked **inside a sub-repo** it runs repo-le
 | `contributing` | Regenerate 3-file CONTRIBUTING set (diff + confirm) |
 | `changelog [version]` | Update `[Unreleased]` or cut version; mirrors to `docs/changelog.md` |
 | `release-notes [version]` | Linear-style notes → `docs/release-notes/<version>.md` |
-| `explain` | Regenerate `docs/explained.md` — generated Outline-safe onboarding page (not to be confused with `/ws-hub explained`, the `role: explained` HTML artefact) |
+| `explain` | Regenerate `docs/explained.md` — generated Outline-safe onboarding page (not to be confused with `/ws-hub explained`, the `purpose: explained` HTML artefact) |
 | `publish` | Lint Outline-safe profile, push `docs/` to Outline (`outline-sync.py`; needs Python 3 + `OUTLINE_API_TOKEN`) |
 
-In a hub with a `role: docs` sub-repo, `/ws-docs` enters hub mode: user-audience writes, product ADRs, and product architecture route to the docs repo (scope prompt, cacheable as `default_scope`).
+In a hub, `/ws-docs` enters hub mode: user-audience writes route to the `type: output, purpose: docs` repo, while product-internal writes (ADRs, architecture, dev-audience docs) route to the hub's own `dev-docs/` (scope prompt, cacheable as `default_scope`).
 
 **Examples:**
 ```
@@ -82,16 +82,18 @@ Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-h
 |---|---|
 | `init` | Initialize a new hub (offers doctor when one already exists) |
 | `doctor` | Diagnose + repair an existing hub; ready-for-development verdict |
+| `update` | Migrate hub conventions to the latest version (interactive, per-migration confirm) |
+| `intake` | Process `type: input` deliveries (client materials) into hub `dev-docs/scoping/` knowledge |
 | `status` | Read-only aggregated git status across all sub-repos |
 | `repos <pull\|clone>` | One git operation across all registered sub-repos |
 | `add [--scan]` | Register a sub-repo; `--scan` discovers unregistered repos first |
 | `describe` | Refresh `description`/`tech` fields from repo contents |
 | `docs` | Cross-repo docs via the hub-architect agent (+ wiki refresh offer) |
-| `explained` | Generate the `role: explained` product explainer artefact (not to be confused with `/ws-docs explain`, the `docs/explained.md` onboarding page) |
+| `explained` | Generate the `purpose: explained` product explainer artefact (not to be confused with `/ws-docs explain`, the `docs/explained.md` onboarding page) |
 
 ### /ws-hub init
 
-Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register. Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml`, `AGENTS.md` (+ thin `CLAUDE.md` import), `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), and vendors `.claude/skills/project-hub-conventions/`. Offers to scaffold a `role: docs` product docs repo (`<project>-docs`), initialize a hub-level OpenWiki knowledge wiki (with pointers written into every sub-repo's AGENTS.md), and set up herdr (global skill install). Registration details (schema, managed block, tech inference, docs-repo layout) are defined in the project-hub-conventions skill.
+Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register — each with a **type** (`working` / `input` / `output` + `purpose`, ADR 0006). Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml` (with the `conventions` version marker), `AGENTS.md` (+ thin `CLAUDE.md` import), `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), the hub `dev-docs/` knowledge root (decisions/runbooks/scoping), and vendors `.claude/skills/project-hub-conventions/`. Optionally scaffolds a client input repo (`<project>-client`, `type: input`) and a product docs repo (`<project>-docs`, `type: output, purpose: docs` — user track only), initializes a hub-level OpenWiki knowledge wiki (coverage: `type: working` repos), and sets up herdr (global skill install). Registration details (schema, types, managed block, tech inference, repo layouts) are defined in the project-hub-conventions skill.
 
 Invoked inside an already-initialized hub (detected via `project.yaml`), it does not re-scaffold — it offers the **doctor** flow instead.
 
@@ -104,11 +106,33 @@ Invoked inside an already-initialized hub (detected via `project.yaml`), it does
 
 ### /ws-hub doctor
 
-Diagnose and repair an existing hub: pull the hub and every sub-repo (`--ff-only`, clean repos only), offer clones for registered-but-missing repos, verify registry integrity (roles, `.gitignore` block, AGENTS.md markers, thin CLAUDE.md), refresh drifted generated files (`invoke-ai.sh`, vendored skill, omp rules/hooks), check OpenWiki freshness, and end with a ready-for-development verdict. Diagnose-only posture available; dirty/diverged repos and user-owned config are never touched — only reported.
+Diagnose and repair an existing hub: pull the hub and every sub-repo (`--ff-only`, clean repos only), offer clones for registered-but-missing repos, verify registry integrity (repo types, `.gitignore` block, AGENTS.md markers, thin CLAUDE.md), compare the `conventions` version marker against the latest (points at `/ws-hub update` when behind), refresh drifted generated files (`invoke-ai.sh`, vendored skill, omp rules/hooks), check OpenWiki freshness (against `type: working` repos only), and end with a ready-for-development verdict. Diagnose-only posture available; dirty/diverged repos and user-owned config are never touched — only reported.
 
 **Example:**
 ```
 /ws-hub doctor
+```
+
+---
+
+### /ws-hub update
+
+Migrate an existing hub to the latest ws-hub conventions. Reads the `project.conventions` version marker in `project.yaml` (absent → inferred from legacy probes like `role:` fields), lists pending migrations from the authoritative table, and applies them interactively — per migration: apply / skip / abort; ambiguous steps (e.g. which repo receives client materials) are always asked, never guessed. The v1→v2 migration (ADR 0006) renames `role:`→`type:`/`purpose:`, scaffolds the hub `dev-docs/` knowledge root, moves product dev-docs out of the docs repo, and relocates client materials into an input repo. Idempotent; re-run resumes cleanly; never commits on your behalf.
+
+**Example:**
+```
+/ws-hub update
+```
+
+---
+
+### /ws-hub intake
+
+Process external deliveries into product knowledge. Scans `type: input` repos for dated delivery folders (`YYYY-MM-DD/`) that no scoping doc references yet, then per delivery: diffs against the previous folder, drafts a scoping doc (summary, extracted requirements, scope of work in/out, open questions, decisions, tickets) into the hub's `dev-docs/scoping/`, appends the input repo's `history.md`, and offers the follow-ups — product ADRs (`/ws-docs adr`), `ws-to-spec`, and `ws-to-tickets` into the working repo where the change lands. Input repos stay immutable raw (only `history.md` is written there).
+
+**Example:**
+```
+/ws-hub intake
 ```
 
 ---
@@ -143,7 +167,7 @@ One traversal over all registered sub-repos, verb picks the git operation.
 
 ### /ws-hub add
 
-Register a new sub-repo (clone-URL, adopt-nested, register-sibling, or move-sibling-in). With `--scan`, first discovers nested/sibling git repos not yet in `project.yaml` and offers them for registration through the same flow. A repo can be marked `role: docs` (product docs repo, max one per hub).
+Register a new sub-repo (clone-URL, adopt-nested, register-sibling, or move-sibling-in) with a `type` — `working` (default), `input`, or `output` + `purpose`. With `--scan`, first discovers nested/sibling git repos not yet in `project.yaml`. An already-registered repo can be marked as an output (`purpose: docs` / `explained` / custom; max one per known purpose per hub).
 
 **Arguments:**
 | Name | Required | Description |
@@ -171,7 +195,7 @@ Refresh `description` and `tech` fields in `project.yaml` by reading each sub-re
 
 ### /ws-hub docs
 
-Generate cross-repo documentation (architecture, contracts, deployment topology) via the `hub-architect` agent. When the hub has an OpenWiki (`<hub>/openwiki/`), offers a prompted wiki refresh afterwards (sub-repo commits are invisible to hub git, so the refresh names the sub-repos explicitly). Targets the `role: docs` repo's `dev-docs/` when one is registered, else the hub's `dev-docs/` (hubs never carry `docs/`).
+Generate cross-repo documentation (architecture, contracts, deployment topology) via the `hub-architect` agent, written into the hub's own `dev-docs/` (the product knowledge root; hubs never carry `docs/`). Analyzes `type: working` repos only. When the hub has an OpenWiki (`<hub>/openwiki/`), offers a prompted wiki refresh afterwards (sub-repo commits are invisible to hub git, so the refresh names the working sub-repos explicitly).
 
 **Example:**
 ```
@@ -182,7 +206,7 @@ Generate cross-repo documentation (architecture, contracts, deployment topology)
 
 ### /ws-hub explained
 
-Generate/refresh the product explainer artefact in the hub's `role: explained` repo — one self-contained HTML (ws-artefacts contract: all inline, WS chrome palette, inline-SVG diagrams) + tokenless `meta.json`, synthesized from openwiki, dev-docs, and project.yaml. Audience: product owner + dev team. Prints the `projects/<name>/git-source.yml` registration block for ws-artefacts (tokens are minted there).
+Generate/refresh the product explainer artefact in the hub's `type: output, purpose: explained` repo — one self-contained HTML (ws-artefacts contract: all inline, WS chrome palette, inline-SVG diagrams) + tokenless `meta.json`, synthesized from openwiki, the hub's `dev-docs/`, working repos, and project.yaml. Audience: product owner + dev team. Prints the `projects/<name>/git-source.yml` registration block for ws-artefacts (tokens are minted there).
 
 **Example:**
 ```

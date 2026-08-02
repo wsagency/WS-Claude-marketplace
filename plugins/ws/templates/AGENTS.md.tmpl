@@ -6,7 +6,7 @@
 
 __PROJECT_DESCRIPTION__
 
-Each sub-repo is a self-contained git repo in a subfolder. The hub itself is a small git repo that tracks only this `AGENTS.md`, the thin `CLAUDE.md` import, `project.yaml`, `invoke-ai.sh`, `README.md`, and `.gitignore`. The sub-repo directories are listed in the managed block of `.gitignore` so they don't pollute the hub's git history.
+Each sub-repo is a self-contained git repo in a subfolder. The hub itself is a small git repo that tracks only this `AGENTS.md`, the thin `CLAUDE.md` import, `project.yaml`, `invoke-ai.sh`, `README.md`, `.gitignore`, and the product-level `dev-docs/`. The sub-repo directories are listed in the managed block of `.gitignore` so they don't pollute the hub's git history.
 
 ## How agents load context
 
@@ -46,11 +46,15 @@ __REPO_SECTIONS__
 
 ## Documentation
 
-Product-level documentation lives in the `role: docs` sub-repo (see
-`project.yaml`): user docs (`docs/`, synced to Outline) and cross-repo
-dev docs (`dev-docs/` — product ADRs, architecture, client materials).
-Write product-level docs THERE, not in the hub and not in feature repos.
-Repo-specific dev docs stay in each sub-repo's own `dev-docs/`.
+Product-level INTERNAL documentation lives in this hub's own `dev-docs/` —
+the knowledge root beside `openwiki/`: cross-repo architecture (written by
+`/ws-hub docs`), product ADRs (`decisions/`), runbooks, and processed client
+deliveries (`scoping/`). USER-facing docs live in the `type: output,
+purpose: docs` repo (see `project.yaml`; its `docs/` track syncs to
+Outline) — write end-user documentation THERE. Raw external deliveries
+(client materials, design assets) live in `type: input` repos and are
+processed into `dev-docs/scoping/` via `/ws-hub intake`. Repo-specific dev
+docs stay in each working sub-repo's own `dev-docs/`.
 
 ## Knowledge wiki (OpenWiki)
 

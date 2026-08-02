@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **BREAKING:** Hub repo types (ADR 0006) — every `project.yaml` entry now carries `type: working | input | output` (outputs add `purpose: docs | explained | …`, max one per known purpose). Product-level internal docs (cross-repo architecture, product ADRs, runbooks, scoping docs) now ALWAYS live in the hub's own `dev-docs/` beside `openwiki/`; the docs repo shrinks to the user track (`docs/` → Outline). Client deliveries live in dedicated `type: input` repos (`<project>-client`, `<project>-design`, …) with the dated-folder + `history.md` convention. Legacy `role: docs|explained` entries map to `type: output` + matching `purpose:`; unmarked entries are `type: working`
+- `/ws-hub update` — interactive conventions migration for existing hubs: `project.conventions` version marker, authoritative migration table, per-migration apply/skip/abort, idempotent re-runs; ships the v1→v2 migration (role→type rename, hub `dev-docs/` scaffold, product dev-docs move out of the docs repo, client materials → input repo)
+- `/ws-hub intake` — input-delivery processing pipeline: detects unprocessed dated folders in `type: input` repos, diffs against the previous delivery, drafts a scoping doc into the hub's `dev-docs/scoping/` (summary, requirements, scope of work in/out, open questions, decisions, tickets), appends `history.md`, and offers the follow-ups (`/ws-docs adr`, `ws-to-spec`, `ws-to-tickets` into the target working repo)
+- omp-ws: type-aware freshness tests (`test/wiki-freshness.test.ts`) covering the working/input/output split, legacy `role:` mapping, tickets pruning, and the no-project.yaml fallback
+
+### Changed
+
+- All OpenWiki staleness detection is type-aware (walks `type: working` repos parsed from `project.yaml`): the Claude Stop hook (`openwiki-freshness.sh`), the omp per-project hook template, the omp extension's `wiki-freshness.ts` (also fixes the shell-vs-omp discrepancy where the shell hook matched the hub's own `dev-docs/`), `/ws-hub doctor`'s freshness check, and the `openwiki-freshness` TTSR rule — output/input repos and the hub's own `dev-docs/` no longer false-positive the stale-wiki banner (`@wsagency/omp-ws` 0.4.0)
+- `hub-architect` writes cross-repo synthesis into the hub's `dev-docs/` unconditionally (no more docs-repo fallback inversion) and analyzes `type: working` repos only; `/ws-hub explained` synthesizes from the hub's `dev-docs/` instead of the docs repo's
+- `/ws-docs` hub mode: sweeps `type: working` repos only; user-track product writes route to the `purpose: docs` output repo, product-internal writes to the hub's `dev-docs/` (available even with no docs repo registered); `ws-setup-matt-pocock-skills` product-ADR routing simplifies to "parent `project.yaml` exists → hub `dev-docs/decisions/`"
+- `/ws-hub doctor` gains a conventions-version check (points at `/ws-hub update` when behind); `/ws-hub init` scaffolds the hub `dev-docs/` root and offers input/output repo creation (client materials, docs); `/ws-hub add` asks `type`/`purpose` and can mark existing repos as outputs
+
 ## [4.4.0] - 2026-07-27
 
 ### Added

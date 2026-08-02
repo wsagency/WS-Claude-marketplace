@@ -157,8 +157,11 @@ so the turn always settles.
 ### wiki-freshness (session_stop, non-blocking)
 
 Behavior-identical port of the per-project hook
-`plugins/ws/templates/omp/hooks/openwiki-freshness.ts`: warns when
-`<repo>/dev-docs/**` files are newer than `openwiki/.last-update.json`.
+`plugins/ws/templates/omp/hooks/openwiki-freshness.ts`: warns when a
+`type: working` repo's `dev-docs/**` files are newer than
+`openwiki/.last-update.json` (repo types parsed from `project.yaml`, ADR
+0006 — input/output repos and the hub's own `dev-docs/` never trigger it;
+standalone repos without `project.yaml` keep the legacy walk).
 Skips when `<cwd>/.omp/hooks/post/openwiki-freshness.ts` exists (no double
 banners).
 

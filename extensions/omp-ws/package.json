@@ -1,6 +1,6 @@
 {
   "name": "@wsagency/omp-ws",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "WS Agency full-native omp suite: all WS commands/skills/agents/rules (generated from the marketplace source) plus dangerous-git guard, changelog gate, Jira session dashboard, docs-drift stop nudge, OpenWiki freshness, compaction preservation, and ws_ticket/ws_changelog/ws_adr tools.",
   "type": "module",
   "main": "dist/index.js",

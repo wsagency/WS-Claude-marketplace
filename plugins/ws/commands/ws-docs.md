@@ -22,9 +22,12 @@ Project state lives in `.claude/docs-config.yaml`. Hooks (PreToolUse + Stop) rea
 
 Before dispatching any verb, look for a `project.yaml` with a `repos:` list
 (cwd, then parent directories up to $HOME). If found, you are in a WS project
-hub; resolve `DOCS_REPO` = the hub-relative path of the `role: docs` repo when
-one is registered. All product-level writes go there. **Position** then decides
-behavior:
+hub (ADR 0006 — every repo has a `type: working | input | output`). Resolve
+`DOCS_REPO` = the hub-relative path of the `type: output, purpose: docs`
+repo when one is registered (legacy spelling: `role: docs`) — it receives
+only USER-track product writes. Product-level INTERNAL writes always go to
+the hub's own `dev-docs/` (the knowledge root), whether or not a docs repo
+exists. **Position** then decides behavior:
 
 - **Sub-repo position** — `project.yaml` was found in a PARENT directory: run
   repo-level with the product scope routing below (the original hub mode).
@@ -34,39 +37,41 @@ behavior:
 
 Scope routing in sub-repo position (repo-level behavior is unchanged outside hubs):
 - `write` with user audience → ALWAYS `DOCS_REPO/docs/` (user docs are
-  product-level by definition)
+  product-level by definition; requires a registered `purpose: docs` repo)
 - `write` with dev audience → ask scope: **this repo** (local `dev-docs/`) or
-  **product** (`DOCS_REPO/dev-docs/`)
+  **product** (hub `dev-docs/`)
 - `adr` → ask scope: repo ADR (local `dev-docs/decisions/`) or product ADR
-  (`DOCS_REPO/dev-docs/decisions/`)
+  (hub `dev-docs/decisions/`)
 - `architecture` → ask scope; product scope targets
-  `DOCS_REPO/dev-docs/architecture.md` (delegate to the ws plugin's
+  hub `dev-docs/architecture.md` (delegate to the ws plugin's
   hub-architect agent when available)
 - `changelog`, `release-notes` → repo-level, unchanged
 
-When the hub registers no `role: docs` repo, product-scope targets are
-unavailable: fall back to repo-level and mention that `/ws-hub init` step 4
-(or `/ws-hub add`) can register one.
+When the hub registers no `purpose: docs` output, user-track product targets
+are unavailable: fall back to repo-level and mention that `/ws-hub init` step
+4b (or `/ws-hub add`) can register one. Product internal targets (hub
+`dev-docs/`) are always available.
 
 The scope answer may be cached in `.claude/docs-config.yaml` as
 `default_scope: repo | product | ask` (honor it like `default_audience`).
 
 ### Hub sweep (invoked at the hub root)
 
-Sweep targets: every repo in `project.yaml` that exists on disk and has no
-output role (`role: docs` and `role: explained` are excluded — the docs repo
-is covered by the product-level rows, explained is generated). Each sub-repo
-is its own git, so per-repo subagents cannot conflict: dispatch **one subagent
-per target repo in parallel** (`run_in_background: true`), passing the repo's
-absolute path as its working root, and aggregate when all report. Each
-subagent honors that repo's own `.claude/docs-config.yaml` (the hub has none).
+Sweep targets: every `type: working` repo in `project.yaml` that exists on
+disk (`type: input` and `type: output` repos are excluded — inputs are raw
+deliveries processed via `/ws-hub intake`, outputs are covered by the
+product-level rows). Each working repo is its own git, so per-repo subagents
+cannot conflict: dispatch **one subagent per target repo in parallel**
+(`run_in_background: true`), passing the repo's absolute path as its working
+root, and aggregate when all report. Each subagent honors that repo's own
+`.claude/docs-config.yaml` (the hub has none).
 
 Verb behavior at the hub root:
 
 - **no verb (discovery)** — one `docs-doctor` per target repo. Render a
   compact aggregate table: one row per repo with its worst state per column
   (`docs/`, `dev-docs/`, `CHANGELOG`, config), then product rows (`DOCS_REPO`
-  present/missing, `openwiki/` freshness). End with suggested verbs per repo.
+  present/missing, hub `dev-docs/` state, `openwiki/` freshness). End with suggested verbs per repo.
 - **audit** — same fan-out with `mode: audit`; merge into one report grouped
   by repo.
 - **catchup** — one subagent per target repo returning the three proposal
@@ -80,10 +85,12 @@ Verb behavior at the hub root:
 - **init** — NEVER scaffold docs in the hub itself. List target repos missing
   the convention, let the user pick (AskUserQuestion, multi-select), then run
   the init flow per selected repo via one subagent each.
-- **write / adr / architecture** — product scope by default (`DOCS_REPO`;
-  architecture delegates to hub-architect when available) — at the hub root
-  you are at product level, so skip the repo-vs-product question. If no
-  `role: docs` repo is registered, say so and point at `/ws-hub init` step 4.
+- **write / adr / architecture** — product scope by default (user-track
+  writes → `DOCS_REPO`; internal writes → hub `dev-docs/`; architecture
+  delegates to hub-architect when available) — at the hub root you are at
+  product level, so skip the repo-vs-product question. If no `purpose: docs`
+  repo is registered, user-track product writes are unavailable — say so and
+  point at `/ws-hub init` step 4b.
 - **changelog / release-notes** — per-repo artifacts: ask which repo, then run
   repo-level inside it.
 - **explain / publish** — `DOCS_REPO`, as already defined.
@@ -289,7 +296,7 @@ Dispatch `release-notes-writer` foreground. Write to `docs/release-notes/<versio
 
 ### verb = explain
 
-Not to be confused with `/ws-hub explained` (the `role: explained` HTML artefacts).
+Not to be confused with `/ws-hub explained` (the `purpose: explained` HTML artefacts).
 
 Regenerate `docs/explained.md` (in DOCS_REPO when in hub mode, else the
 current repo): a single Outline-safe onboarding page generated from

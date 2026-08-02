@@ -55,8 +55,28 @@ async function staleFilesInDevDocs(devDocsDir: string, markerMtimeMs: number, hu
 	return stale;
 }
 
-/** Collect `<repo>/dev-docs/**` files newer than the marker (hub's own top-level dev-docs excluded per spec). */
-async function collectStale(cwd: string, markerMtimeMs: number): Promise<string[]> {
+/**
+ * Collect dev-docs files newer than the marker.
+ * With a hub registry (`repos` defined — ADR 0006): only those working repos'
+ * dev-docs trees are walked (input/output repos and the hub's own dev-docs are
+ * not wiki input). Without a project.yaml (`repos` undefined): legacy
+ * fallback — walk every top-level subdir's dev-docs (hub's own excluded).
+ */
+export async function collectStale(cwd: string, markerMtimeMs: number, repos: HubRepo[] | undefined): Promise<string[]> {
+	if (repos !== undefined) {
+		const stale: string[] = [];
+		for (const repo of repos) {
+			const devDocs = path.join(cwd, repo.dir, "dev-docs");
+			try {
+				const st = await fs.stat(devDocs);
+				if (!st.isDirectory()) continue;
+			} catch {
+				continue; // repo not on disk or no dev-docs
+			}
+			stale.push(...(await staleFilesInDevDocs(devDocs, markerMtimeMs, repo.name)));
+		}
+		return stale;
+	}
 	let top;
 	try {
 		top = await fs.readdir(cwd, { withFileTypes: true });
@@ -79,21 +99,44 @@ async function collectStale(cwd: string, markerMtimeMs: number): Promise<string[
 	return stale;
 }
 
-/** Cheap line-based parse of project.yaml repo names ("- name: foo" entries). */
-async function readRepoNames(cwd: string): Promise<string[] | undefined> {
+export interface HubRepo { name: string; dir: string }
+
+/**
+ * Cheap line-based parse of project.yaml, returning `type: working` repos
+ * (ADR 0006): explicit `type: working`, or legacy entries with neither type
+ * nor role. An empty array means a hub with no working repos (walk nothing);
+ * undefined means no project.yaml at all (standalone repo — legacy fallback).
+ */
+export async function readWorkingRepos(cwd: string): Promise<HubRepo[] | undefined> {
 	let text: string;
 	try {
 		text = await fs.readFile(path.join(cwd, "project.yaml"), "utf8");
 	} catch {
 		return undefined;
 	}
-	const names: string[] = [];
+	const repos: HubRepo[] = [];
+	let name = "", dir = "", type = "", role = "", have = false;
+	const clean = (v: string) => v.replace(/\s+#.*$/, "").replace(/["']/g, "").trim();
+	const flush = () => {
+		if (have && (type === "working" || (type === "" && role === ""))) {
+			repos.push({ name, dir: dir || `./${name}` });
+		}
+	};
 	for (const line of text.split("\n")) {
 		// repos entries look like: `  - name: repo-name` (project.name has no leading dash)
-		const m = /^\s*-\s*name:\s*["']?([A-Za-z0-9._-]+)["']?\s*$/.exec(line);
-		if (m?.[1]) names.push(m[1]);
+		const m = /^\s*-\s*name:\s*(.+)$/.exec(line);
+		if (m?.[1]) {
+			flush(); have = true; type = ""; role = ""; dir = "";
+			name = clean(m[1]); continue;
+		}
+		const kv = /^\s+(type|role|path):\s*(.+)$/.exec(line);
+		if (have && kv?.[1] && kv[2]) {
+			const v = clean(kv[2]);
+			if (kv[1] === "type") type = v; else if (kv[1] === "role") role = v; else dir = v;
+		}
 	}
-	return names.length > 0 ? names : undefined;
+	flush();
+	return repos;
 }
 
 async function localHookPresent(cwd: string): Promise<boolean> {
@@ -124,7 +167,8 @@ export function registerWikiFreshness(pi: ExtensionAPI): void {
 			return; // no OpenWiki marker in this project — hook is a no-op
 		}
 
-		const stale = await collectStale(ctx.cwd, markerMtimeMs);
+		const repos = await readWorkingRepos(ctx.cwd);
+		const stale = await collectStale(ctx.cwd, markerMtimeMs, repos);
 		if (stale.length === 0) {
 			if (lastAnnouncedKey !== undefined) {
 				lastAnnouncedKey = undefined;
@@ -138,9 +182,8 @@ export function registerWikiFreshness(pi: ExtensionAPI): void {
 		if (key === lastAnnouncedKey) return; // already announced this exact state
 		lastAnnouncedKey = key;
 
-		const repoNames = await readRepoNames(ctx.cwd);
-		const updateCmd = repoNames
-			? `openwiki --update "Refresh; re-scan sub-repos: ${repoNames.join(", ")}"`
+		const updateCmd = repos && repos.length > 0
+			? `openwiki --update "Refresh; re-scan sub-repos: ${repos.map(r => r.name).join(", ")}"`
 			: `openwiki --update "Refresh; re-scan all sub-repos"`;
 
 		const examples = stale.slice(0, MAX_LISTED).map(f => `  · ${f}`);

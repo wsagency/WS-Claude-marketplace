@@ -23,7 +23,7 @@ Look at the current repo to understand its starting state. Read whatever exists;
 
 - `git remote -v` and `.git/config` — is this a GitHub repo? Which one?
 - `.claude/ws-project.yaml` — a WS Jira binding (`jira.project`)? If present, **Local + Jira sync** is the natural tracker default for this repo (local working store, stakeholder mirror in the bound Jira project).
-- A hub `project.yaml` (checked the same way as `.claude/ws-project.yaml` — look in the parent hub repo when this repo is a registered sub-repo) — does the hub register a repo with `role: docs`? If so, this repo sits in a WS project hub: PRODUCT-level decisions belong in the docs repo's `dev-docs/decisions/`, and only repo-specific decisions stay in this repo's `dev-docs/decisions/`.
+- A hub `project.yaml` (checked the same way as `.claude/ws-project.yaml` — look in the parent hub repo when this repo is a registered sub-repo) — if found, this repo sits in a WS project hub: PRODUCT-level decisions belong in the HUB's `dev-docs/decisions/`, and only repo-specific decisions stay in this repo's `dev-docs/decisions/`.
 - `AGENTS.md` and `CLAUDE.md` at the repo root — does either exist? Is `CLAUDE.md` a thin `@AGENTS.md` import? Is there already an `## Agent skills` section in either?
 - `CONTEXT.md` and `CONTEXT-MAP.md` at the repo root
 - `dev-docs/decisions/` and any `src/*/dev-docs/decisions/` directories
@@ -67,7 +67,7 @@ The defaults are the five canonical roles, each label string equal to its name: 
 
 Offer **multi-context** — a root `CONTEXT-MAP.md` pointing to per-context `CONTEXT.md` files — only when exploration found monorepo signals. Then confirm which layout they want.
 
-When exploration found a hub `project.yaml` with a `role: docs` repo, note (in `dev-docs/agents/domain.md` and to the user) that PRODUCT-level decisions belong in the docs repo's `dev-docs/decisions/` — only repo-specific decisions stay in this repo's `dev-docs/decisions/`.
+When exploration found a hub `project.yaml` in a parent directory, note (in `dev-docs/agents/domain.md` and to the user) that PRODUCT-level decisions belong in the hub's `dev-docs/decisions/` — only repo-specific decisions stay in this repo's `dev-docs/decisions/`.
 
 ### 3. Confirm and edit
 

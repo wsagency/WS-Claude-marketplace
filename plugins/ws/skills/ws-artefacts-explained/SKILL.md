@@ -1,25 +1,26 @@
 ---
 name: ws-artefacts-explained
-description: 'Contract for a hub''s `role: explained` repo — generated, self-contained HTML product documentation consumed by the ws-artefacts platform (artefacts.wsagency.io). Use when generating or refreshing product-explained artefacts, when asked about an "explained repo" or "ws-artefacts", or about the artefact HTML / meta.json format.'
+description: 'Contract for a hub''s `type: output, purpose: explained` repo — generated, self-contained HTML product documentation consumed by the ws-artefacts platform (artefacts.wsagency.io). Use when generating or refreshing product-explained artefacts, when asked about an "explained repo" or "ws-artefacts", or about the artefact HTML / meta.json format.'
 ---
 
 # ws-artefacts Explained Repos
 
-A hub MAY register one sub-repo with `role: explained` (max ONE per hub, same
-validation rule as `role: docs`). It holds **generated, human-facing visual
-documentation of the whole product**: self-contained HTML artefacts published
-through the [ws-artefacts](https://artefacts.wsagency.io) platform behind
-unguessable token links.
+A hub MAY register one sub-repo with `type: output, purpose: explained`
+(max ONE per purpose per hub — ADR 0006). It holds **generated, human-facing
+visual documentation of the whole product**: self-contained HTML artefacts
+published through the [ws-artefacts](https://artefacts.wsagency.io) platform
+behind unguessable token links.
 
 **Audience: the product owner + the dev team.** They should never have to read
 `dev-docs/` or `openwiki/` directly — those serve AI agents. The explained repo
 is the human window into the same knowledge.
 
 **Explained is an OUTPUT, never a source of truth.** It is synthesized from the
-hub's `project.yaml`, `openwiki/` (the primary derived map), the `role: docs`
-repo's `dev-docs/`, per-sub-repo `dev-docs/`, and sub-repo READMEs. When it
-drifts, **regenerate it — never hand-edit**. Commits go to the explained repo
-itself (its own git; the hub ignores it like any sub-repo).
+hub's `project.yaml`, `openwiki/` (the primary derived map), the hub's own
+`dev-docs/` (architecture, product ADRs), per-working-repo `dev-docs/`, and
+sub-repo READMEs. When it drifts, **regenerate it — never hand-edit**.
+Commits go to the explained repo itself (its own git; the hub ignores it like
+any sub-repo).
 
 ## Artefact HTML contract
 
@@ -119,4 +120,5 @@ For the PO + dev audience, a full product artefact should cover:
 6. **Glossary** — domain terms, from `CONTEXT.md`.
 
 Sources, in order of preference: hub `project.yaml`, `openwiki/` (primary
-derived map), the docs repo's + sub-repos' `dev-docs/`, sub-repo READMEs.
+derived map), the hub's `dev-docs/` + working sub-repos' `dev-docs/`, sub-repo
+READMEs.

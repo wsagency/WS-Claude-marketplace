@@ -36,12 +36,14 @@ verb list and stop (write nothing):
 /ws-hub <verb>
   init                initialize a new hub (offers doctor when one exists)
   doctor              diagnose + repair an existing hub
+  update              migrate hub conventions to the latest version (interactive)
+  intake              process client/input deliveries into hub dev-docs knowledge
   status              read-only git sweep across all sub-repos
   repos <pull|clone>  one git operation across all registered repos
-  add [--scan]        register a sub-repo (clone / adopt / sibling / retro-mark docs)
+  add [--scan]        register a sub-repo (clone / adopt / sibling / mark output)
   describe            refresh description/tech fields from repo contents
   docs                cross-repo docs via hub-architect (+ wiki refresh offer)
-  explained           generate the role: explained product artefacts
+  explained           generate the purpose: explained product artefacts
 ```
 
 Before any structural verb (`init`, `doctor`, `add`, `describe`), read the
@@ -88,14 +90,15 @@ Then ask:
 Inside `<name>-main/`:
 
 - `.claude/skills/project-hub-conventions/SKILL.md` — copy from `${CLAUDE_PLUGIN_ROOT}/skills/project-hub-conventions/SKILL.md` (vendored so the hub works without the marketplace plugin)
-- `project.yaml` — from `${CLAUDE_PLUGIN_ROOT}/templates/project.yaml.tmpl` with substitutions
+- `project.yaml` — from `${CLAUDE_PLUGIN_ROOT}/templates/project.yaml.tmpl` with substitutions; set `project.conventions` to the current conventions version (see the `update` verb's migration table)
 - `invoke-ai.sh` — copy from template, `chmod +x`
 - `AGENTS.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/AGENTS.md.tmpl` with placeholder substitutions (`__PROJECT_NAME__`, `__PROJECT_DESCRIPTION__`; `__REPO_SECTIONS__` is filled in step 7) — the canonical, agent-neutral project map
 - `CLAUDE.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md.tmpl` (thin `@AGENTS.md` import — never put content here)
 - `README.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/README.md.tmpl` with placeholder substitutions (`__PROJECT_NAME__`)
+- `dev-docs/` — the product knowledge root (see the skill's "Hub dev-docs" section): `decisions/`, `runbooks/`, `scoping/` (each with an `index.md` stub) plus an `architecture.md` placeholder noting hub-architect writes it
 - `.gitignore` — standard prelude (`.DS_Store`, `.cache/`) followed by the managed block as defined in the skill's ".gitignore managed block" section
 
-Do NOT create a `docs/` subdirectory — docs is its own repo registered like any other.
+Do NOT create a `docs/` subdirectory — user docs live in the `purpose: docs` output repo, registered like any other.
 
 #### 3. Handle each selected sub-repo (ask per-repo)
 
@@ -106,32 +109,50 @@ For every repo the user selected, ask via AskUserQuestion what to do:
 - **Clone fresh into hub**: ask for git URL, `git clone <url> ./<name>`, register with `path: ./<name>`. Use for repos not yet on disk.
 - **Skip**: don't register now.
 
-Register each chosen repo in `project.yaml` following the skill's "project.yaml schema" section (fields, path rules) and its "Tech inference" table. Prompt the user for `description` (default `"TODO: describe this repo"`). Also ask whether the repo is the product docs repo (`role: docs`) — before writing `role: docs`, check `project.yaml`: if another repo already has `role: docs`, refuse with a message naming it (max one per hub — see the project-hub-conventions skill). If the user plans to create a fresh docs repo in step 4, they should answer No here. Add nested (`./`) repos to the `.gitignore` managed block per the skill; sibling (`../`) repos are not added.
+Register each chosen repo in `project.yaml` following the skill's "project.yaml schema" section (fields, path rules) and its "Tech inference" table. Prompt the user for `description` (default `"TODO: describe this repo"`). Also ask for the repo's **type** (see the skill's "Repo types" table): `working` (development repo — default), `input` (external deliveries that feed development: client materials, design assets, data dumps), or `output` (derived artifact — then also ask the `purpose`: `docs`, `explained`, or a custom one). Before writing `purpose: docs` or `purpose: explained`, check `project.yaml`: if another output already carries that purpose, refuse with a message naming it (max one per known purpose per hub — ADR 0006). If the user plans to create fresh input/output repos in step 4, they should answer `working` here. Add nested (`./`) repos to the `.gitignore` managed block per the skill; sibling (`../`) repos are not added.
 
-#### 4. Product docs repo
+#### 4. Input & output repos
 
-Skip this question if a repo registered in step 3 already carries `role: docs` (max one per hub) — just point at it in the report.
+Skip an offer below if a repo registered in step 3 already covers it (a
+`purpose: docs` output, a client input repo, a `purpose: explained` output)
+— just point at it in the report. All three offers are independent
+AskUserQuestion prompts; each "Yes" creates + registers the repo, each "No"
+is noted with the remedy (`/ws-hub add` can register or mark one later).
 
-Ask (AskUserQuestion): "Create a product docs repo (`<project>-docs`)?"
+**4a — Client input repo.** Ask: "Create a client materials repo
+(`<project>-client`, type `input`)?"
+- **Yes** → create the subfolder, `git init` it, scaffold per the skill's
+  "Input repos" section: README, AGENTS.md with the dated-folder convention
+  note (plus a thin CLAUDE.md with only the `@AGENTS.md` import), and a
+  `history.md` stub. Register with `type: input`; add to the `.gitignore`
+  managed block.
+- **No** → skip. If the user expects client deliveries later, note that
+  `/ws-hub add` can register one at any time.
+
+**4b — Product docs repo.** Ask: "Create a product docs repo
+(`<project>-docs`, type `output`, purpose `docs`)?"
 - **Yes** → create the subfolder, `git init` it, scaffold the layout defined
   in the project-hub-conventions skill ("Product docs repo" section): README,
   AGENTS.md with the writing rules pointer (plus a thin CLAUDE.md containing
   only the `@AGENTS.md` import), docs/ tree with index.md and
-  empty Diátaxis folders + assets/ + release-notes/, dev-docs/ tree
-  (architecture.md placeholder, decisions/, client-materials/ with a
-  `history.md` stub and the dated-folder convention note (see the skill's
-  "Client materials" section), runbooks/).
-  Register it in project.yaml with `role: docs` and add it to the .gitignore
-  managed block. Do NOT create .outline-sync.json (created by the first
-  /ws-docs publish).
-- **No** → skip; note that the `add` verb can later register a docs repo or retro-mark an already-registered repo as `role: docs`. Also prune or adapt the generated `AGENTS.md` "Documentation" section — the template presumes a `role: docs` repo exists, and it must not point at a repo that isn't there.
+  empty Diátaxis folders + assets/ + release-notes/. Do NOT scaffold a
+  product-level dev-docs/ here — product internal docs live in the hub's own
+  `dev-docs/` (created in step 2).
+  Register it in project.yaml with `type: output, purpose: docs` and add it
+  to the .gitignore managed block. Do NOT create .outline-sync.json (created
+  by the first /ws-docs publish).
+- **No** → skip; note that the `add` verb can later register a docs repo or mark an already-registered repo as the `purpose: docs` output. Also prune or adapt the generated `AGENTS.md` "Documentation" section — the template presumes a `purpose: docs` repo exists, and it must not point at a repo that isn't there.
+
+**4c — Explained repo.** Only if the user asked — otherwise defer to the
+`/ws-hub explained` verb, which creates and registers `<project>-explained`
+on first run.
 
 #### 5. Knowledge & fleet tooling (optional)
 
 **5a — OpenWiki (hub-level knowledge wiki).** Ask (AskUserQuestion): "Initialize OpenWiki at the hub level — one knowledge wiki covering ALL sub-repos?"
 
 - **Yes** → verify `command -v openwiki` (missing → print `npm install -g openwiki` and let the user install first). Run `openwiki --init` at the hub root — it is interactive (provider/model onboarding); let the user drive it. It generates `openwiki/` and maintains its own `<!-- OPENWIKI:START/END -->` block in the hub's `AGENTS.md` AND `CLAUDE.md` — the CLAUDE.md block is a permitted tool-managed exception to the thin-import rule (see the skill's "Context-file cascade"). Then, immediately after init:
-  1. **Write the coverage scope into `openwiki/INSTRUCTIONS.md`** (append a "Coverage scope" section): the wiki documents the product across ALL registered **development** sub-repos — enumerate from `project.yaml` every repo WITHOUT an output role (`role: docs` and `role: explained` repos are generated/authored OUTPUTS and are excluded) — each a SEPARATE git repository nested in this hub and invisible to the hub's git; always scan them all; the hub root itself is a thin meta repo. Without this, OpenWiki tends to document only the largest repo it finds.
+  1. **Write the coverage scope into `openwiki/INSTRUCTIONS.md`** (append a "Coverage scope" section): the wiki documents the product across ALL registered **`type: working`** sub-repos — enumerate them from `project.yaml` (`type: input` repos are raw external deliveries and `type: output` repos are derived artifacts — both are excluded) — each a SEPARATE git repository nested in this hub and invisible to the hub's git; always scan them all; the hub root itself is a thin meta repo (its `dev-docs/` is authored truth, not wiki input). Without this, OpenWiki tends to document only the largest repo it finds.
   2. **Delete the generated CI workflow** (`.github/workflows/openwiki-update.yml`) if openwiki created one — the WS convention is AI-DRIVEN refresh (agents run a prompted refresh occasionally, before and/or after major work), not scheduled CI. Freshness is enforced softly: the plugin's Stop hook reminds when dev-docs changed since the last refresh (Claude Code), and when `.omp/` exists (or the user uses omp) copy `${CLAUDE_PLUGIN_ROOT}/rules/openwiki-freshness.md` into the hub's `.omp/rules/` (same fallback rule for the plugin root as above; the full omp preset itself is step 5b).
   3. For EVERY registered sub-repo, append this pointer to the sub-repo's `AGENTS.md` (creating it, plus a thin `CLAUDE.md`, if missing; adjust the relative path for sibling repos):
 
@@ -159,7 +180,7 @@ Ask (AskUserQuestion): "Create a product docs repo (`<project>-docs`)?"
 ```bash
 cd <hub-dir>
 git init -q
-git add .gitignore .claude README.md AGENTS.md CLAUDE.md project.yaml invoke-ai.sh
+git add .gitignore .claude README.md AGENTS.md CLAUDE.md project.yaml invoke-ai.sh dev-docs
 git add openwiki .github 2>/dev/null || true   # present only if step 5a ran
 git commit -q -m "chore: initialize <project> hub"
 ```
@@ -176,6 +197,7 @@ Fill the region between the `ws-hub:repos` markers (replacing the template's pla
 <description>
 
 - path: `<path>`
+- type: <working | input | output> (`purpose: <purpose>` when output)
 - tech: <tech>
 - url: <url if present>
 ```
@@ -207,6 +229,135 @@ Requires an initialized hub (`./project.yaml`; missing → abort with a hint to
 run `/ws-hub init`). Ask the posture (AskUserQuestion): **fix** (diagnose +
 repair, recommended) or **report** (diagnose only). Then run **Doctor mode**
 (section below).
+
+### verb = update
+
+Migrate an existing hub to the latest ws-hub conventions — interactively,
+never guessing. Requires `./project.yaml` (missing → abort, hint `/ws-hub
+init`).
+
+**Conventions version.** The hub's version is `project.conventions` in
+`project.yaml`. Missing marker → infer: any `role:` field or any repo entry
+without `type:` means v1 (legacy); otherwise treat as v1 (safe default).
+
+**Migration table** (the single authoritative list — every convention change
+MUST add a row and bump the latest version):
+
+| from→to | name | what it does |
+|---|---|---|
+| 1→2 | repo types + hub knowledge root (ADR 0006) | `role:`→`type:`/`purpose:` rename; scaffold hub `dev-docs/`; move product dev-docs out of the docs repo; move client materials into an input repo; refresh generated + harness files |
+
+Latest conventions version: **2**.
+
+**Flow:**
+
+1. Determine the current version; list pending migrations up to the latest.
+   None → report "hub conventions are current (vN)" and stop.
+2. Present the plan (one line per migration: name + summary). Per migration,
+   AskUserQuestion: **apply / skip / abort**.
+3. Apply migrations in order. Every step is idempotent — detect already-applied
+   state and skip it; a re-run after abort resumes cleanly.
+4. After each applied migration, bump `project.conventions` via `Edit`
+   (preserve formatting).
+5. Final report: what changed per repo, what was skipped, and suggested
+   commits (the hub and each touched sub-repo commit separately — each is its
+   own git). Never commit on the user's behalf.
+
+**Migration 1→2 steps:**
+
+1. **Field rename** — for every repo entry: `role: docs` → `type: output` +
+   `purpose: docs`; `role: explained` → `type: output` + `purpose: explained`;
+   entries with neither `type` nor `role` → `type: working`. Via `Edit`,
+   preserve comments/formatting.
+2. **Hub dev-docs scaffold** — create `dev-docs/` (`decisions/`, `runbooks/`,
+   `scoping/`, each with an `index.md` stub; `architecture.md` placeholder
+   noting hub-architect writes it) unless already present.
+3. **Product dev-docs move** — if the `purpose: docs` repo's `dev-docs/`
+   holds product-level content (signature of the v1 scaffold:
+   `architecture.md`, `contracts.md`, `deployment.md`, `decisions/`,
+   `runbooks/`), list what was found and AskUserQuestion: **move** to the
+   hub's `dev-docs/` / **leave** (report-only). Repo-level content about the
+   docs repo itself stays. When unsure whether a file is product- or
+   repo-level — ask, never guess.
+4. **Client materials → input repo** — if `client-materials/` exists under
+   the docs repo's `dev-docs/` (or the hub's): AskUserQuestion — move into an
+   existing `type: input` repo (pick one) / **create `<project>-client`**
+   (scaffold per the skill's "Input repos" section, then move) / leave.
+   Moving preserves dated folders and `history.md` as-is.
+5. **Generated + harness refresh** — offer the same refreshes as Doctor mode
+   checks 5–6 (invoke-ai.sh, vendored skill, `.omp/rules/` pack incl. the
+   type-aware `openwiki-freshness` rule, `.omp/hooks/post/openwiki-freshness.ts`).
+6. Regenerate the `AGENTS.md` `ws-hub:repos` marker region (repo blocks now
+   carry the `type`/`purpose` line).
+
+**update safety rules** — never overwrite user-authored content without an
+explicit confirm; confirm every `mv` before executing; nothing is committed
+or pushed; on abort, report exactly which steps applied so the user can
+re-run safely.
+
+### verb = intake
+
+Process external deliveries (`type: input` repos) into product knowledge.
+Requires `./project.yaml` (missing → abort, hint `/ws-hub init`).
+
+1. **Resolve input repos** — entries with `type: input`. None → offer to
+   create `<project>-client` (scaffold per the skill's "Input repos"
+   section: README, AGENTS.md with the dated-folder note, `history.md` stub;
+   register `type: input`, `.gitignore` block, AGENTS.md marker region) or
+   stop.
+2. **Find unprocessed deliveries** — in each input repo, list root folders
+   matching `YYYY-MM-DD/`. A delivery is unprocessed while no doc in the
+   hub's `dev-docs/scoping/` references its date (grep the scoping dir for
+   the folder name). None → report "all deliveries processed" and stop.
+3. **Process oldest-first** — per delivery, AskUserQuestion: process / skip:
+   1. **Diff** vs the previous dated folder in the same repo (added/changed/
+      removed files); read the delivery (sample large/binary files — note
+      their presence rather than reading them).
+   2. **Draft the scoping doc** from the template below; show it and confirm
+      before writing to the hub's `dev-docs/scoping/YYYY-MM-DD-<slug>.md`.
+   3. **Append `history.md`** in the input repo: date → what changed →
+      which ADRs/specs/tickets it triggered (fill after steps 4–5, or
+      "pending" if the user defers them).
+   4. **Offer decisions** — for each decision that crystallized, offer
+      `/ws-docs adr` at product scope (hub `dev-docs/decisions/`).
+   5. **Offer spec + tickets** — offer `ws-to-spec` / `ws-to-tickets` aimed
+      at the WORKING repo where the change lands (its own tracker: local
+      `dev-docs/tickets/` or Jira); record keys in the scoping doc.
+4. Report: processed deliveries, scoping docs written, ADRs/tickets raised,
+   and the suggested next step (`/ws-matt` flow in the target repo).
+
+**Scoping doc template** (`dev-docs/scoping/YYYY-MM-DD-<slug>.md`):
+
+```markdown
+# YYYY-MM-DD — <slug>
+
+- Delivery: `<input-repo>/YYYY-MM-DD/` (<N> files, <M> new/changed vs <prev-date | initial delivery>)
+- Processed: <today ISO date>
+
+## Summary
+<plain language: what arrived and what is being asked>
+
+## Extracted requirements
+- …
+
+## Scope of work
+**In scope:** …
+**Out of scope:** …
+
+## Open questions (for the client)
+- …
+
+## Decisions raised
+- ADR NNNN — <title> | none
+
+## Tickets raised
+- <key> — <title> (<working repo>) | none yet
+```
+
+**intake safety rules** — input repos are immutable raw: write only
+`history.md` there, never inside a dated folder; scoping docs are dated and
+never edited retroactively (a new delivery → a new scoping doc); never
+commit on the user's behalf.
 
 ### verb = status
 
@@ -321,15 +472,15 @@ registration flow below after the repo lands in `project.yaml`.
    - **Adopt nested**: pick from detected nested .git directories (already in the hub)
    - **Register sibling**: pick from detected sibling .git directories — register at `../<name>` without moving
    - **Move sibling in**: pick a sibling, `mv ../<name> ./<name>`, register at `./<name>` (confirm before move)
-   - **Mark existing as docs repo**: retro-mark an ALREADY-registered repo as the product docs repo — see "Retro-mark mode" below (skips the registration flow)
+   - **Mark existing as output**: mark an ALREADY-registered repo as an output with a given purpose (docs / explained / custom) — see "Mark-as-output mode" below (skips the registration flow)
 
-3. Run the **registration flow** below for the chosen repo (except retro-mark, which has its own steps).
+3. Run the **registration flow** below for the chosen repo (except mark-as-output, which has its own steps).
 
-#### Retro-mark mode: mark an already-registered repo as `role: docs`
+#### Mark-as-output mode: give an already-registered repo an output purpose
 
 1. List the repos already registered in `project.yaml` and let the user pick one.
-2. Max-one check: if another entry already carries `role: docs`, refuse with a message naming it (max one per hub — see the project-hub-conventions skill).
-3. Add `role: docs` to the chosen entry via `Edit` (preserve formatting), then regenerate the `AGENTS.md` marker region as in registration step 4.
+2. Ask the purpose: **docs** (product user-docs repo), **explained** (generated visual explainer), or a custom one. For known purposes: if another entry already carries that `purpose`, refuse with a message naming it (max one per known purpose per hub — ADR 0006).
+3. Set `type: output` + `purpose: <chosen>` on the chosen entry via `Edit` (preserve formatting), then regenerate the `AGENTS.md` marker region as in registration step 4.
 4. No clone, move, or `.gitignore` change — the repo is already registered. Then run "Finish" below.
 
 #### With `--scan`: discover, then register
@@ -351,13 +502,15 @@ registration flow below after the repo lands in `project.yaml`.
 For each repo to register:
 
 1. Gather the `project.yaml` entry fields — `name`, `path`, `url` (`git -C <path> config --get remote.origin.url`), `description` (prompt user), `tech` — following the skill's "project.yaml schema" section and "Tech inference" table.
-   - Ask about the repo's role: **none** (development repo — default), **docs**
-     (product docs repo — max one per hub; before writing check project.yaml and
-     refuse naming the existing one if taken), or **explained** (generated
-     visual product explainer — an OUTPUT repo). Output-role repos
-     (docs/explained) are excluded from the OpenWiki coverage scope — when the
-     hub has `openwiki/`, update `openwiki/INSTRUCTIONS.md` accordingly (add
-     development repos to the scope; never add output repos).
+   - Ask about the repo's **type**: **working** (development repo — default),
+     **input** (external deliveries feeding development: client materials,
+     design assets, data dumps), or **output** (derived artifact — then also
+     the `purpose`: **docs**, **explained**, or custom; before writing a known
+     purpose check project.yaml and refuse naming the existing one if taken).
+     Input and output repos are excluded from the OpenWiki coverage scope —
+     when the hub has `openwiki/`, update `openwiki/INSTRUCTIONS.md`
+     accordingly (add working repos to the scope; never add input/output
+     repos).
 
 2. Append the entry to `project.yaml` under `repos:` using `Edit` (preserve formatting and comments).
 
@@ -417,7 +570,7 @@ stale before major cross-repo work (`openwiki/.last-update.json` vs recent
 sub-repo commits), and after any significant dev-docs change — not only after
 doc-generation runs.
 
-Docs placement note: outputs go to the `role: docs` repo's `dev-docs/` when `project.yaml` registers one, otherwise to the hub's `dev-docs/` (never a hub `docs/` — hubs must not have one).
+Docs placement note: outputs ALWAYS go to the hub's own `dev-docs/` — the product knowledge root beside `openwiki/` (ADR 0006). Never into a sub-repo (the `purpose: docs` repo is an output, not a destination for internal docs), and never a hub `docs/` (hubs must not have one).
 
 Scope note: this verb produces the cross-repo SYNTHESIS layer only. Per-repo docs maintenance across the whole hub (status, catchup, repair — one subagent per sub-repo) is `/ws-docs` invoked at the hub root (hub sweep).
 
@@ -426,27 +579,29 @@ Scope note: this verb produces the cross-repo SYNTHESIS layer only. Per-repo doc
 Not to be confused with `/ws-docs explain` (the `docs/explained.md` onboarding page).
 
 Generate or refresh the product-explained artefacts in this hub's
-`role: explained` repo — human-facing visual documentation of the whole
+`type: output, purpose: explained` repo — human-facing visual documentation
+of the whole
 product for the product owner and dev team, consumed by the ws-artefacts
 platform (artefacts.wsagency.io). Run from a hub. `$2` = optional topic.
 
 #### 1. Resolve the explained repo
 
 Read `./project.yaml` with the Read tool. If it's missing, abort with a hint
-to run `/ws-hub init` first. Locate the entry carrying `role: explained`
-(max ONE per hub — see the `ws-artefacts-explained` skill).
+to run `/ws-hub init` first. Locate the entry carrying `type: output,
+purpose: explained` (max ONE per hub — see the `ws-artefacts-explained`
+skill; legacy hubs spell it `role: explained`).
 
-If no entry has `role: explained`, ask the user via AskUserQuestion (or a
+If no entry qualifies, ask the user via AskUserQuestion (or a
 plain chat question when that tool is unavailable) how to proceed:
 
-- **Register an existing repo** — run the `add` verb's flow and mark
-  the chosen entry `role: explained` (enforce max one), then continue below.
+- **Register an existing repo** — run the `add` verb's mark-as-output flow
+  with purpose `explained` (enforce max one), then continue below.
 - **Create `<project>-explained`** — `mkdir ./<project>-explained` and
   `git -C ./<project>-explained init`, then register it with
-  `role: explained` following the registration flow defined in the `add`
-  verb (project.yaml entry, `.gitignore` managed block, `AGENTS.md` marker
-  region). Leave `url` empty until a remote exists; hint to create one on
-  git.wsagency.io.
+  `type: output, purpose: explained` following the registration flow defined
+  in the `add` verb (project.yaml entry, `.gitignore` managed block,
+  `AGENTS.md` marker region). Leave `url` empty until a remote exists; hint
+  to create one on git.wsagency.io.
 - **Cancel** — stop.
 
 #### 2. Generate the artefact(s)
@@ -463,7 +618,7 @@ Gather sources:
   an explicit prompt, per the hub convention:
   `openwiki --update "Refresh the wiki; re-scan these sub-repos for changes: <name>, <name>, ..."`.
 - Synthesize from: `project.yaml`, `openwiki/` (primary derived map), the
-  `role: docs` repo's `dev-docs/` (decisions, architecture), per-sub-repo
+  hub's own `dev-docs/` (architecture, product ADRs), per-working-repo
   `dev-docs/` and READMEs, and `CONTEXT.md` for the glossary.
 - If the product is large (many sub-repos), fan out per-repo content
   gathering via the Task tool (omp: its task agent) — one gatherer per
@@ -526,10 +681,11 @@ Run the checks in order:
 
 1. **Hub repo freshness** — `git fetch` in the hub (skip gracefully when there is no remote). Clean and behind upstream → `git pull --ff-only`. Dirty, diverged, or on a non-default branch → report; touch nothing.
 2. **Sub-repos on disk** — for every repo in `project.yaml`: folder missing but `url` present → offer to clone (same behavior as the `repos clone` verb); present → fetch, and when clean and behind, `git pull --ff-only`. Dirty, diverged, or detached → report with branch names; touch nothing.
-3. **Registry integrity** — `project.yaml` parses; at most one `role: docs` and one `role: explained`; every nested (`./`) repo appears in the `.gitignore` managed block; the `ws-hub:repos` marker region in `AGENTS.md` matches `project.yaml` (drifted → regenerate the region, it is machine-managed); `CLAUDE.md` is the thin `@AGENTS.md` import (tool-managed marker blocks are the only permitted extras) — if fattened, move the content to `AGENTS.md`.
-4. **Generated files up to date** — compare the hub's `invoke-ai.sh` against `${CLAUDE_PLUGIN_ROOT}/templates/invoke-ai.sh.tmpl` and the vendored `.claude/skills/project-hub-conventions/SKILL.md` against the plugin's copy (plugin-root fallback rule as in Context). Differences → summarize the diff and offer a refresh, warning explicitly that both files are generated and hand edits will be lost.
-5. **Harness assets** — one bullet per harness; extend this list when a new harness joins:
+3. **Registry integrity** — `project.yaml` parses; every entry carries a `type` (entries without one, or with a legacy `role:` field, are pre-v2 — report and point at `/ws-hub update`); at most one output per known purpose (`docs`, `explained`); every nested (`./`) repo appears in the `.gitignore` managed block; the `ws-hub:repos` marker region in `AGENTS.md` matches `project.yaml` (drifted → regenerate the region, it is machine-managed); `CLAUDE.md` is the thin `@AGENTS.md` import (tool-managed marker blocks are the only permitted extras) — if fattened, move the content to `AGENTS.md`.
+4. **Conventions version** — compare `project.conventions` in `project.yaml` against the latest conventions version in the `update` verb's migration table. Behind (or missing) → report: "hub conventions are vN, latest is vM — run `/ws-hub update`". Never apply migrations from doctor.
+5. **Generated files up to date** — compare the hub's `invoke-ai.sh` against `${CLAUDE_PLUGIN_ROOT}/templates/invoke-ai.sh.tmpl` and the vendored `.claude/skills/project-hub-conventions/SKILL.md` against the plugin's copy (plugin-root fallback rule as in Context). Differences → summarize the diff and offer a refresh, warning explicitly that both files are generated and hand edits will be lost.
+6. **Harness assets** — one bullet per harness; extend this list when a new harness joins:
    - Claude Code — the vendored skill from check 4 is the only hub-side asset; nothing else to verify.
    - omp — when `.omp/` exists: the rules pack (`.omp/rules/ws-*.md`, `openwiki-freshness.md`) and `.omp/hooks/post/openwiki-freshness.ts` are present and match the plugin templates (offer refresh); `.omp/config.yml` present (report-only — user config is never overwritten). When `.omp/` is absent and the user works with omp, offer the init verb's step-5b omp preset flow. Also check for the `@wsagency/omp-ws` native extension (`omp plugin list`); when absent, mention it (guard + enforcement parity — see docs/how-to/omp-setup.md) without treating it as a failure.
-6. **Knowledge freshness** — when `openwiki/` exists: compare sub-repo `dev-docs/` mtimes (excluding `dev-docs/tickets/`) against `openwiki/.last-update.json`. Stale → print the exact prompted refresh command (`openwiki --update "Refresh; re-scan sub-repos: <list from project.yaml>"`) and ask before running it — a refresh costs tokens.
-7. **Verdict** — render one line per check (`✓` ok / `~` fixed / `✗` needs the user), then: what was fixed, what was deliberately left alone and why, and a closing line — either `Ready for development — cd <hub> && ./invoke-ai.sh` or `Not ready: <blocking items>`.
+7. **Knowledge freshness** — when `openwiki/` exists: compare `type: working` sub-repo `dev-docs/` mtimes (excluding `dev-docs/tickets/`; input/output repos and the hub's own `dev-docs/` are never compared — the wiki does not index them) against `openwiki/.last-update.json`. Stale → print the exact prompted refresh command (`openwiki --update "Refresh; re-scan sub-repos: <working-repo list from project.yaml>"`) and ask before running it — a refresh costs tokens.
+8. **Verdict** — render one line per check (`✓` ok / `~` fixed / `✗` needs the user), then: what was fixed, what was deliberately left alone and why, and a closing line — either `Ready for development — cd <hub> && ./invoke-ai.sh` or `Not ready: <blocking items>`.

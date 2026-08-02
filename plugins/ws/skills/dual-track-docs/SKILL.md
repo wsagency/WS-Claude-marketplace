@@ -71,33 +71,41 @@ As of v3.0.0, all docs operations route through `/ws-docs <verb>`:
 | `explain` | Regenerate `docs/explained.md` — Outline-safe product onboarding page (in `DOCS_REPO` when in hub mode) |
 | `publish` | Lint + push `docs/` to Outline via `outline-sync.py`; commits `.outline-sync.json`. One-way: Outline edits are never synced back |
 
-## Product docs repo (hub mode)
+## Hub mode (repo types)
 
-In a WS project hub, `project.yaml` may register at most one sub-repo with
-`role: docs` — the product docs repo (see the ws plugin's
-project-hub-conventions skill). When `/ws-docs` finds one, it runs in **hub
-mode** and routes product-level writes to that repo (`DOCS_REPO`).
+In a WS project hub every `project.yaml` entry carries a `type` (see the ws
+plugin's project-hub-conventions skill, ADR 0006): `working` repos hold the
+product's software, `input` repos hold raw external deliveries, `output`
+repos hold derived artifacts. When `/ws-docs` detects a hub it runs in **hub
+mode** and routes by audience:
 
-Split rule: **concerns more than one repo, the client, or any end user → docs
-repo.** Sub-repos keep only repo-specific `dev-docs/`; user docs are always
-product-level. `CHANGELOG.md` stays per-repo.
+- **User track (product-level)** → the `type: output, purpose: docs` repo
+  (`DOCS_REPO`), when one is registered.
+- **Internal track (product-level)** → the hub's own `dev-docs/` — the
+  product knowledge root (architecture synthesis, product ADRs, runbooks,
+  scoping docs). Always available, whether or not a docs repo exists.
+
+Split rule: **an end user reads it → the docs output repo. It concerns more
+than one repo, or the client, and is internal → hub `dev-docs/`.** Sub-repos
+keep only repo-specific `dev-docs/`; user docs are always product-level.
+`CHANGELOG.md` stays per-repo.
 
 Position decides behavior (authoritative detail in the `/ws-docs` command):
 invoked **inside a sub-repo** → repo-level with the product routing below;
-invoked **at the hub root** → **hub sweep** — discovery/audit/catchup/repair
-fan out one subagent per dev sub-repo (each its own git, so parallel runs
-never conflict; catchup commits per repo) and aggregate, while write/adr/
-architecture default to product scope (`DOCS_REPO`) without asking. Hubs never
-carry `docs/` of their own.
+invoked **at the hub root** → **hub sweep** — discovery/audit/catchup/repair/
+init fan out one subagent per `type: working` sub-repo (each its own git, so
+parallel runs never conflict; catchup commits per repo) and aggregate, while
+write/adr/architecture default to product scope without asking. Hubs never
+carry `docs/` of their own; input and output repos are never swept.
 
 Scope routing in sub-repo position (repo-level behavior is unchanged outside hubs):
 
 | Verb | Hub-mode routing |
 |---|---|
-| `write` (user audience) | ALWAYS `DOCS_REPO/docs/` — user docs are product-level by definition |
-| `write` (dev audience) | Ask scope: **this repo** (local `dev-docs/`) or **product** (`DOCS_REPO/dev-docs/`) |
-| `adr` | Ask scope: repo ADR (local `dev-docs/decisions/`) or product ADR (`DOCS_REPO/dev-docs/decisions/`) |
-| `architecture` | Ask scope; product scope targets `DOCS_REPO/dev-docs/architecture.md` (delegate to the ws plugin's hub-architect agent when available) |
+| `write` (user audience) | ALWAYS `DOCS_REPO/docs/` — user docs are product-level by definition (requires a `purpose: docs` repo) |
+| `write` (dev audience) | Ask scope: **this repo** (local `dev-docs/`) or **product** (hub `dev-docs/`) |
+| `adr` | Ask scope: repo ADR (local `dev-docs/decisions/`) or product ADR (hub `dev-docs/decisions/`) |
+| `architecture` | Ask scope; product scope targets hub `dev-docs/architecture.md` (delegate to the ws plugin's hub-architect agent when available) |
 | `changelog`, `release-notes` | Repo-level, unchanged |
 
 The scope answer may be cached in `.claude/docs-config.yaml` as

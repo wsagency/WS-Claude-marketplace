@@ -8,12 +8,14 @@ alwaysApply: true
 This hub maintains an OpenWiki (`<hub>/openwiki/`) as the derived knowledge
 index. Refresh is AI-driven — there is no CI doing it for you:
 
-- If this session changed anything under a `dev-docs/` tree (ADRs, runbooks,
-  client materials) or completed a major cross-repo change, refresh the wiki
-  before wrapping up: `openwiki --update "Refresh; re-scan sub-repos: <list>"` —
-  development repos only (repos with `role: docs` / `role: explained` are
-  outputs and stay out of scope; the authoritative list is in
-  `openwiki/INSTRUCTIONS.md`).
+- If this session changed anything under a `dev-docs/` tree of a
+  `type: working` repo (ADRs, runbooks) or completed a major cross-repo
+  change, refresh the wiki before wrapping up:
+  `openwiki --update "Refresh; re-scan sub-repos: <list>"` — working repos
+  only (`type: input` repos are raw deliveries and `type: output` repos are
+  derived artifacts — neither is wiki input, per ADR 0006; the authoritative
+  list is in `openwiki/INSTRUCTIONS.md`). The hub's own `dev-docs/` is
+  authored truth and likewise stays out of the wiki.
 - Before starting major cross-repo work, check staleness:
   `openwiki/.last-update.json` vs recent sub-repo activity — refresh first if
   stale.
