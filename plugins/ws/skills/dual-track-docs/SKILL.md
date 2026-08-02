@@ -113,7 +113,7 @@ Scope routing in sub-repo position (repo-level behavior is unchanged outside hub
 |---|---|
 | `write` (user audience) | ALWAYS `DOCS_REPO/docs/` — user docs are product-level by definition (requires a `purpose: docs` repo) |
 | `write` (dev audience) | Ask scope: **this repo** (local `dev-docs/`) or **product** (hub `dev-docs/`) |
-| `adr` | Ask scope: repo ADR (local `dev-docs/decisions/`) or product ADR (hub `dev-docs/decisions/`) |
+| `adr` | Ask scope: local ADR (repo-wide or bounded-context-specific; choose the narrowest local `dev-docs/decisions/`) or product ADR (hub `dev-docs/decisions/`) |
 | `architecture` | Ask scope; product scope targets hub `dev-docs/architecture.md` (delegate to the ws plugin's hub-architect agent when available) |
 | `changelog`, `release-notes` | Repo-level, unchanged |
 

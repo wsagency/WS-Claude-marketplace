@@ -16,19 +16,82 @@ but say so in the log entry.
 
 ## 1. Vendored upstreams
 
-**ws-matt skills** — follow the sync procedure in `plugins/ws/UPSTREAM.md`
-(it records the pinned upstream commit and the rename/adaptation map):
-fetch a fresh clone of `mattpocock/skills`, diff upstream against the pin,
-port meaningful changes through the rename map (WS-local adaptations listed
-there always win), update the pinned commit. Never overwrite the `## Graph
-node` sections — they are WS-local.
+### ws-matt skills (orchestrated)
 
-**herdr skill** — `plugins/ws/skills/herdr/` is vendored from
-`ogulcancelik/herdr` (`SKILL.md` at repo root; pin recorded in
-`plugins/ws/skills/herdr/UPSTREAM.md`). Fetch
-`https://raw.githubusercontent.com/ogulcancelik/herdr/master/SKILL.md`,
-diff, take upstream verbatim (no WS-local adaptations by policy), update the
-pin.
+The 18 paths named in `plugins/ws/UPSTREAM.md`'s rename map (17 engineering
+skills plus `ws-grilling`) are vendored from `mattpocock/skills`. `UPSTREAM.md` is the durable
+contract — it holds the pinned commit/date, the rename map, the cross-reference
+rewrite rules, the manual-only-key mechanism, the full WS-local preserve
+checklist, the delta-class definitions, and the maintenance-log fields. Run the
+sync as a gate sequence; each gate either passes, routes to a decision, or
+stops. Never skip a gate silently — record skips in the log entry.
+
+**Gate 0 — Dirty tree.** `git status --porcelain` on the marketplace checkout.
+A clean tree is the default. If uncommitted work overlaps the paths a sync would
+touch, stop and surface an explicit choice: commit it as its own already-green
+change, stash it, move the sync to a dedicated worktree, or abort. Never merge
+upstream into a dirty tree and never destroy uncommitted work. The upstream
+clone lives under a throwaway `/tmp` dir, never inside the repo.
+
+**Gate 1 — Clone + delta.** Make a temporary *full* clone of
+`mattpocock/skills` (not `--depth 1` — the pinned commit must be fetchable so
+`pin..candidate` diffs resolve). Record
+`candidate = git -C <tmp> rev-parse HEAD`; inspect the full-tree delta to
+distinguish no change from non-vendored churn, then diff the vendored surface:
+`skills/engineering/`, `skills/productivity/grilling/`, and `LICENSE`.
+
+**Gate 2 — Classify and early-exit.** Read the delta against the four classes
+defined in `UPSTREAM.md` — `no-delta`, `non-vendored-docs-only`, `contentful`,
+`inventory`:
+- `no-delta` or `non-vendored-docs-only` (e.g. only the non-vendored upstream
+  root README moved) → **copy no skills, bump no pin, rebuild no omp.** Log
+  `candidate` and the class; the ws-matt phase ends here.
+- `contentful` or `inventory` → continue.
+
+**Gate 3 — Parallel audits, then synthesize.** Fan out four read-only audits in
+parallel and reconcile before porting anything — no porting until they agree:
+upstream inventory/content; WS adaptations (does the change hit a preserve-list
+item?); graph routing (do nodes/tiers/edges move?); omp distribution (will the
+`plugins/ws/` surface change?). Use `researcher` for upstream fact gathering
+and `reviewer` for WS, graph, and distribution audits; reserve `tdd-runner` for
+implementation seams if a contentful sync requires code changes.
+
+**Gate 4 — Conscious porting (WS precedence).** Port through the rename map with
+WS-local precedence — upstream never overwrites a WS adaptation. The full
+per-file re-apply checklist and conflict handling live in `UPSTREAM.md`. No
+blind recursive copies; never delete a WS-only file; exactly one `## Graph node`
+per vendored skill.
+
+**Gate 5 — Graph & reference gates.** If inventory, edges, or skill behaviour
+changed: every skill named in `UPSTREAM.md`'s rename map keeps exactly one
+`## Graph node`; entry tier still matches the 9 user-invoked engineering skills; the worker
+tier and `ws-graph-engineering` match `plugins/ws/docs/graph.md`; a
+boundary-aware grep finds no bare upstream skill refs outside `UPSTREAM.md`'s
+rename map; run
+`python3 plugins/ws/scripts/outline-sync.py lint --root plugins/ws/docs`.
+
+**Gate 6 — omp rebuild gate.** If any `plugins/ws/` surface changed, rebuild the
+generated distribution: `cd extensions/omp-ws && bun run build` (verify the
+printed counts) and rerun tests. No `plugins/ws/` change → skip and say so.
+
+**Gate 7 — Verification.** Run the re-verify checklist in `UPSTREAM.md`: one
+graph section per skill; rename map ↔ directories agree; manual-only keys on
+exactly 9 skills; `LICENSE` byte-identical; bare-ref grep; graph lint. Any
+unexpected drift outside the known adaptations stops the run for a decision.
+
+**Gate 8 — Outcome logging + pin.** Record the ws-matt outcome in the run's
+`dev-docs/maintenance-log.md` entry (fields in `UPSTREAM.md`). **Bump the
+vendored pin in `UPSTREAM.md` iff a contentful vendored byte or an inventory
+change was actually applied** — the pin is the last contentful skill/`LICENSE`
+source, not the last reviewed HEAD. Non-vendored-docs-only runs keep the pin and
+log `candidate`.
+
+### herdr skill
+
+`plugins/ws/skills/herdr/` is vendored from `ogulcancelik/herdr` (`SKILL.md` at
+repo root; pin recorded in `plugins/ws/skills/herdr/UPSTREAM.md`). Fetch
+`https://raw.githubusercontent.com/ogulcancelik/herdr/master/SKILL.md`, diff,
+take upstream verbatim (no WS-local adaptations by policy), update the pin.
 
 ## 2. External tools — versions and doc drift
 

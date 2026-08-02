@@ -34,7 +34,7 @@ Dual-track documentation suite. All documentation operations route through the s
 
 Unified documentation command. Run with no verb for discovery (artifact status table, no writes).
 
-Position-aware in WS project hubs (repo types per ADR 0006): invoked **inside a sub-repo** it runs repo-level with product routing (user docs go to the `purpose: docs` output repo; product ADRs and architecture go to the hub's `dev-docs/`); invoked **at the hub root** it runs a **hub sweep** — `discovery`/`audit`/`catchup`/`repair` fan out one subagent per `type: working` sub-repo in parallel and aggregate (catchup commits per repo), `write`/`adr`/`architecture` default to product scope, `init` never scaffolds docs in the hub itself (offers per-repo init instead). Input and output repos are never swept.
+Position-aware in WS project hubs (repo types per ADR 0006): invoked **inside a sub-repo** it runs repo-level with product routing (user docs go to the `purpose: docs` output repo; product ADRs and architecture go to the hub's `dev-docs/`; local ADRs resolve to the repo root or a bounded context mapped by `CONTEXT-MAP.md`); invoked **at the hub root** it runs a **hub sweep** — `discovery`/`audit`/`catchup`/`repair` fan out one subagent per `type: working` sub-repo in parallel and aggregate (catchup commits per repo), `write`/`adr`/`architecture` default to product scope, `init` never scaffolds docs in the hub itself (offers per-repo init instead). Input and output repos are never swept.
 
 **Arguments:**
 | Name | Required | Description |
@@ -51,7 +51,7 @@ Position-aware in WS project hubs (repo types per ADR 0006): invoked **inside a 
 | `catchup` | Propose CHANGELOG entries, reference updates, ADRs from git history; user triages |
 | `repair` | Create missing artifacts only (never deletes) |
 | `write <type> [topic]` | One Diátaxis doc; `tutorial \| howto \| explanation` → diataxis-writer, `reference` → api-documenter |
-| `adr "<decision>"` | New ADR in `dev-docs/decisions/` (MADR v4.0.0) |
+| `adr "<decision>"` | New scope-routed ADR: hub product, repo-wide, or mapped bounded-context `dev-docs/decisions/`; lightweight by default, full MADR v4.0.0 for high-cost decisions |
 | `architecture` | Regenerate `dev-docs/architecture.md` (diff + confirm) |
 | `contributing` | Regenerate 3-file CONTRIBUTING set (diff + confirm) |
 | `changelog [version]` | Update `[Unreleased]` or cut version; mirrors to `docs/changelog.md` |
@@ -59,7 +59,7 @@ Position-aware in WS project hubs (repo types per ADR 0006): invoked **inside a 
 | `explain` | Regenerate `docs/explained.md` — generated Outline-safe onboarding page (not to be confused with `/ws-hub explained`, the `purpose: explained` HTML artefact) |
 | `publish` | Lint Outline-safe profile, push `docs/` to Outline (`outline-sync.py`; needs Python 3 + `OUTLINE_API_TOKEN`) |
 
-In a hub, `/ws-docs` enters hub mode: user-audience writes route to the `type: output, purpose: docs` repo, while product-internal writes (ADRs, architecture, dev-audience docs) route to the hub's own `dev-docs/` (scope prompt, cacheable as `default_scope`).
+In a hub, `/ws-docs` enters hub mode: user-audience writes route to the `type: output, purpose: docs` repo, while product-internal writes route to the hub's own `dev-docs/`; local ADRs route to the repo root or mapped bounded context (scope prompt, cacheable as `default_scope`).
 
 **Examples:**
 ```
@@ -413,7 +413,7 @@ Skills provide knowledge and templates, loaded on demand. All ship in the ws plu
 
 | Skill | Purpose |
 |-------|---------|
-| `ws-repo-maintenance` | Periodic repo maintenance: vendored-upstream sync (UPSTREAM.md pins), tool/version audit |
+| `ws-repo-maintenance` | Periodic repo maintenance: orchestrated Matt sync (upstream → WS adaptation → graph → omp) with pin-aware no-op handling; tool/version audit |
 
 The `project-hub-conventions` skill is also vendored into every hub at init time (`<hub>/.claude/skills/`), so hubs remain self-documenting even when the marketplace plugin isn't installed.
 

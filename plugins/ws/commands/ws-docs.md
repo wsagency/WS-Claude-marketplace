@@ -25,10 +25,11 @@ one of three shapes. The result decides behavior before any verb dispatches:
 
 - **Standalone repo** — no `project.yaml` found (ADR 0007): a valid, permanent
   state, not a gap. Operate entirely repo-locally — the repo's own `docs/`
-  (user track) and `dev-docs/` (internal track), product ADRs into this repo's
-  own `dev-docs/decisions/`. No hub, no sweep, no warning: every verb below
-  runs at repo level, so skip the hub scope routing and the Hub sweep section
-  entirely.
+  (user track) and `dev-docs/` (internal track). Product- and repo-wide ADRs
+  use this repo's root `dev-docs/decisions/`; when `CONTEXT-MAP.md` exists,
+  bounded-context ADRs use that context's mapped `dev-docs/decisions/`. No hub,
+  no sweep, no warning: every verb below runs locally, so skip the hub scope
+  routing and the Hub sweep section entirely.
 - **Hub sub-repo** — `project.yaml` was found in a PARENT directory: run
   repo-level with the product scope routing below (the original hub mode).
 - **Hub root** — `./project.yaml` belongs to the cwd itself: there is no local
@@ -47,8 +48,9 @@ Scope routing in a hub sub-repo (repo-level behavior is unchanged outside hubs):
   product-level by definition; requires a registered `purpose: docs` repo)
 - `write` with dev audience → ask scope: **this repo** (local `dev-docs/`) or
   **product** (hub `dev-docs/`)
-- `adr` → ask scope: repo ADR (local `dev-docs/decisions/`) or product ADR
-  (hub `dev-docs/decisions/`)
+- `adr` → ask scope: local ADR (repo-wide or bounded-context-specific; choose
+  the narrowest local `dev-docs/decisions/`) or product ADR (hub
+  `dev-docs/decisions/`)
 - `architecture` → ask scope; product scope targets
   hub `dev-docs/architecture.md` (delegate to the ws plugin's
   hub-architect agent when available)
@@ -269,7 +271,7 @@ Pass `destination_track` and `destination_path` inputs to the agent (plus `quadr
 
 `$2` = decision text (required; AskUserQuestion if missing).
 
-First resolve a single destination directory and reuse it for every step below: a **product-scope** ADR — hub-root position, or a hub sub-repo whose user chose product scope — lands in `<hub>/dev-docs/decisions/`; a **repo-scope** ADR, or any standalone-repo invocation, lands in the current repo's own `dev-docs/decisions/`. (Scope is asked only inside a hub sub-repo — see the hub scope routing above; at the hub root it is product by default, and a standalone repo skips the question.)
+First resolve a single destination directory and reuse it for every step below. A **product-scope** ADR — hub-root position, or a hub sub-repo whose user chose product scope — lands in `<hub>/dev-docs/decisions/`. For any **local** ADR (repo scope in a hub sub-repo, or any standalone invocation), inspect `CONTEXT-MAP.md`: without one, use the current repo's root `dev-docs/decisions/`; with one, AskUserQuestion whether the decision is repo-wide/system-wide or specific to one mapped bounded context, then use the root or that context's mapped `dev-docs/decisions/`. Never infer a context from a file being edited. At the hub root product scope is the default; inside a hub sub-repo, ask product vs local first (see hub scope routing above).
 
 1. Scan that resolved directory for the highest existing number; new number = highest + 1, zero-padded to 4 digits.
 2. Slug the decision text to kebab-case for the filename: `<resolved-dir>/<NNNN>-<slug>.md`.

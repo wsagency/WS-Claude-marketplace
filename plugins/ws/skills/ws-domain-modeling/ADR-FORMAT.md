@@ -1,8 +1,18 @@
 # ADR Format
 
-ADRs live in `dev-docs/decisions/` and use sequential numbering: `0001-slug.md`, `0002-slug.md`, etc.
+ADRs use sequential numbering: `0001-slug.md`, `0002-slug.md`, etc.
 
-Create the `dev-docs/decisions/` directory lazily — only when the first ADR is needed.
+## Where an ADR lives
+
+Choose the narrowest durable decision scope first:
+
+1. **Product-level** — concerns more than one repo, or the client. If a parent hub `project.yaml` registers this repo as a sub-repo (see the `project-hub-conventions` skill), write to the hub's `dev-docs/decisions/`; otherwise write to this repo's root `dev-docs/decisions/`.
+2. **Repo-wide/system-wide** — concerns this repo as a whole, or multiple bounded contexts inside it → this repo's root `dev-docs/decisions/`.
+3. **Bounded-context-specific** — when `CONTEXT-MAP.md` maps the context to its own subtree → that context's `dev-docs/decisions/`.
+
+A simple standalone repo therefore uses its root `dev-docs/decisions/`. Hub routing and bounded-context routing are separate dimensions: a product-level ADR goes to the hub even when the originating repo has a `CONTEXT-MAP.md`.
+
+Create the chosen `dev-docs/decisions/` lazily — only when the first ADR for that scope is needed.
 
 ## Template
 
@@ -26,7 +36,7 @@ Only include these when they add genuine value. Most ADRs won't need them.
 
 ## Numbering
 
-Scan `dev-docs/decisions/` for the highest existing number and increment by one.
+Scan the `dev-docs/decisions/` chosen above (hub, repo root, or bounded context) for the highest existing number and increment by one.
 
 ## When to offer an ADR
 

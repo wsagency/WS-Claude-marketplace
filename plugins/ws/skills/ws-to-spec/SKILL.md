@@ -19,7 +19,7 @@ Check with the user that these seams match their expectations.
 
 3. Write the spec using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label - no need for additional triage.
 
-If an ADR-worthy decision crystallises while synthesizing the spec (hard to reverse, surprising without context, a real trade-off), record it via the `/ws-domain-modeling` skill (ADR in `dev-docs/decisions/`) — the spec cites the ADR rather than being its only record.
+If an ADR-worthy decision crystallises while synthesizing the spec (hard to reverse, surprising without context, a real trade-off), record it via the `/ws-domain-modeling` skill — it chooses the hub, repo-root, or bounded-context `dev-docs/decisions/` by scope. The spec cites the ADR rather than being its only record.
 
 <spec-template>
 
@@ -83,7 +83,7 @@ Any further notes about the feature.
 - **Reads:** the current conversation (the already-grilled idea — no interviewing), codebase state, the domain glossary in `CONTEXT.md`, ADRs, the tracker config in `dev-docs/agents/issue-tracker.md`
 - **Emits:** a spec (Problem / Solution / User Stories / Implementation Decisions / Testing Decisions / Out of Scope) published to the issue tracker with the `ready-for-agent` label; test seams confirmed with the user before publishing
 - **Edges:**
-  - when an ADR-worthy decision crystallises during synthesis → ws-domain-modeling (ADR in `dev-docs/decisions/`)
+  - when an ADR-worthy decision crystallises during synthesis → ws-domain-modeling (ADR routed to hub, repo root, or bounded context by scope)
   - when done, recommend → ws-to-tickets (user-mediated: the published spec is its input; keep the same context window through the split)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** the spec lives on the tracker; reference it by issue, don't re-paste its body into later sessions (DONE|{spec issue link}).

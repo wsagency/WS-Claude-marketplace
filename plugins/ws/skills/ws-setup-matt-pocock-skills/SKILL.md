@@ -23,7 +23,7 @@ Look at the current repo to understand its starting state. Read whatever exists;
 
 - `git remote -v` and `.git/config` — is this a GitHub repo? Which one?
 - `.claude/ws-project.yaml` — a WS Jira binding (`jira.project`)? If present, **Local + Jira sync** is the natural tracker default for this repo (local working store, stakeholder mirror in the bound Jira project).
-- Project shape (project shape detection, see `project-hub-conventions`): walk up for `project.yaml`. **Hub sub-repo** (found in an ancestor): PRODUCT-level decisions belong in the HUB's `dev-docs/decisions/`; only repo-specific decisions stay here. **Standalone repo** (not found): this repo's own `dev-docs/decisions/` holds everything — it IS the product knowledge root (ADR 0007). Repo-specific decisions always stay local in every shape.
+- Project shape (project shape detection, see `project-hub-conventions`): walk up for `project.yaml`. **Hub sub-repo** (found in an ancestor): PRODUCT-level decisions belong in the HUB's `dev-docs/decisions/`; repo-wide and bounded-context decisions stay at their narrowest scope in this repo. **Standalone repo** (not found): product- and repo-wide decisions use this repo's root `dev-docs/decisions/`, while bounded-context decisions use the path mapped by `CONTEXT-MAP.md`.
 - `AGENTS.md` and `CLAUDE.md` at the repo root — does either exist? Is `CLAUDE.md` a thin `@AGENTS.md` import? Is there already an `## Agent skills` section in either?
 - `CONTEXT.md` and `CONTEXT-MAP.md` at the repo root
 - `dev-docs/decisions/` and any `src/*/dev-docs/decisions/` directories
@@ -67,7 +67,7 @@ The defaults are the five canonical roles, each label string equal to its name: 
 
 Offer **multi-context** — a root `CONTEXT-MAP.md` pointing to per-context `CONTEXT.md` files — only when exploration found monorepo signals. Then confirm which layout they want.
 
-Per project shape detection (`project-hub-conventions`): in a **hub sub-repo**, note (in `dev-docs/agents/domain.md` and to the user) that PRODUCT-level decisions belong in the hub's `dev-docs/decisions/` — only repo-specific decisions stay in this repo's `dev-docs/decisions/`. In a **standalone repo**, this repo's own `dev-docs/decisions/` is the product knowledge root and holds everything (ADR 0007). Repo-specific decisions always stay local.
+Per project shape detection (`project-hub-conventions`): in a **hub sub-repo**, note (in `dev-docs/agents/domain.md` and to the user) that PRODUCT-level decisions belong in the hub's `dev-docs/decisions/`; repo-wide decisions stay in this repo's root `dev-docs/decisions/`, and bounded-context decisions stay in the context path mapped by `CONTEXT-MAP.md`. In a **standalone repo**, product- and repo-wide decisions use the repo root, while bounded-context decisions stay at their mapped local path.
 
 ### 3. Confirm and edit
 
