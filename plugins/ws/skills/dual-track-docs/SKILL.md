@@ -75,13 +75,19 @@ As of v3.0.0, all docs operations route through `/ws-docs <verb>`:
 ## Hub mode (repo types)
 
 This convention applies in every project shape (project shape detection, see
-`project-hub-conventions`): **standalone repos and hub sub-repos use the
-Standard layout above as the whole story** — `docs/` for users, `dev-docs/` for
-contributors, scoped to that one repo. The rest of this section is the
-**hub-root** overlay. When `/ws-docs` detects a hub (a `project.yaml` in this or
-an ancestor directory) it runs in **hub mode**: repo types and routing follow
-the ws plugin's `project-hub-conventions` skill (ADR 0006), and `/ws-docs`
-routes by audience:
+`project-hub-conventions`):
+
+- **Standalone repo** — the Standard layout above is the whole story: `docs/`
+  for users, `dev-docs/` for contributors, scoped to that one repo.
+- **Hub sub-repo** — repo-specific tracks plus the product routing table: the
+  repo's own `dev-docs/` holds only repo-specific internal docs, while product
+  user docs route to `DOCS_REPO/docs/` and product internal docs route to the
+  hub's own `dev-docs/`.
+
+The rest of this section covers **hub mode** — shared by hub root and hub sub-repo — followed by position-specific routing. When `/ws-docs` detects a
+hub (a `project.yaml` in this or an ancestor directory) it runs in **hub mode**:
+repo types and routing follow the ws plugin's `project-hub-conventions` skill
+(ADR 0006), and `/ws-docs` routes by audience:
 
 - **User track (product-level)** → the `type: output, purpose: docs` repo
   (`DOCS_REPO`), when one is registered.

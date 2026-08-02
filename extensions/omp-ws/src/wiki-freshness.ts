@@ -138,7 +138,7 @@ export async function readWorkingRepos(cwd: string): Promise<HubRepo[] | undefin
 	let inRepos = false, sawReposBlock = false, sawNameEntry = false;
 	const clean = (v: string) => {
 		let value = v.trim();
-		const hash = value.search(/\s+#/);
+		const hash = value.search(/(^|\s)#/);
 		if (hash !== -1) value = value.slice(0, hash).trim();
 		return value.replace(/^["']|["']$/g, "");
 	};
@@ -150,10 +150,17 @@ export async function readWorkingRepos(cwd: string): Promise<HubRepo[] | undefin
 	};
 	for (const raw of text.split("\n")) {
 		const line = raw.replace(/\r$/, ""); // tolerate CRLF project.yaml
-		// A column-0 key ends the current top-level block (lib/yaml-lite.ts uses this rule).
-		if (/^[^\s]/.test(line)) {
+		// Strip an inline comment for top-level-key recognition: a `#` at column 0
+		// or preceded by whitespace starts a YAML comment, so `repos: # note` still
+		// opens the block. Comment-only/blank lines never open or close a block, so
+		// a column-0 comment inside `repos:` does not terminate it (lib/yaml-lite.ts
+		// uses this rule).
+		const cmt = line.search(/(^|\s)#/);
+		const code = cmt === -1 ? line : line.slice(0, cmt);
+		// A column-0 key ends the current top-level block.
+		if (/^[^\s]/.test(code)) {
 			if (have) { flush(); have = false; }
-			inRepos = line.trim() === "repos:";
+			inRepos = code.trim() === "repos:";
 			if (inRepos) sawReposBlock = true;
 			continue;
 		}

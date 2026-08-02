@@ -87,4 +87,4 @@ Any further notes about the feature.
   - when done, recommend → ws-to-tickets (user-mediated: the published spec is its input; keep the same context window through the split)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** the spec lives on the tracker; reference it by issue, don't re-paste its body into later sessions (DONE|{spec issue link}).
-- **Exit report:** spec published → `/ws-to-tickets` (split into tracer-bullet tickets, same context window); an ADR-worthy decision surfaced mid-synthesis → `/ws-domain-modeling` (record the ADR the spec cites). (Format: `ws-graph-engineering`.)
+- **Exit report:** spec published → ws-to-tickets (user-mediated: split into tracer-bullet tickets in the same context window); an ADR-worthy decision surfaced mid-synthesis → ws-domain-modeling (record the ADR the spec cites). (Format: `ws-graph-engineering`.)

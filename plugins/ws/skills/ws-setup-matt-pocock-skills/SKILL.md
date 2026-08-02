@@ -134,4 +134,4 @@ Tell the user the setup is complete and which engineering skills will now read f
   - data edges: the emitted config is the shared state read by ws-triage, ws-to-spec, ws-to-tickets, ws-wayfinder and ws-code-review
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** all output is config files in the repo, referenced by path (DONE|{dev-docs/agents/*.md}).
-- **Exit report:** setup complete and a large multi-repo effort is scoped → `/ws-wayfinder`; a single feature or change is ready to specify → `/ws-to-spec`; a bug report is on hand → `/ws-triage`. (Format: `ws-graph-engineering`.)
+- **Exit report:** terminal — setup complete; report the generated config (`dev-docs/agents/issue-tracker.md`, `dev-docs/agents/domain.md`, `dev-docs/agents/triage-labels.md` when written, and the `## Agent skills` block) and which engineering skills will now read it, then stop. No outward route — it configures, it never continues into work. (Format: `ws-graph-engineering`.)

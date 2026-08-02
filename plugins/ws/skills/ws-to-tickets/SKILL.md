@@ -127,4 +127,4 @@ skill.
   - the emitted blocking edges define the runtime frontier that later ws-implement sessions walk (blockers-first; expand–contract sequences for wide refactors)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** the tickets are the state — reference them by file path or issue id; never carry ticket bodies forward in conversation (DONE|{dev-docs/tickets/open/ or tracker links}).
-- **Exit report:** tickets written → `/ws-implement` on the first frontier ticket (clear context between tickets); ticket-splitting reveals an undecided design → `/ws-to-spec` (close the gap, then re-split). (Format: `ws-graph-engineering`.)
+- **Exit report:** tickets written → ws-implement on the first frontier ticket (user-mediated: clear context between tickets; any no-open-blockers ticket is grabbable). (Format: `ws-graph-engineering`.)

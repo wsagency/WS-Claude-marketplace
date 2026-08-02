@@ -81,4 +81,4 @@ If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](
 - **Edges:**
   - then → return to the driving node — this skill runs beneath ws-grill-with-docs, ws-triage, ws-improve-codebase-architecture and ws-wayfinder rather than continuing anywhere itself
 - **Handoff protocol:** updates are written directly to `CONTEXT.md` / `dev-docs/decisions/` as they crystallise and referenced by path — never batched up in conversation (DONE|{CONTEXT.md, dev-docs/decisions/NNNN-*.md}).
-- **Exit report:** vocabulary settled and the glossary is updated → return to the driving node (`/ws-wayfinder` or `/ws-grill-with-docs`); a hard-to-reverse decision crystallised → `/ws-docs adr`; terms still contested → `/ws-grilling`. (Format: `ws-graph-engineering`.)
+- **Exit report:** nested under a driver, return the `CONTEXT.md`/ADR updates as state delta and emit no route; invoked directly, report the landed glossary/ADR updates and stop — no invented driver. (Format: `ws-graph-engineering`.)

@@ -41,8 +41,7 @@ Ask: "What's the public interface, and which seams should we test?"
 - **Reads:** the pre-agreed seams (confirmed with the user before any test is written); `CONTEXT.md` vocabulary for test names; ADRs; [tests.md](tests.md) and [mocking.md](mocking.md)
 - **Emits:** red → green vertical slices — one failing test at a confirmed seam, then only enough code to pass it, repeated; tests that read like specifications and survive refactors
 - **Edges:**
-  - when a seam is unconfirmed → back to the caller (ws-implement or the user) to agree it — no test is written at an unconfirmed seam
-  - then → ws-code-review (refactoring belongs to the review stage, not the red → green loop)
-  - when naming or seam-design vocabulary is needed → ws-codebase-design (worker: the deep-module vocabulary)
+  - when a seam is unconfirmed → return to the caller (ws-implement or the user) to agree it — no test is written at an unconfirmed seam
+  - then → return the green slices and their test files to the caller; review is the caller's stage, not this node's
 - **Handoff protocol:** slices land in the working tree; the confirmed seam list is the shared state with the caller (DONE|{test files}).
-- **Exit report:** last seam green → `/ws-code-review`; cycle stuck red → `/ws-diagnosing-bugs`; seam or naming vocabulary unclear → `/ws-codebase-design`. (Format: `ws-graph-engineering`.)
+- **Exit report:** nested under ws-implement, return the green slices and test files as state delta (DONE|{test files}) and emit no route — review is the caller's stage; invoked directly, report that the last seam is green and stop. (Format: `ws-graph-engineering`.)

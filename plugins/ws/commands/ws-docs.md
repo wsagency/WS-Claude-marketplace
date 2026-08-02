@@ -269,10 +269,12 @@ Pass `destination_track` and `destination_path` inputs to the agent (plus `quadr
 
 `$2` = decision text (required; AskUserQuestion if missing).
 
-1. Scan the **resolved destination directory** for the highest existing number; new number = highest + 1, zero-padded to 4 digits. (In a hub sub-repo at product scope this is the hub's `dev-docs/decisions/`; in a standalone repo or at repo scope it is the current repo's own `dev-docs/decisions/`.)
-2. Slug the decision text to kebab-case for the filename: `dev-docs/decisions/<NNNN>-<slug>.md`
-3. Dispatch `adr-writer` foreground with the decision, target path, and project context. Two-tier rule (see the `adr` skill): the lightweight template (`# NNNN — Title` + 1-3 sentences) is the default; full MADR v4.0.0 only for big decisions (breaking / costly to undo / multiple serious options). Both tiers share the same home and numbering.
-4. Print "✓ wrote `<path>`".
+First resolve a single destination directory and reuse it for every step below: a **product-scope** ADR — hub-root position, or a hub sub-repo whose user chose product scope — lands in `<hub>/dev-docs/decisions/`; a **repo-scope** ADR, or any standalone-repo invocation, lands in the current repo's own `dev-docs/decisions/`. (Scope is asked only inside a hub sub-repo — see the hub scope routing above; at the hub root it is product by default, and a standalone repo skips the question.)
+
+1. Scan that resolved directory for the highest existing number; new number = highest + 1, zero-padded to 4 digits.
+2. Slug the decision text to kebab-case for the filename: `<resolved-dir>/<NNNN>-<slug>.md`.
+3. Dispatch `adr-writer` foreground with the decision, the resolved target path, and project context. Two-tier rule (see the `adr` skill): the lightweight template (`# NNNN — Title` + 1-3 sentences) is the default; full MADR v4.0.0 only for big decisions (breaking / costly to undo / multiple serious options). Both tiers share the same home and numbering.
+4. Print "✓ wrote `<resolved-path>`".
 
 In a hub with `openwiki/`, significant dev-docs changes warrant an OpenWiki refresh (see the hub AGENTS.md; AI-driven).
 

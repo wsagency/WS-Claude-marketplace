@@ -120,6 +120,6 @@ Good interfaces make testing natural:
 - **Emits:** interface and seam decisions stated in the shared vocabulary (module, interface, depth, seam, adapter, leverage, locality) — a deep-module shape, not code
 - **Edges:**
   - fan-out: design-it-twice — parallel sub-agents each design the interface a radically different way (schema: candidate interfaces compared on depth, locality, and seam placement)
-  - then → return to the driving node — this is the vocabulary layer beneath ws-tdd and ws-improve-codebase-architecture
+  - then → return to the driving node — this is the vocabulary layer beneath ws-improve-codebase-architecture
 - **Handoff protocol:** the chosen interface is recorded wherever the caller keeps decisions (spec, ADR, ticket) and referenced from there (DONE|{decision location}).
-- **Exit report:** seam agreed and the interface is deep → `/ws-tdd`; the module is still shallow → `/ws-improve-codebase-architecture`. (Format: `ws-graph-engineering`.)
+- **Exit report:** nested, return the chosen interface and seam as state delta (DONE|{decision location}) and emit no route; invoked directly, report the seam and where the decision was recorded, then stop — no invented driver. (Format: `ws-graph-engineering`.)

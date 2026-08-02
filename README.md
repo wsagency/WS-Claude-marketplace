@@ -205,7 +205,7 @@ Because a standalone repo's `dev-docs/` already uses the hub layout, adopting a 
 - `/ws-hub add [--scan]` — Register a new sub-repo; `--scan` first discovers unregistered repos in/near the hub
 - `/ws-hub describe` — Refresh sub-repo descriptions from their READMEs
 - `/ws-hub docs` — Generate cross-repo architecture/contracts/deployment docs (hub-architect agent; written into the hub's own `dev-docs/`; analyzes `type: working` repos only)
-- `/ws-hub explained` — Generate the product explainer artefact (ws-artefacts format) in the hub's `type: output, purpose: explained` repo — audience: product owner + dev team
+- `/ws-hub explained` — Generate the product explainer artefact (ws-artefacts format): at a hub root into the `type: output, purpose: explained` repo; standalone (no hub) into a validated output location in the current repo, merging a valid manifest and requiring an explicit dedicated subdirectory / replace / cancel choice for authored collisions — audience: product owner + dev team
 
 One sub-repo per hub can be marked `type: output, purpose: docs` — the product docs repo (`<project>-docs`), source of truth for the USER track only (synced to Outline via `/ws-docs publish`); cross-repo internal docs live in the hub's own `dev-docs/`. `/ws-hub init` offers to scaffold it — plus optional hub-level [OpenWiki](https://github.com/langchain-ai/openwiki) (one knowledge wiki for all sub-repos, referenced from every sub-repo's AGENTS.md, refreshed via `/ws-hub docs`) and [herdr](https://herdr.dev) fleet setup (the ws plugin ships the vendored `herdr` skill; works with Claude Code and omp).
 

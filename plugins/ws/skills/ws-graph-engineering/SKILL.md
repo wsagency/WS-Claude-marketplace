@@ -98,14 +98,20 @@ contract. When an entry node's output should feed another entry node (e.g.
 entry to invoke next — the handoff travels through state (the spec file), not through
 a nested invocation.
 
-**Exit report.** That telling has a shape. A node ends its run by telling the user, in
-two or three sentences, what landed and where it went, then the single most likely
-next move plus one alternative — each a concrete entry point (`/ws-command` or
-`ws-skill-name`) drawn from the node's own declared edges. Never a bullet dump, never
-"let me know how you'd like to proceed". The recommendation is the entry → entry
-handoff above, made concrete — it points at the next entry; it never auto-invokes it.
-Each vendored skill carries its own routing in one `**Exit report:**` bullet at the end
-of its `## Graph node` section (ADR 0008).
+**Exit report — and who renders one.** "Telling the user" has a shape, and a node
+renders one **only when it is directly invoked** — the run starts at it. A nested
+worker (invoked under another node) returns only a state delta to its caller and
+renders no user-facing report. A directly invoked node ending its own run tells the
+user, in two or three sentences, what landed and where it went, then at runtime one
+most likely declared route plus at most one alternative — each a concrete entry point
+from the node's own declared edges, named the way each is actually invoked: a command
+slash-prefixed (`/ws-<command>`), a skill bare (`ws-skill-name`). Never a bullet dump,
+never "let me know how you'd like to proceed". A return-only node — one with no
+outward edge its run owns — reports the outcome and stops; it does not invent a next
+entry or a driver to hand off to. The recommendation is the entry → entry handoff
+above, made concrete — it points at the next entry; it never auto-invokes it. Each
+vendored skill carries its own routing in one `**Exit report:**` bullet at the end of
+its `## Graph node` section (ADR 0008).
 
 ## Per-harness execution
 

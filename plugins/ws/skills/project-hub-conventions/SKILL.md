@@ -34,11 +34,29 @@ cross-repo architecture, product ADRs, runbooks, scoping docs — lives in the
 standalone repo's OWN `dev-docs/`, using the identical directory names and
 layout described below. Adopting a hub later is therefore a **move, not a
 rewrite**: `/ws-hub init` detects sibling git repos in the working directory,
-proposes registering each with an inferred `type` (confirming each), and
-offers to lift each adopted repo's product-level `dev-docs/` content into the
-new hub knowledge root — per file, refusing to overwrite, using the same
-collision-safe machinery as the `/ws-hub update` migration. Adoption is
-always opt-in and never silent (ADR 0007).
+proposes registering each with an inferred `type` (confirming each), then
+offers to lift each adopted repo's product-level `dev-docs/` — signature
+`architecture.md`, `contracts.md`, `deployment.md`, `decisions/`, `runbooks/`,
+`scoping/` — into the new hub knowledge root. Adoption is always opt-in and
+never silent (ADR 0007), and three rules govern it:
+
+- **Lift before scaffold.** The hub may create its directory and meta files
+  first, but the canonical scaffold paths (`architecture.md`,
+  `decisions/index.md`, `runbooks/index.md`, `scoping/index.md`) are filled
+  only AFTER any opted-in lift — so authored content lands at its canonical
+  path and the scaffold merely fills what the lift left missing, never the
+  reverse. Cleanliness is required only in the SOURCE repo: the
+  not-yet-initialized hub is not a git worktree.
+- **Per-file, collision-safe, never overwrite.** Renumber ADRs, disambiguate
+  other files, confirm the plan before executing. A destination that is an
+  exact, unmodified generated scaffold stub may be replaced by a confirmed
+  lift; authored files never are.
+- **`leave` recovers later.** A deliberate `leave` completes that adoption
+  decision (nothing left half-done) yet still recovers: `/ws-hub update` runs
+  version-independent remediation — at whatever version the hub is, including
+  the latest, with no version bump — lifting any left-behind product
+  `dev-docs/` from registered `type: working` repos by reusing this adoption
+  contract.
 
 The rest of this file describes the **hub-root** shape in full; the sub-repo
 and standalone shapes reuse the same conventions, scoped to a single repo's

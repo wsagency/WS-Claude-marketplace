@@ -20,4 +20,4 @@ Run a `/ws-grilling` session, using the `/ws-domain-modeling` skill.
   - when the build fits one session → ws-implement (user-mediated, same context window)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** decisions land in `CONTEXT.md` and `dev-docs/decisions/` and are referenced by path; the idea thread itself is state — don't compact or clear it mid-flow (DONE|{CONTEXT.md, dev-docs/decisions/...}).
-- **Exit report:** the plan is sharpened and the build spans sessions → `/ws-to-spec`; it fits one session → `/ws-implement`; a question still needs a runnable answer → `/ws-prototype`. (Format: `ws-graph-engineering`.)
+- **Exit report:** the plan is sharpened — select the single most-likely next entry: ws-to-spec for a multi-session build, ws-implement if it fits this context window; name at most one alternative when a question still needs a runnable answer (ws-prototype). The user invokes the next entry; never auto-invoke it. (Format: `ws-graph-engineering`.)

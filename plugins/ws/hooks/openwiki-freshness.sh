@@ -15,8 +15,9 @@
 #  - Standalone (no project.yaml): the repo's OWN dev-docs/ is the product
 #    knowledge root and COUNTS, plus each immediate sub-directory's dev-docs/.
 #  - Both modes exclude openwiki/ and any dev-docs/tickets/ subtree; the walker
-#    also prunes node_modules/ and .git/ and skips dotfiles (parity with the omp
-#    twins extensions/omp-ws/src/wiki-freshness.ts and the template hook).
+#    also prunes every hidden dir/file (and node_modules/) and, in standalone
+#    mode, skips symlinked immediate directories (parity with the omp twins
+#    extensions/omp-ws/src/wiki-freshness.ts and the template hook).
 # Designed for /bin/bash 3.2 (no mapfile/readarray/assoc-arrays/${var,,}).
 set -euo pipefail
 
@@ -26,10 +27,11 @@ STAMP="./openwiki/.last-update.json"
 # Print dev-docs files newer than $STAMP under $1. Never exits non-zero: it
 # tolerates unreadable directories (`2>/dev/null` + `|| true`) and arbitrarily
 # large file counts (no `head` in the pipe, so `find` never takes SIGPIPE under
-# `set -o pipefail`). Prunes tickets/node_modules/.git and skips dotfiles.
+# `set -o pipefail`). Prunes every hidden dir/file (parity with the omp twin's
+# name.startsWith(".") skip), plus tickets/ and node_modules/.
 stale_under() {
-	find "$1" \( -name tickets -o -name node_modules -o -name .git \) -prune \
-		-o -type f -newer "$STAMP" ! -name '.*' -print 2>/dev/null || true
+	find "$1" \( -name '.*' -o -name tickets -o -name node_modules \) -prune \
+		-o -type f -newer "$STAMP" -print 2>/dev/null || true
 }
 
 newer=""
@@ -43,9 +45,10 @@ if [[ -f "./project.yaml" ]]; then
 	# an output repo and never counts. Prints two tab-separated fields: path, name.
 	repos=$(awk '
 		function clean(v) {
-			sub(/[[:space:]]+#.*$/, "", v)
-			gsub(/^["'"'"']|["'"'"']$/, "", v)
+			sub(/(^|[[:space:]]+)#.*$/, "", v)
+			sub(/^[[:space:]]+/, "", v)
 			sub(/[[:space:]]+$/, "", v)
+			gsub(/^["'"'"']|["'"'"']$/, "", v)
 			return v
 		}
 		function flush() {
@@ -53,10 +56,14 @@ if [[ -f "./project.yaml" ]]; then
 				print (path == "" ? "./" name : path) "\t" name
 		}
 		BEGIN { inRepos=0; have=0; name=""; type=""; role=""; purpose=""; path=""; sawRepos=0; sawName=0 }
+		# A comment-only or blank line never opens or closes a block, so a
+		# column-0 comment inside `repos:` cannot terminate it.
+		/^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
 		/^[^[:space:]]/ {
 			if (have) flush()
 			have=0; name=""; type=""; role=""; purpose=""; path=""
-			inRepos = ($0 ~ /^repos:[[:space:]]*$/)
+			key=$0; sub(/[[:space:]]+#.*$/, "", key)
+			inRepos = (key ~ /^repos:[[:space:]]*$/)
 			if (inRepos) sawRepos=1
 			next
 		}
@@ -100,6 +107,10 @@ else
 	for sub in */; do
 		[[ "$sub" == "openwiki/" || "$sub" == "node_modules/" ]] && continue
 		case "$sub" in .*) continue ;; esac
+		# Skip a symlinked immediate directory: parity with the omp twin's
+		# Dirent.isDirectory() check (false for symlinks). ${sub%/} strips the
+		# trailing slash so -L tests the link itself, not its target.
+		[[ -L "./${sub%/}" ]] && continue
 		if [[ -d "./${sub}dev-docs" ]]; then
 			found=$(stale_under "./${sub}dev-docs")
 			[[ -n "$found" ]] && newer=$(printf '%s\n%s' "$newer" "$found")

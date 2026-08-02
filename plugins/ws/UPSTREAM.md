@@ -116,8 +116,8 @@ and all `/grilling` references are rewritten to `/ws-grilling`.
   reviewers (not `general-purpose`); `agents/reviewer.md` scopes to one
   review assignment (a single axis over the whole diff, or a single slice);
   `agents/tdd-runner.md` runs red-green only (no in-cycle refactor, no
-  `refactored` output field — cleanup routes to `ws-code-review` per ws-tdd's
-  rule); `ws-graph-engineering` describes the `ws-implement` tdd-runner fan-out
+  `refactored` output field — cleanup belongs to the caller's review stage
+  (`ws-code-review`) per ws-tdd's rule); `ws-graph-engineering` describes the `ws-implement` tdd-runner fan-out
   as optional; `ws-wayfinder` names `researcher` as the Claude Code
   research vehicle.
 

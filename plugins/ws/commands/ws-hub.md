@@ -10,15 +10,26 @@ Single entry point for all hub operations. Sub-repos live as **subfolders of
 the hub**, each with its own git, kept out of the hub's git via a managed
 `.gitignore` block.
 
-**Project shape.** This command operates on a hub (a directory with a
-`project.yaml`). It determines the project shape via the shared procedure
-documented once in the **project-hub-conventions** skill ("Project shape
-detection") — see that skill for the walk-up rules; do not restate them here.
-Every verb except `init` requires a hub root: when there is none, they stop and
-point at `/ws-hub init` in one line (never scolding, never erroring merely
-because `project.yaml` is absent). `init` creates a hub from nothing, or adopts
-an existing set of repos into a new hub (step 1). Standalone repos keep their
-own `dev-docs/` as the product knowledge root until a hub is chosen (ADR 0007).
+**Project shape.** This command determines the project shape FIRST, before any
+verb runs, via the shared procedure documented once in the
+**project-hub-conventions** skill ("Project shape detection") — see that skill
+for the walk-up rules; do not restate them here. Three shapes, routed by shape:
+
+- **Hub root** (`./project.yaml` present) → the verb runs normally.
+- **Hub sub-repo** (`project.yaml` found in an ancestor directory) → the hub
+  already exists above. Name the ancestor hub path in one line and ask the
+  user to rerun `/ws-hub` there, then stop. NEVER suggest scaffolding a second
+  hub from inside a sub-repo.
+- **Standalone repo** (no `project.yaml` anywhere up the tree) → the verb's own
+  behavior decides. `init` is the greenfield path — it creates the first hub
+  from nothing, or adopts an existing set of repos into a new hub (step 1).
+  Every other verb that genuinely needs a hub stops in one line and points at
+  `/ws-hub init` (never scolding, never erroring merely because `project.yaml`
+  is absent). `explained` is the exception: it runs standalone too (see its
+  verb section), synthesizing the artefact in the current repo.
+
+Standalone repos keep their own `dev-docs/` as the product knowledge root until
+a hub is chosen (ADR 0007).
 
 This command is **harness-agnostic**: it behaves the same under any agent
 harness (Claude Code, omp, …) and never assumes which one is running. Where a
@@ -114,7 +125,7 @@ Inside `<name>-main/`:
 - `AGENTS.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/AGENTS.md.tmpl` with placeholder substitutions (`__PROJECT_NAME__`, `__PROJECT_DESCRIPTION__`; `__REPO_SECTIONS__` is filled in step 7) — the canonical, agent-neutral project map
 - `CLAUDE.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md.tmpl` (thin `@AGENTS.md` import — never put content here)
 - `README.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/README.md.tmpl` with placeholder substitutions (`__PROJECT_NAME__`)
-- `dev-docs/` — the product knowledge root (see the skill's "Hub dev-docs" section): `decisions/`, `runbooks/`, `scoping/` (each with an `index.md` stub) plus an `architecture.md` placeholder noting hub-architect writes it
+- `dev-docs/` — create the directory (the product knowledge root; see the skill's "Hub dev-docs" section). Do NOT pre-create the canonical scaffold here: `architecture.md`, `decisions/index.md`, `runbooks/index.md`, and `scoping/index.md` are filled in step 3c, AFTER any step-3b adoption lift, so an opted-in lift lands authored product content at its canonical path instead of colliding with a stub. (Step 3c runs unconditionally — even a greenfield hub with no selected repos gets the scaffold.)
 - `.gitignore` — standard prelude (`.DS_Store`, `.cache/`) followed by the managed block as defined in the skill's ".gitignore managed block" section
 
 Do NOT create a `docs/` subdirectory — user docs live in the `purpose: docs` output repo, registered like any other.
@@ -132,14 +143,39 @@ Register each chosen repo in `project.yaml` following the skill's "project.yaml 
 
 #### 3b. Lift adopted product dev-docs (optional)
 
-For every repo registered in step 3 that previously lived standalone and carries its OWN product-level `dev-docs/` (signature: `architecture.md`, `contracts.md`, `deployment.md`, `decisions/`, `runbooks/`), the hub is now the product knowledge root (ADR 0006), so that content belongs in the hub's `dev-docs/`. Adoption is always opt-in and never silent.
+For every repo registered in step 3 that previously lived standalone and carries its OWN product-level `dev-docs/` (signature: `architecture.md`, `contracts.md`, `deployment.md`, `decisions/`, `runbooks/`, `scoping/`), the hub is now the product knowledge root (ADR 0006), so that content belongs in the hub's `dev-docs/`. Adoption is always opt-in and never silent. This lift runs BEFORE step 3c completes the `dev-docs/` scaffold (step 2 created only the directory), so authored product content lands at its canonical path instead of colliding with a stub.
 
 Per repo, AskUserQuestion: **lift** (move product-level content into the hub's `dev-docs/`) / **leave** (the repo keeps its `dev-docs/`; nothing moves).
 
-- **lift** → move PER-FILE using the collision-safe procedure from the `update` verb's "Product dev-docs move" step: require clean worktrees (hub + source repo) first; for each source file, refuse to overwrite an existing destination; list every collision to the user before moving anything; renumber colliding ADRs (`decisions/NNNN-*.md`) to the next free number, or land other files under `<name>-from-<repo>.md`; confirm the full plan, then execute. Repo-level content about the repo itself stays put.
-- **leave** → note it; the repo's `dev-docs/` stays as-is (it can be lifted later via `/ws-hub update`).
+- **lift** → require a clean SOURCE-REPO worktree first (`git status --porcelain` in the source repo only). The hub is NOT yet a git worktree — `git init` is step 6 — so never run `git status` in the hub here. Then move PER-FILE using the collision-safe procedure from the `update` verb's "Product dev-docs move" step: for each source entry, compute its destination under the hub's `dev-docs/` (same relative path; `mkdir -p` the parent first); apply the destination rule below; list every collision to the user before moving anything; renumber colliding ADRs (`decisions/NNNN-*.md`) to the next free number, merge canonical collection indexes, or land other files under `<name>-from-<repo>.md`; confirm the full plan, then execute. Repo-level content about the repo itself stays put.
+- **leave** → note it; the repo's `dev-docs/` stays as-is. A deliberate `leave` completes this adoption decision (nothing is left half-done), and the content still recovers later: `/ws-hub update` runs version-independent remediation — at whatever version the hub is, including the latest, with no version bump — that lifts the left-behind product `dev-docs/` from registered `type: working` repos by reusing this adoption contract.
+
+**Destination rule.** For an ADR (`decisions/NNNN-*.md`), a destination
+`decisions/` that already holds ANY `NNNN-*.md` with the same number is a
+collision even when the slug and exact path differ; renumber it whole using the
+`update` procedure. For every file with no ADR-number collision: if the exact
+destination does NOT exist → move it. If it DOES exist → a destination that is
+an exact, unmodified copy of a known generated scaffold stub (a byte-identical
+`index.md` stub or `architecture.md` placeholder) MAY be replaced by the lift
+after explicit confirmation. Canonical collection indexes
+(`decisions/index.md`, `runbooks/index.md`, `scoping/index.md`) are MERGE
+targets, never disambiguated side files: preserve the destination's authored
+prose, fold in every source-only entry under its resolved path/ADR number,
+de-duplicate exact entries, and show the merged diff for confirmation. If the
+two index structures cannot be merged unambiguously, stop on a hard collision
+and ask for the resolved canonical content before moving anything. Every other
+authored destination is a collision — renumber or disambiguate it, never
+overwrite. The scaffold-stub half is dormant during init only because step 3c
+has not scaffolded those stubs yet; it governs a later lift onto an
+already-scaffolded hub. The authored/ADR collision half is LIVE during init:
+this step loops per repo, so a repo lifted earlier in the loop becomes authored
+destination state for every later repo.
 
 Do NOT touch a repo whose `dev-docs/` is absent or holds only repo-level content.
+
+#### 3c. Complete the dev-docs scaffold (unconditional)
+
+Run this step for EVERY init, including a greenfield hub with zero selected or qualifying repos — step 6 commits the hub, and `dev-docs/` is the product knowledge root, so it must not ship empty (git tracks no empty directory, so an absent scaffold means no committed knowledge root). Create ONLY the paths step 3b's lift did not already populate: `architecture.md` (placeholder noting hub-architect writes it) plus `decisions/index.md`, `runbooks/index.md`, and `scoping/index.md` stubs. Never overwrite a path a lift filled — this is what step 2 deferred so the lift could run first.
 
 #### 4. Input & output repos
 
@@ -256,16 +292,19 @@ Fill the region between the `ws-hub:repos` markers (replacing the template's pla
 
 ### verb = doctor
 
-Requires an initialized hub (`./project.yaml`; missing → abort with a hint to
-run `/ws-hub init`). Ask the posture (AskUserQuestion): **fix** (diagnose +
-repair, recommended) or **report** (diagnose only). Then run **Doctor mode**
-(section below).
+Requires a hub root (`./project.yaml`). From a hub sub-repo, name the ancestor
+hub path and ask the user to rerun `/ws-hub doctor` there; then stop. Only a
+standalone repo (no `project.yaml` anywhere up the tree) gets the hint to run
+`/ws-hub init`. At the hub root, ask the posture (AskUserQuestion): **fix**
+(diagnose + repair, recommended) or **report** (diagnose only). Then run
+**Doctor mode** (section below).
 
 ### verb = update
 
 Migrate an existing hub to the latest ws-hub conventions — interactively,
-never guessing. Requires `./project.yaml` (missing → abort, hint `/ws-hub
-init`).
+never guessing. Requires a hub root (`./project.yaml`). From a hub sub-repo,
+name the ancestor hub path and ask the user to rerun `/ws-hub update` there;
+then stop. Only a standalone repo gets the `/ws-hub init` hint.
 
 **Conventions version.** The hub's version is `project.conventions` in
 `project.yaml`. Missing marker → v1 (every step below is idempotent, so
@@ -284,75 +323,261 @@ Latest conventions version: **2**.
 
 **Flow:**
 
-1. Determine the current version; list pending migrations up to the latest.
-   None → report "hub conventions are current (vN)" and stop.
-2. Present the plan (one line per migration: name + summary). Per migration,
-   AskUserQuestion: **apply / skip / abort**.
-3. Apply migrations in order, tracking whether EVERY step of each migration
-   completed. Every step is idempotent — detect already-applied state and skip
-   it; a re-run after abort resumes cleanly. A step whose own choice is
-   **leave** or **skip** counts as NOT completed for that migration.
-4. **Set the version marker only on full completion.** For each migration whose
-   every step completed, set `project.conventions` to that migration's target
-   version: when the `conventions:` key is absent, **insert**
+1. **Detection-only scan.** Determine the current version and list pending
+   migrations up to the latest. Then run the **version-independent remediation**
+   scan below — registry drift, adoption opportunities, the docs-repo product
+   move, and stranded client-materials are detected regardless of the marker, so
+   a hub already at the latest version can still need repair. This step MUTATES
+   NOTHING: it only reads and lists. Only when there are no pending migrations
+   AND nothing to remediate → report "hub conventions are current (vN)" and stop.
+2. **Present and resolve the plan** (one line per migration: name + summary;
+   one line per remediation item). Per migration, AskUserQuestion:
+   **apply / skip / abort**. **Abort** stops the entire verb now — before
+   pre-flight, mutation, or remediation. **Skip** records that migration as not
+   completed this run; do not run the migration OR any version-independent item
+   whose work that migration owns (for migration 1→2, all four items below).
+   The skipped work re-offers next run. For every migration or remediation item
+   that will proceed, resolve every choice that determines touched worktrees
+   while the plan is still read-only: legacy type/purpose classifications,
+   **repair / leave**, relocation **lift/move/create / leave**, destination, and
+   the per-file collision plan. Do not ask the same choice again during apply.
+3. **Unified pre-flight — before ANY mutation.** Run `git status --porcelain` in
+   the hub and in EVERY pre-existing worktree the resolved plan will touch:
+   the current or planned docs output (`purpose: docs`, or `role: docs` before
+   repair), every client-materials source, every current or planned working repo
+   selected for an adoption lift (`type: working`, untyped legacy entries, or a
+   legacy `role:` entry the read-only plan classified as working), and every
+   EXISTING client-materials destination — registered or not. A planned
+   `create <project>-client` is exempt ONLY after verifying that its path is
+   absent from disk. If that path already exists, it is an existing destination:
+   never scaffold over it; resolve whether to register/use it or choose another
+   name in step 2, and preflight it here. Report any dirty or non-git worktree
+   and AskUserQuestion before proceeding: recommend committing first; recommend
+   stashing ONLY pre-existing user WIP — NEVER stashing migration-authored edits
+   left from a prior partial run (they ARE this run: commit them, or let the run
+   continue over them). Because this precedes every mutation, anything dirty
+   here was there before the run. This also covers registry repair: editing
+   `project.yaml` is a mutation, so even at the latest marker with no pending
+   migrations the hub is preflighted here before that edit.
+4. **Apply pending migrations first**, in order, tracking whether EVERY step of
+   each completed. Every step is idempotent: a step that detects its desired
+   state already applied counts as COMPLETED (it is the resume path, not the
+   user's **skip** decision), so a re-run after abort resumes cleanly. A
+   **leave** on an OPTIONAL relocation (the product dev-docs move, the
+   client-materials move, an adoption lift) is also a COMPLETED decision: the
+   user decided the content stays where it is, so the marker MAY advance — and
+   the left-behind content REMAINS discoverable by the version-independent
+   remediation below at any marker. Only a migration the user **skipped**, an
+   unresolved collision, or a failure remains incomplete. (Abort already
+   stopped the verb in step 2; leaving an optional relocation in place is not
+   the same as skipping the migration.)
+5. **Apply residual remediation afterward** — only the version-independent
+   items the resolved plan did not suppress. They run at whatever version the
+   hub already is (no marker bump): registry-drift repair, adoption lifts, the
+   docs-repo product-docs move, and the stranded-client-materials move. Do NOT
+   run an item owned by a migration the user skipped this run (for migration
+   1→2, suppress all four), and do not re-offer a relocation left inside an
+   applied migration this run; those decisions govern this run and the work
+   re-offers next run. If an applied migration already fixed an item
+   unconditionally (for example, its field rename fixed registry drift), that
+   item scans clean.
+6. **Set the version marker only on full completion.** For each migration whose
+   every step completed (an already-applied step and an optional relocation
+   left in place both count as completed), set `project.conventions` to that
+   migration's target version: when the `conventions:` key is absent, **insert**
    `conventions: <N>` under `project:` (a v1 hub has no key — that absence is
    how v1 is inferred; there is nothing to `Edit`); when the key is present,
-   `Edit` it in place (preserve formatting). For any migration with a left or
-   skipped step, do NOT bump the marker — record that migration as
-   "partially applied".
-5. Final report: what changed per repo, what was skipped, any **partially
-   applied** migration ("partially migrated — re-run `/ws-hub update`"), and
-   suggested commits (the hub and each touched sub-repo commit separately — each
-   is its own git). Never commit on the user's behalf.
+   `Edit` it in place (preserve formatting). For a migration the USER skipped
+   — not a step detected as already applied — or one with an unresolved
+   collision or failure, do NOT bump the marker; record it as "partially
+   applied". Version-independent remediation never changes the marker.
+7. Final report: what changed per repo, what was left in place by an explicit
+   `leave`, any **partially applied** migration ("partially migrated — re-run
+   `/ws-hub update`"), and suggested commits (the hub and each touched sub-repo
+   commit separately — each is its own git). Never commit on the user's behalf.
+
+**Version-independent remediation** (runs at whatever version the hub is —
+including the latest — with no version bump; this is the repair path the
+`doctor` registry-integrity check and the `intake` conventions gate point at, so
+a latest-marker hub with a stray untyped entry or stranded content no longer
+loops). It is applied AFTER any pending migration (Flow step 5); each item is
+safe to re-run.
+
+1. **Registry drift** — every entry must carry a `type:`. Any entry missing
+   `type:` or still carrying a legacy `role:` field can be repaired by the
+   **Field rename** procedure below (the same logic migration 1→2 uses). During
+   the read-only plan (Flow step 2), AskUserQuestion **repair / leave** — this
+   edits `project.yaml`, so it is never applied unasked. **Leave** changes
+   nothing and re-offers next run. Suppress this item entirely when migration
+   1→2 was skipped this run. If that migration was applied, its field-rename
+   step already fixes drift and this item scans clean; if the marker is already
+   latest, this is the only repair path and there is no version to bump. The hub
+   and every repo whose planned classification enables a move were included in
+   the unified pre-flight before any edit.
+2. **Adoption lift** (makes init's `leave` promise truthful) — for every
+   registered `type: working` repo, entry with neither `type` nor `role`, or
+   legacy `role:` entry classified as working in Flow step 2, carrying adoptable
+   product-level `dev-docs/` (the scoping-INCLUSIVE signature:
+   `architecture.md`, `contracts.md`, `deployment.md`, `decisions/`, `runbooks/`,
+   `scoping/`), reuse the init verb's step-3b adoption contract. Flow step 2
+   already resolved **lift / leave**; on leave, the repo keeps its `dev-docs/`
+   and the offer recurs next run.
+   On **lift**, use the same collision-safe per-file **Product dev-docs move**
+   procedure below — its sources and the hub were verified by the unified
+   pre-flight (Flow step 3), so do not re-check here (earlier remediation items
+   and any applied migration may have legitimately dirtied the hub). Never
+   overwrite authored destinations, apply the replaceable-scaffold-stub rule,
+   and whole ADR renumbering.
+   `scoping/` is product knowledge root (ADR 0006) and lifts with the rest.
+3. **Docs-repo product dev-docs move** (makes migration 1→2 step 3's `leave`
+   recoverable at the latest marker) — if a current or planned
+   `purpose: docs` output (including `role: docs` before repair) still holds
+   product-level `dev-docs/` content (the v1 signature: `architecture.md`,
+   `contracts.md`, `deployment.md`, `decisions/`, `runbooks/` — NO `scoping/`;
+   v1 docs repos had none), reuse migration 1→2 step 3's collision-safe
+   per-file **Product dev-docs move** procedure, including its replaceable-stub
+   rule and whole ADR renumbering. Flow step 2 already resolved **move /
+   leave**. A leave completes this run's decision and recurs next run until
+   moved; a leave in this run's migration step 3 is not re-offered this run.
+4. **Stranded client-materials** (makes migration 1→2 step 4's `leave`
+   recoverable at the latest marker) — if `client-materials/` sits under the
+   hub's `dev-docs/` or a current/planned `purpose: docs` repo's `dev-docs/`,
+   reuse migration 1→2 step 4's per-file, plan-first move. During Flow step 2,
+   AskUserQuestion move into an EXISTING `type: input` repo / **create
+   `<project>-client`** only when that path is absent (scaffold, `git init`,
+   register it in `project.yaml` with `type: input`, add it to the `.gitignore`
+   managed block and AGENTS.md repo marker region, then move) / **leave**. A
+   path already on disk is an existing, possibly unregistered destination —
+   never scaffold over it; resolve and preflight it as such. A `leave` completes
+   this run's decision and re-offers next run. A `leave` in this run's migration
+   1→2 step 4 is not re-offered this run.
+
+All four items are safe to re-run: an already-repaired registry scans clean, an
+already-lifted/moved repo has no stranded content left, and a relocation left in
+this run's migration is suppressed this run and re-offered next run.
 
 **Migration 1→2 steps:**
 
-1. **Field rename** — for every repo entry: `role: docs` → `type: output` +
+1. **Pre-flight (unified).** The Flow-level plan (step 2) already resolved every
+   type, relocation, destination, and collision choice, and the unified
+   pre-flight (step 3) verified every PRE-EXISTING worktree it will touch — the
+   hub, current/planned docs output, client-materials sources, adoption-lift
+   sources, and existing destinations — before any mutation. This migration
+   adds no second pre-flight. A `create <project>-client` destination is exempt
+   only when the planned path was verified absent; if it appears before apply,
+   STOP and return to planning rather than `git init` or scaffold over it.
+   Anything dirty at the unified check therefore predated the run. This matches
+   doctor's hub/sub-repo posture and the `repos` verb.
+2. **Field rename** — for every repo entry: `role: docs` → `type: output` +
    `purpose: docs`; `role: explained` → `type: output` + `purpose: explained`;
-   entries with neither `type` nor `role` → `type: working`. Any OTHER legacy
-   `role:` value → AskUserQuestion for the type (`working` / `input` / `output`,
-   and the purpose when `output`), then DROP the `role:` field — a surviving
-   `role:` would leave the repo permanently non-working in the freshness
-   detectors. Via `Edit`, preserve comments/formatting. After the rename,
-   enforce the skill's known-purpose uniqueness rule (Output repos section): a
-   malformed legacy hub with two `role: docs` must not migrate into two
-   `purpose: docs` — ask the user which entry keeps it.
-2. **Pre-flight cleanliness check** — before any `mv`, run
-   `git status --porcelain` in the hub and in EVERY repo the move steps below
-   will touch (the `purpose: docs` repo, and any repo holding client
-   materials). Report any that are dirty or not a git repo and AskUserQuestion
-   before proceeding: recommend committing or stashing first (the migration
-   never commits, so a dirty worktree ends with the move's deletions
-   interleaved with the user's WIP). This matches the posture doctor's
-   hub-freshness and sub-repo checks and the `repos` verb.
-3. **Product dev-docs move** (collision-safe, per-file) — if the `purpose: docs`
-   repo's `dev-docs/` holds product-level content (signature of the v1 scaffold:
-   `architecture.md`, `contracts.md`, `deployment.md`, `decisions/`,
-   `runbooks/`), list what was found and AskUserQuestion: **move** to the hub's
-   `dev-docs/` / **leave** (report-only). Repo-level content about the docs repo
-   itself stays. When unsure whether a file is product- or repo-level — ask,
-   never guess. **On move, this step is safe by construction:**
+   entries with neither `type` nor `role` → `type: working`. For any OTHER
+   legacy `role:` value, use the type (`working` / `input` / `output`) and,
+   when output, purpose choice resolved in the read-only Flow step 2; then DROP
+   the `role:` field — a surviving `role:` would leave the repo permanently
+   non-working in the freshness detectors. Via `Edit`, preserve
+   comments/formatting. After the rename, enforce the skill's known-purpose
+   uniqueness rule (Output repos section): a malformed legacy hub with two
+   `role: docs` must not migrate into two `purpose: docs`; Flow step 2 resolves
+   which entry keeps it.
+3. **Product dev-docs move** (collision-safe, per-file) — if the now-resolved
+   `purpose: docs` repo's `dev-docs/` holds product-level content (signature of
+   the v1 scaffold: `architecture.md`, `contracts.md`, `deployment.md`,
+   `decisions/`, `runbooks/` — no `scoping/`; v1 docs repos had none), use the
+   **move / leave** choice resolved in Flow step 2. A leave is completed for
+   this run and remains recoverable: the version-independent docs-repo move
+   re-offers it at any later marker. Repo-level content about the docs repo
+   itself stays. When unsure whether a file is product- or repo-level, ask
+   during planning, never guess. **On move, this step is safe by construction:**
    - Move PER-FILE, never per-tree. `mv <docs>/dev-docs/decisions <hub>/dev-docs/`
      would silently nest as `decisions/decisions/`; `mv …/decisions/* …/decisions/`
      would overwrite same-named files — both are forbidden here.
    - For each source entry, compute its destination under the hub's `dev-docs/`
      (same relative path); create the destination parent dir (`mkdir -p`) first.
-   - If the destination does NOT exist → move it. If it DOES exist → do NOT
-     overwrite; add it to a collision list.
+   - For an ADR (`decisions/NNNN-*.md`), compare its NUMBER with every
+     `NNNN-*.md` already in the destination `decisions/`: the same number is a
+     collision even when the slug and therefore the exact path differ. Add it
+     to the collision list for whole-ADR renumbering below.
+   - For any file with no ADR-number collision: if the exact destination does
+     NOT exist → move it. If it DOES exist → do NOT overwrite; classify the
+     collision (next bullet) and add it to the list.
+   - **Collision resolution** — not every existing destination is equal. A
+     destination that is a known, byte-identical GENERATED scaffold stub (the
+     `index.md` or `architecture.md` placeholder this migration or `init`
+     scaffolded, untouched since) is REPLACEABLE: present it, confirm, then
+     overwrite the stub — it is not authored content.
+   - A canonical collection index (`decisions/index.md`, `runbooks/index.md`,
+     `scoping/index.md`) is a MERGE target, never a disambiguated side file:
+     preserve the destination's authored prose, fold in every source-only entry
+     under its resolved path/ADR number, de-duplicate exact entries, and show
+     the merged diff for confirmation. If the structures cannot be merged
+     unambiguously, stop on a hard collision and ask for the resolved canonical
+     content before moving anything.
+   - Any other AUTHORED destination (real product content written by a person
+     or hub-architect) is a hard collision — never overwrite. On a re-run lift
+     this preserves canonical paths: authored truth stays; only untouched
+     generated stubs may be replaced.
    - If the collision list is non-empty, present EVERY collision to the user
-     BEFORE moving anything and resolve each: renumber ADRs
-     (`decisions/NNNN-*.md`, which all start at `0001`) to the next free
-     number; land other files under a disambiguated name
+     BEFORE moving anything and resolve each: renumber colliding ADRs (see
+     "ADR renumbering" below); merge canonical collection indexes as above;
+     land other files under a disambiguated name
      (`<name>-from-docs-repo.md`). Confirm the full resolved plan, THEN execute.
-     Refuse to overwrite any existing destination under all circumstances.
    - This step runs BEFORE the scaffold (step 5), so it never moves onto a path
-     the scaffold pre-created.
-4. **Client materials → input repo** — if `client-materials/` exists under the
-   docs repo's `dev-docs/` (or the hub's): AskUserQuestion — move into an
-   existing `type: input` repo (pick one) / **create `<project>-client`**
-   (scaffold per the skill's "Input repos" section, then move) / leave. Moving
-   preserves dated folders and `history.md` as-is. (Subject to the pre-flight
-   check in step 2.)
+     the scaffold pre-created — except the replaceable-stub case above.
+   - **ADR renumbering** — a colliding ADR (`decisions/NNNN-*.md`, all starting
+     at `0001`) is renumbered to the next free number, and the renumber is whole:
+     1. Change the FILENAME (`NNNN-<slug>.md` → the new `MMMM-<slug>.md` — same
+        slug, new number).
+     2. Change the `# NNNN — …` HEADING inside it to match (`# MMMM — …`).
+     3. Merge/refresh the decisions index (`dev-docs/decisions/index.md`) so the
+        MOVED ADR appears under its NEW number and title. The destination's own
+        pre-existing entry under the OLD number STAYS (its own ADR — same number,
+        different ADR; renumbering only fires because the destination already
+        holds that number); only the moved ADR's old-number listing is removed.
+     4. Scan BOTH the source product docs and the destination's existing product
+        docs for inbound references — `ADR NNNN` and the old filename — and
+        present each hit. Apply ONLY user-confirmed rewrites. Do NOT rewrite a
+        reference that still identifies the DESTINATION's own pre-existing ADR
+        (same number, different ADR) — that one belongs to the destination and
+        stays.
+     5. Report the old→new map at the end (e.g. `ADR 0001 (from docs repo) → ADR
+        0007`).
+4. **Client materials → input repo** (per-file, plan-first) — if
+   `client-materials/` exists under the docs repo's `dev-docs/` (or the hub's),
+   resolve the choice during Flow step 2: move into an EXISTING `type: input`
+   repo (pick one) / **create `<project>-client`** only when that path is absent
+   (scaffold per the skill's "Input repos" section, `git init`, register it in
+   `project.yaml` with `path: ./<project>-client` and `type: input`, add it to
+   the `.gitignore` managed block and AGENTS.md repo marker region, then move) /
+   **leave** (a completed decision for this run; the version-independent item
+   re-offers it later). If `<project>-client` already exists on disk but is
+   unregistered, do NOT `git init` it or scaffold over it: present it as an
+   existing destination and ask whether to register/mark it `type: input`,
+   choose another name, or leave. Flow step 3 preflights every existing chosen
+   destination; a new path is exempt only because it was verified absent.
+   If that path appears before apply, stop and re-plan. Moving is PER-FILE and
+   plan-first, never a blind tree copy:
+   - Enumerate every source entry (dated folders `YYYY-MM-DD/`, loose files) and
+     its destination path; build and confirm the full plan before executing.
+   - When creating `<project>-client` and the source supplies a real
+     `history.md`, OMIT the empty `history.md` stub from the scaffold (the real
+     source history is canonical). Otherwise scaffold the stub as usual; a
+     byte-identical empty generated `history.md` stub is REPLACEABLE only after
+     explicit confirmation.
+   - NEVER overwrite an AUTHORED destination. Present every existing
+     `history.md`, dated folder, or loose file as a collision before moving.
+   - A colliding dated delivery MUST remain processable by intake: NEVER create
+     a `YYYY-MM-DD-from-<source>/` sibling (intake rejects it as unrecognized).
+     If the source has a different truthful delivery date, the user may choose
+     that free `YYYY-MM-DD/`; otherwise, after explicit confirmation, merge
+     PER-FILE into the existing same-date folder and disambiguate only colliding
+     files as `<stem>-from-<source><ext>`. Record the provenance in `history.md`
+     as a `pending` entry: that date may already appear in a scoping document,
+     and `pending` is what makes intake re-list the merged delivery.
+   - A colliding loose file may use `<stem>-from-<source><ext>`. A real
+     `history.md` is the exception: merge it line by line only with explicit
+     confirmation; never move pending history to a side file. `history.md` is
+     intake's canonical pending-history file, so no delivery entry may be
+     dropped or stranded. Never auto-merge anything.
 5. **Hub dev-docs scaffold** — create the hub's `dev-docs/` skeleton for any
    path the move (step 3) did NOT already populate: `scoping/` (+ `index.md`
    stub); and only if still absent, `decisions/` + `runbooks/` (`index.md`
@@ -366,30 +591,46 @@ Latest conventions version: **2**.
    carry the `type`/`purpose` line).
 
 **update safety rules** — never overwrite user-authored content without an
-explicit confirm; confirm every `mv` before executing; nothing is committed
-or pushed; on abort, report exactly which steps applied so the user can
-re-run safely. The move steps additionally require clean worktrees and a
-per-file collision check (see their own rules) — the blanket rules above are
-not the only protection.
+explicit confirm; the only replaceable destinations are known, untouched
+generated scaffold stubs (the `index.md`/`architecture.md` placeholders, or a
+byte-identical empty `history.md` stub — see the Product dev-docs move and the
+client-materials move), and only after an explicit confirm. Confirm every `mv`
+before executing; nothing is committed or pushed; on abort, report exactly which
+steps applied so the user can re-run safely. Never recommend stashing
+migration-authored edits left from a prior partial run (see the unified
+pre-flight). The unified pre-flight verifies worktrees once, before mutation. A
+destination the run creates is exempt ONLY when its path was verified absent;
+if it exists or appears before apply, treat it as existing and stop/re-plan
+rather than scaffolding over it. Move steps do not re-check clean worktrees
+after mutations legitimately dirty the hub, but they still enforce their own
+per-file collision plans.
 
 ### verb = intake
 
 Process external deliveries (`type: input` repos) into product knowledge.
-Requires `./project.yaml` (missing → abort, hint `/ws-hub init`).
+Requires a hub root (`./project.yaml`). From a hub sub-repo, name the ancestor
+hub path and ask the user to rerun `/ws-hub intake` there; then stop. Only a
+standalone repo gets the `/ws-hub init` hint.
 
-**Conventions gate.** Intake keys off `type: input`, so it requires a migrated
-hub. If `project.conventions` is below the latest (see the `update` verb's
-migration table) OR any entry lacks a `type:` (a legacy `role:` field still
-present), STOP and point at `/ws-hub update` — the same posture doctor's
-registry-integrity check takes. Do not propose creating input repos against an
-unmigrated registry (you would scaffold a duplicate beside an already-registered
-client repo).
+**Conventions gate.** Intake keys off `type: input`, so it requires a registry
+where every entry is typed. If `project.conventions` is below the latest (see
+the `update` verb's migration table) OR any entry lacks a `type:` (a legacy
+`role:` field still present), STOP and point at `/ws-hub update` — its
+version-independent remediation repairs registry drift (missing `type:` / legacy
+`role:`) even when the marker is already latest, so a latest-marker hub with a
+stray untyped entry has a real repair path instead of a loop. Do not propose
+creating input repos against an untyped registry (you would scaffold a
+duplicate beside an already-registered client repo).
 
-1. **Resolve input repos** — entries with `type: input`. None → offer to
-   create `<project>-client` (scaffold per the skill's "Input repos"
-   section: README, AGENTS.md with the dated-folder note, `history.md` stub;
-   register `type: input`, `.gitignore` block, AGENTS.md marker region) or
-   stop.
+1. **Resolve input repos** — entries with `type: input`. None → inspect
+   `<project>-client` before offering creation. If the path is absent, offer to
+   create it: `git init`, then scaffold per the skill's "Input repos" section
+   (README, AGENTS.md with the dated-folder note, `history.md` stub), register
+   `type: input`, update the `.gitignore` block and AGENTS.md marker region. If
+   the path already exists, it is an existing destination — NEVER `git init` or
+   scaffold over it (its `history.md` is canonical). Offer to register it when
+   it is an unregistered git repo, mark its existing registry entry
+   `type: input`, choose another name, or stop.
 2. **Find unprocessed deliveries** — in each input repo, list root directories.
    Name-matching ones sort into `YYYY-MM-DD/` order; ALSO list any root
    directory that is NOT a `YYYY-MM-DD/` date folder as
@@ -410,19 +651,27 @@ client repo).
       removed files); when this is the first delivery in the repo, note
       "initial delivery" and skip the diff. Read the delivery (sample large/
       binary files — note their presence rather than reading them).
-   2. **Draft the scoping doc** from the template below (`<slug>` = kebab-case
-      summary of the delivery's subject, e.g. `2026-01-15-brand-refresh`); show
-      it and confirm before writing to the hub's
-      `dev-docs/scoping/YYYY-MM-DD-<slug>.md`.
+   2. **Resolve the scoping doc.** On a first pass, draft from the template
+      below (`<slug>` = kebab-case summary of the delivery's subject, e.g.
+      `2026-01-15-brand-refresh`); show it and confirm before writing
+      `dev-docs/scoping/YYYY-MM-DD-<slug>.md`. When an existing scoping doc
+      already carries this delivery's structured `Delivery:` line (the
+      `pending` re-pass), reuse that doc — NEVER draft a second one or overwrite
+      its summary/scope. After sub-steps 3.3–3.4, show and confirm a diff limited
+      to its `Decisions raised` and `Tickets raised` sections.
    3. **Offer decisions** — for each decision that crystallized, offer
       `/ws-docs adr` at product scope (hub `dev-docs/decisions/`).
    4. **Offer spec + tickets** — offer `ws-to-spec` / `ws-to-tickets` aimed
       at the WORKING repo where the change lands (its own tracker: local
       `dev-docs/tickets/` or Jira); record keys in the scoping doc.
-   5. **Append `history.md`** in the input repo: date → what changed → which
-      ADRs/specs/tickets it triggered — fill from sub-steps 3.3–3.4 (now that
-      the data exists); write "pending" only if the user defers them, and step
-      2 will re-list a `pending` delivery as unprocessed next run.
+   5. **Update or append `history.md`** in the input repo: when this delivery
+      already has an entry (especially one marked `pending`), update THAT entry
+      in place, preserve its provenance, and replace `pending` with the resolved
+      ADRs/specs/tickets from sub-steps 3.3–3.4. Otherwise append date → what
+      changed → which ADRs/specs/tickets it triggered. Write or retain `pending`
+      only when the user defers those follow-ups; step 2 then re-lists it next
+      run, and a later successful pass clears it rather than appending a second
+      entry.
 4. Report: processed deliveries, scoping docs written, ADRs/tickets raised, the
    suggested next step (`/ws-matt` flow in the target repo), and suggested
    commits (hub and input repo — each its own git).
@@ -456,15 +705,19 @@ client repo).
 ```
 
 **intake safety rules** — input repos are immutable raw: write only
-`history.md` there, never inside a dated folder; scoping docs are dated and
-never edited retroactively (a new delivery → a new scoping doc); never
-commit on the user's behalf.
+`history.md` there, never inside a dated folder. Scoping docs are dated and
+never edited retroactively for a new delivery; the sole exception is a
+`pending` re-pass of the SAME structured delivery, which may update only its
+`Decisions raised` / `Tickets raised` sections after diff + confirmation.
+Never commit on the user's behalf.
 
 ### verb = status
 
 Read-only status sweep across all sub-repos registered in the current hub.
 
-1. Read `./project.yaml` with the Read tool. If it's missing, abort with a hint to run `/ws-hub init` first.
+1. The project-shape dispatch above has already handled sub-repo and standalone
+   invocations. Continue only at a hub root: read `./project.yaml`; if it
+   disappeared after dispatch, abort without suggesting another hub.
 
 2. Parse the list of repos.
 
@@ -510,7 +763,9 @@ operation. `$2` must be `pull` or `clone`:
 
 Anything else (or no argument): abort and print usage: `/ws-hub repos <pull|clone>`.
 
-1. Verify the hub: `project.yaml` must exist in the current directory. If not, abort and tell the user this verb must be run from a hub repo (hint: `/ws-hub init`).
+1. The project-shape dispatch above has already handled sub-repo and standalone
+   invocations. Continue only at a hub root; if `./project.yaml` disappeared
+   after dispatch, abort without suggesting another hub.
 
 2. Traverse. Parse the list of repos from `project.yaml` (read the file directly). For each repo, resolve its absolute path relative to the hub, then apply the operation:
 
@@ -560,11 +815,16 @@ for d in ../*/; do [ -d "$d/.git" ] && echo "../$d"; done  # siblings
 every newly registered sub-repo's `AGENTS.md` gets the "Hub knowledge wiki"
 pointer section (same text the init verb's step 5a writes — pointing at
 `../openwiki/quickstart.md`, path adjusted for sibling repos; create AGENTS.md
-+ a thin CLAUDE.md if the repo has neither), AND the repo is added to the
-coverage-scope list in `openwiki/INSTRUCTIONS.md`. Apply this in the
-registration flow below after the repo lands in `project.yaml`.
++ a thin CLAUDE.md if the repo has neither). Update the coverage-scope list in
+`openwiki/INSTRUCTIONS.md` by type: add `type: working` repos; never add
+`type: input` or `type: output` repos, and remove one if mark-as-output changes
+it from working. Apply this after a new repo lands in `project.yaml`; for
+mark-as-output, apply the removal in that mode's step 3 because it skips the
+registration flow.
 
-1. Verify we're in a hub (`project.yaml` exists). If not, abort with hint to run `/ws-hub init`.
+1. The project-shape dispatch above has already handled sub-repo and standalone
+   invocations. Continue only at a hub root; if `./project.yaml` disappeared
+   after dispatch, abort without suggesting another hub.
 
 #### Without `--scan`: pick one repo
 
@@ -581,7 +841,12 @@ registration flow below after the repo lands in `project.yaml`.
 
 1. List the repos already registered in `project.yaml` and let the user pick one.
 2. Ask the purpose: **docs** (product user-docs repo) or **explained** (generated visual explainer). For known purposes, enforce the skill's known-purpose uniqueness rule (Output repos section) — refuse with a message naming the existing entry if taken.
-3. Set `type: output` + `purpose: <chosen>` on the chosen entry via `Edit` (preserve formatting), then regenerate the `AGENTS.md` marker region as in registration step 4.
+3. Set `type: output` + `purpose: <chosen>` on the chosen entry via `Edit`
+   (preserve formatting). If `<hub>/openwiki/` exists and the repo counted as
+   working (`type: working`, or a legacy entry with neither `type` nor `role`),
+   remove it from the coverage list in
+   `openwiki/INSTRUCTIONS.md`. Then regenerate the `AGENTS.md` marker region as
+   in registration step 4.
 4. No clone, move, or `.gitignore` change — the repo is already registered. Then run "Finish" below.
 
 #### With `--scan`: discover, then register
@@ -626,13 +891,19 @@ For each repo to register:
 
 #### add safety rules
 
-- Do not modify sub-repo contents; only `mv` a repo's containing folder when the user chose "move", confirmed first.
-- Only `project.yaml`, `AGENTS.md`, and `.gitignore` in the hub may be modified (the thin `CLAUDE.md` import is created by the init verb and never touched here).
+- Do not modify sub-repo contents except to write the "Hub knowledge wiki"
+  pointer section in a newly registered repo's `AGENTS.md` and, only when that
+  repo has neither context file, create its thin `CLAUDE.md`; only `mv` a repo's
+  containing folder when the user chose "move", confirmed first.
+- Hub writes are limited to `project.yaml`, `AGENTS.md`, `.gitignore`, and —
+  when OpenWiki exists — its `openwiki/INSTRUCTIONS.md` coverage list.
 - Do not commit hub changes — let the user review and commit themselves.
 
 ### verb = describe
 
-1. Verify `project.yaml` exists.
+1. The project-shape dispatch above has already handled sub-repo and standalone
+   invocations. Continue only at a hub root; if `./project.yaml` disappeared
+   after dispatch, abort without suggesting another hub.
 
 2. For each registered repo with an accessible local path:
    - Read its `README.md` (or `README` / first `.md` file at root)
@@ -653,7 +924,9 @@ Be conservative — only overwrite a `description` if the new one is clearly bet
 
 Produce or refresh the hub's cross-repo documentation by dispatching the `hub-architect` agent.
 
-1. Read `./project.yaml` with the Read tool. If it's missing, abort with a hint to run `/ws-hub init` first.
+1. The project-shape dispatch above has already handled sub-repo and standalone
+   invocations. Continue only at a hub root: read `./project.yaml`; if it
+   disappeared after dispatch, abort without suggesting another hub.
 
 2. Spawn the `hub-architect` agent via the Task tool (omp: its task agent), running from the hub directory. Its job is defined in its own prompt: analyze every accessible **`type: working`** sub-repo registered in `project.yaml` (legacy hubs: entries with neither `type` nor `role` — `type: input` and `type: output` repos are excluded, per ADR 0006) and produce/refresh the cross-repo docs — `architecture.md`, plus `contracts.md` (only if shared contracts exist) and `deployment.md` (only if deployment files are found). Pass along any focus the user asked for (e.g. "just refresh deployment").
 
@@ -681,21 +954,34 @@ Scope note: this verb owns the cross-repo SYNTHESIS layer in the hub's `dev-docs
 
 Not to be confused with `/ws-docs explain` (the `docs/explained.md` onboarding page).
 
-Generate or refresh the product-explained artefacts in this hub's
-`type: output, purpose: explained` repo — human-facing visual documentation
-of the whole
-product for the product owner and dev team, consumed by the ws-artefacts
-platform (artefacts.wsagency.io). Run from a hub. `$2` = optional topic.
+Generate or refresh the product-explained artefact — a self-contained HTML
+page (ws-artefacts contract: all inline, WS chrome palette, inline-SVG
+diagrams) plus a tokenless `meta.json`, consumed by the ws-artefacts platform
+(artefacts.wsagency.io). Audience: product owner + dev team. `$2` = optional
+topic. Routes by project shape (step 0) — it runs at a hub root AND standalone.
+
+#### 0. Route by project shape
+
+Detect the shape (per the top-level guidance; the walk-up rules live in the
+**project-hub-conventions** skill's "Project shape detection"):
+
+- **Hub root** (`./project.yaml` present) → continue at step 1 (the registered
+  `purpose: explained` output-repo flow).
+- **Hub sub-repo** (`project.yaml` found in an ancestor) → this is product-wide
+  explained generation, which belongs at the hub. Name the ancestor hub path in
+  one line and ask the user to rerun `/ws-hub explained` there; then stop. Never
+  suggest scaffolding a second hub from a sub-repo.
+- **Standalone repo** (no `project.yaml` anywhere up the tree) → explained does
+  NOT require a hub — skip to step 1S (standalone path).
 
 #### 1. Resolve the explained repo
 
-Read `./project.yaml` with the Read tool. If it's missing, abort with a hint
-to run `/ws-hub init` first. Locate the entry carrying `type: output,
-purpose: explained` (max ONE per hub — see the `ws-artefacts-explained`
-skill; legacy hubs spell it `role: explained`).
+Hub root only. Read `./project.yaml` with the Read tool and locate the entry
+carrying `type: output, purpose: explained` (max ONE per hub — see the
+`ws-artefacts-explained` skill; legacy hubs spell it `role: explained`).
 
-If no entry qualifies, ask the user via AskUserQuestion (or a
-plain chat question when that tool is unavailable) how to proceed:
+If no entry qualifies, ask the user via AskUserQuestion (or a plain chat
+question when that tool is unavailable) how to proceed:
 
 - **Register an existing repo** — run the `add` verb's mark-as-output flow
   with purpose `explained` (enforce max one), then continue below.
@@ -707,6 +993,45 @@ plain chat question when that tool is unavailable) how to proceed:
   to create one on git.wsagency.io.
 - **Cancel** — stop.
 
+#### 1S. Standalone explained generation
+
+Reached only from the standalone shape — no hub exists, so `/ws-hub init` is
+NOT required. The current repository is both the source context and the output
+repository; do NOT create or register a hub repo, and write no `project.yaml`.
+
+Output location defaults to the current repo root. Default artefact file is
+`<repo-name>-explained.html`, where `<repo-name>` is the current directory's
+basename; when `$2` is a topic, use a kebab-case `<topic>.html`. `meta.json`
+lives beside the artefact (same shape as hub root).
+
+Before writing, choose and classify a candidate output location, initially the
+current repo root. Inspect BOTH candidate target files:
+
+- A valid ws-artefacts `meta.json` is a generated, MERGEABLE manifest: preserve
+  every unrelated `artefacts` entry. If its array names the exact target HTML,
+  that HTML is known generated output and may be regenerated (or restored when
+  absent). If the target HTML is absent and not yet named, it is a safe new
+  artefact whose entry may be added.
+- An HTML target that exists but is not named by a valid manifest is
+  authored/unknown. An existing `meta.json` that is not a valid ws-artefacts
+  manifest is authored/unknown too. These are named hard collisions — never
+  overwrite them silently.
+
+If collisions exist, AskUserQuestion: choose a dedicated relative subdirectory
+inside this repo (recommend `ws-artefacts/`) / explicitly replace ONLY the named
+collisions / cancel. After selecting a subdirectory, repeat this exact
+classification against its `meta.json` and target HTML; if it also collides,
+offer another subdirectory / explicit replacement / cancel again. Do not write
+until the selected output location is safe or every replacement was explicit.
+The validated selection becomes the standalone output location for all
+remaining steps.
+
+There is no `project.yaml`, no cross-repo map, and no sub-repo fan-out. Gather
+sources from the current repo only (see step 2's standalone branch), then run
+step 2 (generate), step 3 (verify), and step 4 (report) as for a hub root —
+except step 4's registration `repo` is the current repo's own remote, and no
+ws-artefacts-explained repo or `project.yaml` registration happens.
+
 #### 2. Generate the artefact(s)
 
 Load the `ws-artefacts-explained` skill first — it defines the artefact HTML
@@ -714,31 +1039,41 @@ contract (self-contained, inline-SVG diagrams, WS chrome palette, minimal
 head), the `meta.json` shape, and the registration YAML. Everything written
 below must satisfy it.
 
-Gather sources:
+Gather sources, by shape:
 
-- If `<hub>/openwiki/` exists and looks stale (`openwiki/.last-update.json`
-  vs recent sub-repo commits), offer to refresh it first — refresh MUST use
-  an explicit prompt, per the hub convention:
+- **Hub root** — if `<hub>/openwiki/` exists and looks stale
+  (`openwiki/.last-update.json` vs recent sub-repo commits), offer to refresh
+  it first — refresh MUST use an explicit prompt, per the hub convention:
   `openwiki --update "Refresh the wiki; re-scan these sub-repos for changes: <name>, <name>, ..."`.
-- Synthesize from: `project.yaml`, `openwiki/` (primary derived map), the
+  Synthesize from: `project.yaml`, `openwiki/` (primary derived map), the
   hub's own `dev-docs/` (architecture, product ADRs), per-`type: working` repo
   (legacy hubs: entries with neither `type` nor `role`) `dev-docs/` and READMEs,
-  and `CONTEXT.md` for the glossary.
-- If the product is large (many sub-repos), fan out per-repo content
-  gathering via the Task tool (omp: its task agent) — one gatherer per
-  sub-repo returning purpose, tech, key flows, and notable decisions.
+  and `CONTEXT.md` for the glossary. When the product is large (many sub-repos),
+  fan out per-repo content gathering via the Task tool (omp: its task agent) —
+  one gatherer per sub-repo returning purpose, tech, key flows, and notable
+  decisions.
+- **Standalone** — if `./openwiki/` exists and looks stale, offer the same
+  prompted refresh. Synthesize from the current repo only: its README, `docs/`,
+  `dev-docs/` (architecture, decisions), `CONTEXT.md`, and any other
+  glossary/context files. No sub-repo fan-out (single repo).
 
-Write into the explained repo:
+Write into the output location:
 
-- The artefact HTML — default file `<project>-explained.html` covering the
-  whole product; when the user asked for a specific topic (`$2`), write a
-  kebab-case `<topic>.html` instead. Regenerate existing files in full rather
-  than patching them — explained output is never hand-edited.
+- The artefact HTML — hub root writes into the explained repo; standalone
+  writes into the output location resolved and validated in step 1S (the repo
+  root or the selected dedicated subdirectory). Default file
+  `<project>-explained.html` (hub root) or `<repo-name>-explained.html`
+  (standalone) covering the whole product; when the user asked for a specific
+  topic (`$2`), write a kebab-case `<topic>.html` instead. Regenerate known
+  generated files in full rather than patching them — explained output is never
+  hand-edited. In standalone mode, first complete step 1S's manifest/HTML
+  classification; a file is never treated as generated merely because its name
+  matches.
 - `meta.json` — create or update the entry for each file written
   (`file`, `title`, `date`, `description`). Never write `token` fields;
   tokens are minted on the ws-artefacts side.
 
-#### 3. Verify standalone
+#### 3. Verify the artefact(s)
 
 Grep each generated HTML file for external references: any `src=` or
 `href=` pointing at `http(s)` other than plain outbound `<a href>` links is
@@ -749,9 +1084,14 @@ re-check until clean, then report what was verified.
 #### 4. Report and print the registration next step
 
 Report the files written, then print the exact ws-artefacts registration
-block for this repo, filling `repo` from the explained repo's remote
-(`git -C <explained-path> config --get remote.origin.url`, or a
-`<ssh-url-once-remote-exists>` placeholder when there is none):
+block. Fill `name` from the hub project (`<project>`, hub root) or the
+current repo's basename (`<repo-name>`, standalone). Fill `repo` from the
+remote that holds the artefact — the explained repo's remote on a hub root
+(`git -C <explained-path> config --get remote.origin.url`), or the current
+repo's own remote in standalone (`git config --get remote.origin.url`). Use a
+`<ssh-url-once-remote-exists>` placeholder when there is none. When standalone
+collision handling selected a dedicated subdirectory, include its repo-relative
+path (for example `path: ws-artefacts`); omit `path` for repo-root output:
 
 ```yaml
 # ws-artefacts repo → projects/<project>/git-source.yml
@@ -769,11 +1109,19 @@ before it can pull the explained repo.
 
 #### explained safety rules
 
-- Write only inside the explained repo, except when registering a new repo
-  in step 1 (which touches `project.yaml`, `.gitignore`, and `AGENTS.md` via
-  the `add` verb's flow).
-- Do not commit — leave the generated changes in the explained repo for the
-  user to review and push (its own git; the hub ignores it).
+- Write only inside the output location — the explained repo (hub root) or the
+  standalone output location resolved and validated in step 1S — except when
+  registering a new repo in step 1 (hub root only, which touches
+  `project.yaml`, `.gitignore`, and `AGENTS.md` via the `add` verb's flow).
+  Standalone never touches a `project.yaml`.
+- In standalone mode, classify the selected location's `meta.json` and target
+  HTML before writing. A valid ws-artefacts manifest is mergeable (preserve
+  unrelated entries); only HTML it names is known generated output. For every
+  authored/unknown collision, use step 1S's explicit subdirectory / replace /
+  cancel loop; never silently overwrite a file in any output location.
+- Do not commit — leave the generated changes for the user to review and push
+  (the explained repo's own git on a hub root, ignored by the hub; or the
+  current repo's git in standalone).
 
 ## Doctor mode (existing hub)
 
@@ -785,7 +1133,7 @@ Run the checks in order:
 
 1. **Hub repo freshness** — `git fetch` in the hub (skip gracefully when there is no remote). Clean and behind upstream → `git pull --ff-only`. Dirty, diverged, or on a non-default branch → report; touch nothing.
 2. **Sub-repos on disk** — for every repo in `project.yaml`: folder missing but `url` present → offer to clone (same behavior as the `repos clone` verb); present → fetch, and when clean and behind, `git pull --ff-only`. Dirty, diverged, or detached → report with branch names; touch nothing.
-3. **Registry integrity** — `project.yaml` parses; every entry carries a `type` (entries without one, or with a legacy `role:` field, are pre-v2 — report and point at `/ws-hub update`); enforce the skill's known-purpose uniqueness rule (Output repos section); every nested (`./`) repo appears in the `.gitignore` managed block; the `ws-hub:repos` marker region in `AGENTS.md` matches `project.yaml` (drifted → regenerate the region, it is machine-managed); `CLAUDE.md` is the thin `@AGENTS.md` import (tool-managed marker blocks are the only permitted extras) — if fattened, move the content to `AGENTS.md`.
+3. **Registry integrity** — `project.yaml` parses; every entry carries a `type` (entries without one, or with a legacy `role:` field, are registry drift — report and point at `/ws-hub update`, whose version-independent remediation repairs missing `type:` / legacy `role:` even when the marker is already latest, so this never loops); enforce the skill's known-purpose uniqueness rule (Output repos section); every nested (`./`) repo appears in the `.gitignore` managed block; the `ws-hub:repos` marker region in `AGENTS.md` matches `project.yaml` (drifted → regenerate the region, it is machine-managed); `CLAUDE.md` is the thin `@AGENTS.md` import (tool-managed marker blocks are the only permitted extras) — if fattened, move the content to `AGENTS.md`.
 4. **Conventions version** — compare `project.conventions` in `project.yaml` against the latest conventions version in the `update` verb's migration table. Behind (or missing) → report: "hub conventions are vN, latest is vM — run `/ws-hub update`". Never apply migrations from doctor.
 5. **Generated files up to date** — compare the hub's `invoke-ai.sh` against `${CLAUDE_PLUGIN_ROOT}/templates/invoke-ai.sh.tmpl` and the vendored `.claude/skills/project-hub-conventions/SKILL.md` against the plugin's copy (plugin-root fallback rule as in Context). Differences → summarize the diff and offer a refresh, warning explicitly that both files are generated and hand edits will be lost.
 6. **Harness assets** — one bullet per harness; extend this list when a new harness joins:
@@ -809,10 +1157,14 @@ just run (ADR 0008):
   Next, only if `Not ready`: re-run `/ws-hub doctor` in fix posture after
   addressing the blocking items; alternative `/ws-hub update` when the
   conventions-version check was the blocker.
-- **`update`** → migrated to vN with per-repo changes listed (or "partially
-  migrated" naming the unfinished steps). Next: `/ws-hub doctor` to confirm the
-  hub is consistent post-migration; alternative `/ws-docs init` if the move
-  brought fresh product dev-docs to document.
+- **`update`** → migrated to vN with per-repo changes listed (a `leave` on an
+  optional relocation still completes the migration, and the left-behind content
+  re-offers next run); or "partially migrated" naming the unfinished step (skip /
+  unresolved collision / failure); or "already current — only version-independent
+  remediation applied (registry drift / adoption / docs-repo / client-materials)".
+  Next: `/ws-hub doctor` to confirm the hub is consistent post-migration;
+  alternative `/ws-docs init` if the move brought fresh product dev-docs to
+  document.
 - **`intake`** → processed M deliveries into `dev-docs/scoping/` and raised K
   ADRs/tickets. Next: `/ws-docs adr` (product scope) for decisions that still
   need a record; alternative `ws-to-spec` for the change in the target working

@@ -96,6 +96,6 @@ Reporting them separately stops one axis from masking the other.
 - **Edges:**
   - fan-out: for each axis spawn a reviewer agent in parallel — one Standards, one Spec (schema: findings per file/hunk, under 400 words, hard violations distinguished from judgement calls)
   - when no spec can be found → skip the Spec agent and say so in the report
-  - then → findings return to the caller (ws-implement fixes before committing)
+  - then → findings return to the caller as state delta (never route back into a live ws-implement)
 - **Handoff protocol:** pin the fixed point first; pass each reviewer the diff command, commit list, and source paths — commands and paths, not pasted artifacts (DONE|two axis reports).
-- **Exit report:** findings returned → `/ws-implement` to fix before committing; both axes clean → `/ws-commit`. (Format: `ws-graph-engineering`.)
+- **Exit report:** nested, return the two axis reports as state delta (DONE|two axis reports) and emit no route — never route back into a live ws-implement; invoked directly, report both axes (clean, or the findings) and stop. (Format: `ws-graph-engineering`.)

@@ -64,8 +64,6 @@ graph TD
   IMPL -->|"at agreed seams"| TDD
   IMPL -->|"before commit"| CR
   IMPL -. "decision the spec didn't cover" .-> DM
-  TDD -->|"refactor stage"| CR
-  TDD -. "vocabulary" .-> CBD
 
   TRIAGE -->|"grill raw requests"| DM
   TRIAGE -. "ready-for-agent issues" .-> IMPL

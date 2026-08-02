@@ -57,7 +57,7 @@ Not feature work — upkeep.
 Two model-invoked references that run *beneath* the other skills — each the single source of truth for its vocabulary. Reach for them directly when the **words**, not the process, are the problem; or let the skills above pull them in.
 
 - **`/ws-domain-modeling`** — sharpen the project's *domain* language: challenge a fuzzy term, resolve an overloaded word ("account" doing three jobs), record a hard-to-reverse decision as an ADR. It's the active discipline `/ws-grill-with-docs` drives to keep `CONTEXT.md` a clean glossary.
-- **`/ws-codebase-design`** — the deep-module vocabulary (module, interface, depth, seam, adapter, leverage, locality) for designing a module's *shape*: a lot of behaviour behind a small interface at a clean seam. `/ws-tdd` and `/ws-improve-codebase-architecture` both speak it.
+- **`/ws-codebase-design`** — the deep-module vocabulary (module, interface, depth, seam, adapter, leverage, locality) for designing a module's *shape*: a lot of behaviour behind a small interface at a clean seam. `/ws-improve-codebase-architecture` speaks it.
 
 ## Crossing sessions
 
@@ -95,4 +95,4 @@ Off the main flow entirely.
   - when the need is a single discipline → route straight to the matching worker node: ws-diagnosing-bugs (something's broken), ws-prototype (a runnable answer), ws-research (delegated reading), ws-tdd (build test-first), ws-code-review (review a diff), ws-resolving-merge-conflicts (a stuck merge), ws-domain-modeling (the words are the problem), ws-codebase-design (the module shape is the problem)
 - **Edge rule:** entry → worker only, never entry → entry — every edge above to another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** the routing decision is small and stays in conversation; anything produced downstream follows the target node's own handoff protocol.
-- **Exit report:** the routing decision names the entry that fits and the user invokes it next (idea + codebase → `/ws-grill-with-docs`; build ready to split or build → `/ws-to-spec`, `/ws-to-tickets`, or `/ws-implement`; raw issues or a broken app → `/ws-triage` or `/ws-diagnosing-bugs`); if the fit shifted, re-invoke `/ws-ask-matt`. (Format: `ws-graph-engineering`.)
+- **Exit report:** name the single entry node the routing selected for this situation and the one reason it fits — the user invokes it next; at most one declared alternative if a second edge fit nearly as well. Never re-list the routing table; if the fit shifted mid-conversation, re-invoke ws-ask-matt. (Format: `ws-graph-engineering`.)

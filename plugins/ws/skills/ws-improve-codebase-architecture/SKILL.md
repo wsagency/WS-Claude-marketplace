@@ -84,4 +84,4 @@ Side effects happen inline as decisions crystallize — run the `/ws-domain-mode
   - when the user picks a candidate → the pick generates an idea; hand off to ws-grill-with-docs on the main flow (user-mediated)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** the report is written to the OS temp dir and referenced by absolute path — never pasted into conversation (DONE|{report path}).
-- **Exit report:** report presented and you want the candidates ticketed → `/ws-to-tickets`; a candidate is picked and ready to build → `/ws-implement`; the design is still open → `/ws-codebase-design`. (Format: `ws-graph-engineering`.)
+- **Exit report:** report presented and a candidate is picked → ws-grill-with-docs on the main flow (user-mediated); the design is still open → ws-codebase-design. (Format: `ws-graph-engineering`.)
