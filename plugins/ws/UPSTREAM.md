@@ -119,15 +119,15 @@ and all `/grilling` references are rewritten to `/ws-grilling`.
   `agents/tdd-runner.md` runs red-green only (no in-cycle refactor, no
   `refactored` output field — cleanup belongs to the caller's review stage
   (`ws-code-review`) per ws-tdd's rule); `ws-graph-engineering` describes the
-  optional `ws-implement` fan-out as repeatable waves of independent,
+  default `ws-implement` fan-out as repeatable waves of independent,
   disjoint-file red-green cycles; both `ws-research` and `ws-wayfinder` name
   `researcher` as the Claude Code research vehicle.
-- **omp post-publish orchestration in ws-to-tickets** — keep the
-  `## After the tickets land (omp)` section in `ws-to-tickets/SKILL.md` (the
-  orchestrate *offer* once tickets publish, dependency-frontier ordering of open
-  tickets, the `workflowz` note for similar batches, and the Claude Code
-  sequential `/ws-matt implement` / worker fan-out path). Not upstream; re-apply
-  on sync.
+- **Post-publish scheduling in ws-to-tickets** — keep the
+  `## After the tickets land` section in `ws-to-tickets/SKILL.md`: English
+  artifact language, explicit blocked edges, ready-wave fan-out, one scheduling
+  owner per work unit, and the `ws-graph-engineering` backend decision. Do not
+  restore the retired `orchestrate` offer, `workflowz` batch note, or separate
+  Claude Code sequential path. Not upstream; re-apply on sync.
 - **Research-notes default path in ws-research** — `ws-research` defaults unsited
   findings to `dev-docs/research/` (the internal authored-docs track) when the
   repo has no existing research-notes convention. Upstream says only "put it
@@ -246,8 +246,8 @@ byte — no porting until they agree:
   upstream-change, an expected WS adaptation, or unexpected drift.
 - **WS adaptations** — does the change hit a preserve-list item (the
   "WS-local additions" block above)? Flag every re-apply obligation, including
-  the three additions (ws-to-tickets omp orchestration, ws-research default
-  path, local-ticket `share:` line).
+  the three additions (ws-to-tickets post-publish scheduling, ws-research
+  default path, local-ticket `share:` line).
 - **Graph routing** — do nodes, tiers, or edges move? Must `docs/graph.md` or
   any `## Graph node` section change?
 - **omp distribution** — will the regenerated `plugins/ws/` surface change, or
@@ -294,7 +294,7 @@ If the inventory or any edge/behaviour changed:
 - worker tier plus `ws-graph-engineering` match the subgraphs in `docs/graph.md`;
 - each Graph node's edges agree with the skill body's handoffs (no stale edges,
   no missing ones);
-- the agent legend names `reviewer`, `researcher`, and the optional
+- the agent legend names `reviewer`, `researcher`, and the default repeatable
   `ws-implement` → `tdd-runner` fan-out.
 
 ### omp rebuild

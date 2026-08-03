@@ -1,7 +1,7 @@
 /**
  * Plugin-settings reader for @wsagency/omp-ws.
  *
- * omp 17.1.5 exposes NO settings accessor on ExtensionAPI — plugin settings
+ * omp 17.2.4 exposes NO settings accessor on ExtensionAPI — plugin settings
  * are only read host-side (manager.getPluginSettings / loader.getPluginSettings,
  * both file-backed). So this module reads the exact same stores those
  * functions read (verified against src/extensibility/plugins/loader.ts:527-535

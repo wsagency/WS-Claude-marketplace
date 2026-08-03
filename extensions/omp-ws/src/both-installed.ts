@@ -4,7 +4,7 @@
  * package. Since 0.2.0 this package carries the FULL suite natively
  * (ADR 0004), so both together register every command/skill/agent twice.
  *
- * Registry semantics (verified against omp 17.1.5
+ * Registry semantics (verified against omp 17.2.4
  * src/discovery/helpers.ts listClaudePluginRoots):
  *   - omp reads BOTH ~/.claude/plugins/installed_plugins.json (Claude Code's
  *     registry, priority-70 claude-plugins provider) and

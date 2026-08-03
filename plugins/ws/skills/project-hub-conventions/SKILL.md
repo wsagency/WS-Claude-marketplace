@@ -322,9 +322,15 @@ Hubs used with omp carry a project `.omp/` preset written by `/ws-hub init`:
   ws-matt's `omp-edge-discipline`. These turn WS conventions from prose into
   enforcement in the model's output stream.
 
+## Artifact language
+
+Every artifact a hub generates — scoping docs, hub `dev-docs/` pages, generated `AGENTS.md` regions, `project.yaml` descriptions, ADRs and the explained artefact — is written in English regardless of the conversation language. Translations are derived copies, never the original.
+
 ## Herdr — agent fleets
 
 Hubs pair well with [herdr](https://herdr.dev) (terminal agent multiplexer; supports claude and omp agent kinds). The ws plugin ships the vendored `herdr` skill (`plugins/ws/skills/herdr`, self-guarded by `HERDR_ENV=1`), so no per-repo or global skill install is needed where the plugin is installed. On machines WITHOUT the ws plugin, one **global** skill install per machine — `npx skills add ogulcancelik/herdr --skill herdr -g` — covers every repo and agent reading `~/.claude/skills/`; nothing is written per sub-repo. Hub pattern: one herdr workspace per sub-repo (`herdr workspace create --cwd <hub>/<repo> --label <repo>`); `HERDR_ENV=1` marks a herdr-managed pane. The hub AGENTS.md keeps a short Herdr section when in use.
+
+**Layer ownership.** A hub's working sub-repos are the natural outer lanes: with `HERDR_ENV=1` and two or more of them genuinely in play, Herdr panes are the outer backend and the user need not name Herdr again. Parallel edits need `herdr worktree` — shared-cwd panes are coordination-only. A lane's own agent may still fan out inner `task` workers over that repo's disjoint slices, but a sub-repo is never scheduled at both layers. The full precedence table lives in `ws-graph-engineering`; the binding form is the `omp-edge-discipline` rule.
 
 The cascade:
 

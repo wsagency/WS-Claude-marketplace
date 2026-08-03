@@ -6,9 +6,11 @@ install, zero marketplace coupling:
 
 - **Generated at build time** from `plugins/ws/` in the ws-claude-marketplace
   repo (single source of truth): `commands/` (7), `skills/` (30), `agents/`
-  (14, with omp `@role` model aliases), `rules/` (4 TTSR/always-apply rules).
-  These directories are build artifacts — gitignored, wiped and rewritten by
-  `scripts/generate.ts` on every build, never hand-edited.
+  (14, with omp `@role` model aliases), `rules/` (4 TTSR/always-apply rules),
+  `templates/`, and three command/skill runtime helpers under `scripts/`.
+  Generated directories are gitignored, wiped and rewritten by
+  `scripts/generate.ts`; helper copies sharing that directory are overwritten.
+  Never hand-edit generated assets.
 - **Hand-written TS** (`src/` → `dist/index.js`): the behaviors markdown
   cannot express — blocking hooks, UI widgets, compaction preservation, and
   registered tools.
@@ -26,7 +28,7 @@ Development flow (from a checkout of the marketplace repo):
 ```bash
 cd extensions/omp-ws
 bun install
-bun run build          # generate (commands/skills/agents/rules) + bundle dist/
+bun run build          # generate the complete markdown/runtime surface + bundle dist/
 omp plugin link "$(pwd)"
 ```
 
@@ -36,8 +38,9 @@ Restart omp. Once published to npm:
 omp plugin install @wsagency/omp-ws
 ```
 
-**Rebuild after plugin changes:** any change to `plugins/ws/` (commands,
-skills, agents, rules) requires `bun run build` (or `bun run generate`) here
+**Rebuild after plugin changes:** any change to `plugins/ws/` that the generator
+consumes (commands, skills, agents, rules, templates, or runtime scripts)
+requires `bun run build` (or `bun run generate`) here
 — the linked package serves whatever was last generated. The release
 checklist in `dev-docs/development.md` carries a "rebuild the native omp
 package" step.
@@ -47,7 +50,7 @@ package" step.
 Running BOTH `ws@ws-marketplace` (Claude-format marketplace plugin) and this
 package in omp registers every command/skill/agent **twice**. The extension
 warns at session start when it detects this. Remedies (verified against the
-omp 17.1.5 source):
+omp 17.2.4 source):
 
 - **On omp**, if you installed the marketplace plugin through omp: run
   `omp plugin disable ws@ws-marketplace` (or uninstall it).
@@ -67,6 +70,21 @@ omp 17.1.5 source):
 - Note: `.omp/plugin-overrides.json` `disabled: []` does **not** work here —
   it only applies to npm/link plugins, never to marketplace plugins.
 
+## Orchestration and artifact policy
+
+The packaged `omp-edge-discipline` rule applies the WS session contract to
+every WS command, skill, agent, and tool:
+
+- Every written artifact is English; translated user-facing copies never
+  replace the English original.
+- Herdr owns only 2+ substantial, independent, long-lived repo/subsystem lanes
+  when `HERDR_ENV=1`; smaller fan-out uses one batched `task` call. A Herdr lane
+  may batch disjoint inner task slices, but no unit is submitted at both layers.
+- Generated agents ship on purpose-specific fixed roles (`@slow`, `@plan`,
+  `@task`, `@smol`, `@tiny`). The generated hub preset enables
+  `task.enableEffort` (omp 17.1.6+) so callers can choose `hi`, `med`, or `lo`
+  per task item.
+
 ## Settings
 
 Declared in `package.json` under `omp.settings`; set globally via
@@ -84,7 +102,7 @@ Declared in `package.json` under `omp.settings`; set globally via
 | `guard` | boolean | `true` | fail-safe dangerous-git/rm guard |
 | `dashboard` | boolean | `true` | Jira workload widget on session start |
 
-omp 17.1.5 offers no ExtensionAPI settings accessor, so the extension reads
+omp 17.2.4 offers no ExtensionAPI settings accessor, so the extension reads
 the same two stores omp's own `getPluginSettings` reads (project overrides
 global, env fallback and defaults applied per the schema). Legacy
 off-switches keep working: `.omp/ws-guard.off` file or `OMP_WS_GUARD=off`
@@ -182,7 +200,7 @@ skills remain authoritative, and free-form file edits stay equally valid.
 
 ```bash
 bun install        # dev deps (typescript + @oh-my-pi/pi-coding-agent for types)
-bun run generate   # regenerate commands/skills/agents/rules from plugins/ws/
+bun run generate   # regenerate the complete native surface from plugins/ws/
 bun run typecheck  # tsc --noEmit against the real omp 17.x types
 bun run build      # generate + bundle src/index.ts -> dist/index.js
 bun test           # unit + integration tests (incl. the generator transforms)
@@ -192,8 +210,8 @@ Smoke test against the installed omp (headless, throwaway directory):
 
 ```bash
 mkdir -p /tmp/omp-ws-smoke && cd /tmp/omp-ws-smoke && git init -q .
-omp -e /path/to/extensions/omp-ws/dist/index.js --no-session \
-  --auto-approve -p "Run exactly this bash command: git push --force"
+omp --no-extensions -e /path/to/extensions/omp-ws/dist/index.js \
+  --no-session --auto-approve -p "Run exactly this bash command: git push --force"
 ```
 
 Expected: the command is blocked and the model reports the ws-guard reason
@@ -202,9 +220,8 @@ the newest `~/.omp/logs/omp.*.log`. With the package linked, a plain
 `omp --no-session -p "/ws-help"` from any repo resolves the generated
 `/ws-help` command natively.
 
-Note: do NOT combine the smoke test with `--no-extensions` — as of omp
-17.1.5 that flag also drops explicit `-e` paths (despite its help text), so
-the extension silently never loads.
+On omp 17.2.4+, `--no-extensions` disables discovery but preserves explicit
+`-e` paths, so the smoke test isolates this extension from installed plugins.
 
 ## Versioning
 

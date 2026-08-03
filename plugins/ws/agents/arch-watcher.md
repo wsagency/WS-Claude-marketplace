@@ -10,6 +10,8 @@ tools:
 
 # Arch Watcher Agent
 
+**Artifact language:** Write every file, summary, finding, and proposed text in English, regardless of the conversation language.
+
 Detect architectural decisions hiding in commit history that should have ADRs and return them as candidates for `/ws-docs adr`.
 
 ## Process

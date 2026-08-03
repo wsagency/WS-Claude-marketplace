@@ -7,3 +7,7 @@ dist/
 /skills/
 /agents/
 /rules/
+/templates/
+/scripts/outline-sync.py
+/scripts/parse-git-log.sh
+/scripts/validate-changelog.sh

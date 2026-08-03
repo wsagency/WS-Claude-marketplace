@@ -2,6 +2,8 @@
 
 All available commands in the WS Claude Marketplace. Everything ships in the single **ws** plugin; all operations route through seven commands: `/ws-help`, `/ws-matt`, `/ws-docs`, `/ws-hub`, `/ws-commit`, `/ws-status`, `/ws-init`.
 
+Every artifact these commands generate — specs, tickets, ADRs, changelog entries, commit and PR bodies, review findings, research notes, generated docs and HTML — is written in English regardless of the conversation language. Translations are derived copies, never the original.
+
 ## /ws-help
 
 One-screen orientation guide to the WS system (start here: /ws-matt grill). Adapts to the project — hub, OpenWiki, omp keywords sections appear only when applicable. Display-only.
@@ -341,7 +343,9 @@ Verify jira-cli setup and configure the marketplace for this user. If run inside
 
 ## Agents
 
-These agents are spawned via the Task tool, typically by commands. All ship in the ws plugin — canonical reference is `ws:<agent>`.
+These agents are spawned by commands and skills: Claude Code uses the Task
+tool and addresses plugin agents as `ws:<agent>`; native omp uses one batched
+`task` call and the unprefixed agent stem. All ship in the ws plugin.
 
 | Agent | Description |
 |-------|-------------|
@@ -362,13 +366,41 @@ These agents are spawned via the Task tool, typically by commands. All ship in t
 
 ### Usage
 
-Agents are invoked through the Task tool:
+How an agent is invoked depends on the harness:
+
+**Claude Code** — the Task tool, one call per worker:
 
 ```
 Task tool with:
   subagent_type: "ws:diataxis-writer"
   prompt: "Write a tutorial on setting up the development environment"
 ```
+
+**omp** — one batched `task` call: shared background in `context`, then one
+item per worker with its own unprefixed `agent`, `task`, and optional `effort`.
+On omp 17.1.6+, set `task.enableEffort: true` to expose `effort`; otherwise
+omit it. A single call fans out the whole wave:
+
+```
+task tool with:
+  context: "Repo uses Bun + TypeScript. Docs follow Diátaxis; user track lives in docs/."
+  tasks:
+    - agent: "diataxis-writer"
+      task: "Write a tutorial on setting up the development environment"
+      effort: med
+    - agent: "public-api-watcher"
+      task: "List public API changes since v4.3.0"
+      effort: lo
+```
+
+Prefer the specialized agent type over a general worker. Its **role** ships as
+a package default — `reviewer` on `@slow`, `hub-architect` and
+`architecture-documenter` on `@plan`, writing and research on `@task`,
+mechanical scans on `@smol`, pure classification on `@tiny` — overridable per
+project with `task.agentModelOverrides`. **Effort** is chosen per item when
+enabled: `hi` for review and architecture synthesis, `med` for implementation
+and research, `lo` for mechanical checks. The full table lives in the
+`ws-graph-engineering` skill.
 
 ---
 
@@ -407,7 +439,7 @@ Skills provide knowledge and templates, loaded on demand. All ship in the ws plu
 |-------|-------------|
 | `project-hub-conventions` | project hub, multi-repo, `<name>-main` |
 | `ws-artefacts-explained` | explained artefact contract (ws-artefacts format, palette, meta.json, git-source.yml) |
-| `herdr` | herdr fleet management (vendored upstream skill, self-guarded — active only when `HERDR_ENV` is set) |
+| `herdr` | herdr fleet management — the OUTER multi-session layer (one agent session per repo/subsystem lane), distinct from the inner `task` fan-out the agents use; vendored upstream skill, self-guarded — active only when `HERDR_ENV` is set |
 
 ### Maintenance Skills
 

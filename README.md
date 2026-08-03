@@ -12,6 +12,7 @@ One plugin ([ws](./plugins/ws)), one workflow:
 - **Every branch closes through the git flows** (`/ws-commit`) — Conventional Commits with the Jira key, worklog, CHANGELOG at PR time (`/ws-commit pr`).
 - **Knowledge maintains itself in three layers**: authored truth in `dev-docs/` (ADRs, runbooks, scoping docs distilled from client deliveries — written as decisions happen), a derived **OpenWiki** at the hub level (the map agents read *before* exploring code, refreshed by agents — no CI), and generated outputs for humans (user docs → Outline via `/ws-docs publish`; product explainer via `/ws-hub explained`).
 - **Multi-repo products live in a hub** (`/ws-hub`) — one meta-repo registering all sub-repos, with an agent-picker launcher and, on omp, a config preset + stream-interrupting convention rules.
+- **Artifacts are English.** Every artifact the suite generates — specs, tickets, ADRs, changelog entries, commit and PR bodies, review findings, research notes, generated docs and HTML — is written in English regardless of the conversation language. Translations are derived copies, never the original.
 
 **Start here after installing: run `/ws-help`** — a one-screen guide that adapts to your project. First skill to learn: `/ws-matt grill`.
 
@@ -173,11 +174,11 @@ Jira-aware git workflow commands, powered by [jira-cli](https://github.com/ankit
 
 [Matt Pocock's engineering skills](https://github.com/mattpocock/skills) (MIT © Matt Pocock, vendored with attribution) restructured as a **graph-engineered skill set**: 19 interlinked `ws-*` skills where each SKILL.md is a graph node with a declared contract (state it reads, state delta it emits, edges to other nodes). Two tiers per Matt's own design: user-invoked entry nodes (`ws-ask-matt` router, `ws-implement`, `ws-to-spec`, `ws-to-tickets`, `ws-triage`, `ws-grill-with-docs`, `ws-improve-codebase-architecture`, `ws-wayfinder`, `ws-setup-matt-pocock-skills`) and model-invoked worker nodes (`ws-tdd`, `ws-code-review`, `ws-research`, `ws-prototype`, `ws-diagnosing-bugs`, `ws-domain-modeling`, `ws-codebase-design`, `ws-resolving-merge-conflicts`, `ws-grilling`) — entry nodes never chain into other entry nodes. A new `ws-graph-engineering` skill carries the methodology (node/edge/state contract, fan-out/synthesize, `DONE|{path}` file handoff).
 
-Tickets default to the **local tracker** (`dev-docs/tickets/open|done/` — fastest for agents; optional Jira mirror via jira-cli, chosen in `/ws-matt setup`). On omp, `ws-to-tickets` offers to **orchestrate** the created tickets (ordering follows the `Blocked by:` dependency frontier), and the skills suggest the `workflowz`/`orchestrate` keywords where they fit.
+Tickets default to the **local tracker** (`dev-docs/tickets/open|done/` — fastest for agents; optional Jira mirror via jira-cli, chosen in `/ws-matt setup`). Ready tickets run in `Blocked by:` dependency-frontier waves under one scheduling owner; `ws-graph-engineering` chooses Herdr outer lanes, batched task workers, or sequential execution without duplicate submission.
 
 **Commands:** `/ws-matt` — graph status; `/ws-matt <entry>` routes to an entry node; `/ws-matt setup` bootstraps a project (and installs the omp edge-discipline rule).
 
-**Agents:** `reviewer` (fan-out code review), `researcher`, `tdd-runner` (canonical `ws:<agent>`) — with structured-output schemas for omp's task system.
+**Agents:** `reviewer` (fan-out code review), `researcher`, `tdd-runner` — addressed as `ws:<agent>` in Claude Code and by the unprefixed stem in omp — with structured-output schemas for omp's task system.
 
 **Graph map:** [plugins/ws/docs/graph.md](./plugins/ws/docs/graph.md) (mermaid). Upstream sync: [plugins/ws/UPSTREAM.md](./plugins/ws/UPSTREAM.md).
 
@@ -208,6 +209,8 @@ Because a standalone repo's `dev-docs/` already uses the hub layout, adopting a 
 - `/ws-hub explained` — Generate the product explainer artefact (ws-artefacts format): at a hub root into the `type: output, purpose: explained` repo; standalone (no hub) into a validated output location in the current repo, merging a valid manifest and requiring an explicit dedicated subdirectory / replace / cancel choice for authored collisions — audience: product owner + dev team
 
 One sub-repo per hub can be marked `type: output, purpose: docs` — the product docs repo (`<project>-docs`), source of truth for the USER track only (synced to Outline via `/ws-docs publish`); cross-repo internal docs live in the hub's own `dev-docs/`. `/ws-hub init` offers to scaffold it — plus optional hub-level [OpenWiki](https://github.com/langchain-ai/openwiki) (one knowledge wiki for all sub-repos, referenced from every sub-repo's AGENTS.md, refreshed via `/ws-hub docs`) and [herdr](https://herdr.dev) fleet setup (the ws plugin ships the vendored `herdr` skill; works with Claude Code and omp).
+
+Herdr is the **outer** orchestration layer — one agent session per repo or subsystem lane, and the backend of choice once `HERDR_ENV=1` and two or more such lanes are genuinely in play (parallel edits there need `herdr worktree`). The plugin's agents fan out **inner** workers inside a single session (omp's batched `task`; the Task tool on Claude Code). The same unit of work is never scheduled at both layers.
 
 On omp, `/ws-hub init` also writes a project preset: `.omp/config.yml` (yolo approval by default — init asks; per-project model roles), the **WS TTSR rules pack** (stream-interrupting rules for dangerous git ops, commit format, and hand-edits of generated files) and a native TypeScript hook that shows a banner when dev-docs changed since the last OpenWiki refresh.
 

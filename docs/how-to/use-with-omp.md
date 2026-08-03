@@ -75,12 +75,34 @@ the ws plugin to the current repo version.
 
 ## ws-matt in omp
 
-The skill graph runs well in omp: plugin skills load through omp's Claude-compatible
-providers, the worker agents (`reviewer`, `researcher`,
-`tdd-runner` — canonical `ws:<agent>`) carry `output` JSON schemas and `autoloadSkills` for omp's task
-system, and `/ws-matt setup` installs the edge-discipline rule (`alwaysApply`) into
-`.omp/rules/` so the two-tier topology (entry nodes never chain into entry nodes) and
-the `DONE|{path}` file-handoff protocol are enforced session-wide.
+The skill graph runs well in omp: plugin skills load through omp's
+Claude-compatible providers, and worker agents (`reviewer`, `researcher`,
+`tdd-runner` — native omp names are the unprefixed stems) carry `output` JSON
+schemas and `autoloadSkills` for omp's task system. `/ws-matt setup` installs
+the WS **session policy** rule (`omp-edge-discipline.md`, `alwaysApply`) into
+`.omp/rules/`, enforcing the two-tier topology (entry nodes never chain into
+entry nodes) and the `DONE|{path}` file-handoff protocol session-wide.
+
+Choosing a backend: each work unit has one scheduling owner. With
+`HERDR_ENV=1` and 2+ substantial lanes — independent, long-lived, own repo or
+subsystem, not sharing a working tree — Herdr partitions the outer lanes
+(parallel edits there need `herdr worktree`). A stamped lane may batch `task`
+workers over disjoint slices it alone owns; no layer resubmits the same unit.
+
+Picking a worker: prefer the specialized agent type. Its **role** ships as a
+package default (`reviewer` on `@slow`, `hub-architect` and
+`architecture-documenter` on `@plan`, writing and research on `@task`,
+mechanical scans on `@smol`, pure classification on `@tiny`) and is
+overridable with `task.agentModelOverrides`. **Effort** (`lo|med|hi`) is a
+per-item field on omp 17.1.6+ when `task.enableEffort: true`; otherwise omit it.
+The full precedence and role/effort tables live in the
+`ws-graph-engineering` skill.
+
+## Artifact language
+
+Every artifact the suite generates — specs, tickets, ADRs, changelog entries, commit
+and PR bodies, review findings, research notes, generated docs and HTML — is written
+in English regardless of the conversation language.
 
 ## Known gaps (compat install)
 

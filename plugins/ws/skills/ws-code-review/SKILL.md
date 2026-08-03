@@ -8,7 +8,13 @@ Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 - **Standards** — does the code conform to this repo's documented coding standards?
 - **Spec** — does the code faithfully implement the originating issue / PRD / spec?
 
-Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
+The applicable axes run as **parallel sub-agents** so they do not pollute each
+other's context, then this skill aggregates their findings. Standards always
+runs; Spec runs when a spec exists. At two axes, fan-out is the default.
+
+> Autoloaded by the `reviewer` leaf agent? Skip the fan-out in step 4 — you
+> are one reviewer. Perform only the Standards or Spec axis named in your prompt
+> and return its findings to the caller.
 
 The issue tracker should have been provided to you — run `/ws-setup-matt-pocock-skills` if `dev-docs/agents/issue-tracker.md` is missing.
 
@@ -55,9 +61,19 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 - **Middle Man** — a class or function that mostly just delegates onward. → cut it, call the real target direct.
 - **Refused Bequest** — a subclass or implementer that ignores or overrides most of what it inherits. → drop the inheritance, use composition.
 
-### 4. Spawn both sub-agents in parallel
+### 4. Spawn the applicable reviewers in parallel
 
-Send a single message with two `Agent` tool calls. Use the `reviewer` agent for both — one review assignment each (the Standards axis over the whole diff, and the Spec axis over the whole diff).
+The two-axis fan-out is the **default** — one `reviewer` per applicable axis,
+both at once. If no spec was found, run Standards alone and skip Spec (see
+below). The assignments are disjoint (one axis each), so findings merge by
+appending per axis and are never reranked across axes.
+
+omp: one batched `task` call — `{ context, tasks: [...] }`, shared context in
+`context`, one item per axis carrying `agent: reviewer` and, when the active
+schema exposes it, `effort: hi` (review is the deepest-judgement work;
+`reviewer` ships on the `@slow` role). Claude Code: two Task calls in a single
+message. The role/effort table and backend precedence live in
+`ws-graph-engineering`.
 
 **Standards sub-agent prompt** — include:
 
@@ -72,6 +88,8 @@ Send a single message with two `Agent` tool calls. Use the `reviewer` agent for 
 - The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
 
 If the spec is missing, skip the Spec sub-agent and note this in the final report.
+
+**Artifact language.** Everything this node writes — the two axis reports and any review write-up a `reviewer` files in the scratch directory — is English, whatever language the conversation is in. A translation is a derived copy; the original stays English.
 
 ### 5. Aggregate
 
@@ -94,7 +112,7 @@ Reporting them separately stops one axis from masking the other.
 - **Reads:** the diff `git diff <fixed-point>...HEAD` and its commit list; the spec source (issue / PRD / spec file); the repo's standards sources plus the built-in Fowler smell baseline
 - **Emits:** two side-by-side reports — `## Standards` and `## Spec` — plus a one-line per-axis summary; findings are never merged or reranked across axes
 - **Edges:**
-  - fan-out: for each axis spawn a reviewer agent in parallel — one Standards, one Spec (schema: findings per file/hunk, under 400 words, hard violations distinguished from judgement calls)
+  - fan-out (default): one `reviewer` per axis, in parallel — one Standards, one Spec (schema: findings per file/hunk, under 400 words, hard violations distinguished from judgement calls)
   - when no spec can be found → skip the Spec agent and say so in the report
   - then → findings return to the caller as state delta (never route back into a live ws-implement)
 - **Handoff protocol:** pin the fixed point first; pass each reviewer the diff command, commit list, and source paths — commands and paths, not pasted artifacts (DONE|two axis reports).

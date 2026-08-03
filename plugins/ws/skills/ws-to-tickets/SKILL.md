@@ -105,17 +105,18 @@ The end-to-end behaviour this ticket makes work, from the user's perspective —
 
 In either form, avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
 
-## After the tickets land (omp)
+**Artifact language.** Everything this node writes — every ticket title, body, acceptance criterion and blocking note — is English, whatever language the conversation is in.
 
-On omp, once the tickets are written, OFFER orchestration (ask — don't start
-alone): "N tickets created — orchestrate them now?" On yes, put the standalone
-word `orchestrate` in the next turn and drive the run. Ordering is not
-guesswork: execute the **dependency frontier** — open tickets whose `Blocked
-by:` lists have no open entries run in parallel; a ticket becomes eligible when
-its blockers move to `done/`. Batch-of-similar work (same change over N places)
-is `workflowz` instead. On Claude Code, execute tickets sequentially via
-`/ws-matt implement` or fan out worker agents per the ws-graph-engineering
-skill.
+## After the tickets land
+
+Building a ticket is **entry-tier** work. Recommend `/ws-matt implement` on a ready frontier ticket — never auto-invoke it, and never hand a whole ticket to a worker agent. A ticket is **ready** when it is open and its `Blocked by:` list has no open entries; it becomes eligible when its blockers reach `done/`. Clear context between tickets.
+
+Two or more ready tickets are outer lanes only when they are independent,
+substantial, and isolated in separate sessions/worktrees. Starting that batch
+remains user-mediated; otherwise recommend one ready ticket at a time. Inner
+`task` fan-out belongs inside a single `/ws-matt implement` run (its
+`tdd-runner` cycles), never across whole tickets, and no ticket is scheduled at
+both layers. The precedence table lives in `ws-graph-engineering`.
 
 ## Graph node
 

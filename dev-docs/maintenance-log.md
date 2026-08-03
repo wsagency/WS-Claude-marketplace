@@ -1,5 +1,32 @@
 # Maintenance Log
 
+## 2026-08-01 — Herdr and omp orchestration architecture audit
+
+### Scope
+
+| Area | Result |
+|---|---|
+| Herdr vendored skill | Current — pinned `a979916` matches upstream `master` |
+| omp runtime and task schema | Audited on omp 17.2.4 |
+| WS commands, skills, and agents | Scheduler ownership, fan-out, roles, effort, and artifact language aligned |
+| omp generated distribution | Rebuilt and packaged as `@wsagency/omp-ws` 0.5.0 |
+
+### Outcome
+
+- ADR 0009 defines one scheduling owner per work unit: Herdr owns only 2+ substantial, independent, long-lived repo/subsystem lanes; a stamped pane may fan out its own disjoint inner slices through one batched `task` call; shorter review, research, TDD, docs, design, ticket, and maintenance waves use Task/task directly.
+- Every WS worker agent remains a leaf. omp role aliases are purpose-specific (`@slow`, `@plan`, `@task`, `@smol`, `@tiny`), while `task.enableEffort` exposes per-item `hi|med|lo` without multiplying model definitions.
+- The English-artifact contract now reaches every harness: Claude SessionStart context, omp's always-apply rule, all 14 agent prompts, public guidance, and generated hub `AGENTS.md`.
+- The native generator now ships the templates and runtime scripts referenced by generated commands; package publication no longer omits those runtime dependencies.
+
+### Evidence
+
+- Herdr's vendored `SKILL.md` is content-identical to pinned upstream `a979916` (the local file adds only the conventional terminal newline); proactive WS scheduling lives only in the rule, graph-engineering skill, SessionStart hook, and hub templates.
+- `bun run build`: 7 commands, 30 skills, 14 agents, 4 rules, templates, and 3 runtime scripts.
+- `bun test`: 186 passed, 0 failed, 352 assertions; `bun run typecheck`: passed.
+- The native SDK/typecheck pin now matches installed omp 17.2.4; the audit confirmed `task.enableEffort` (introduced in 17.1.6), fixed role aliases, and isolated explicit `-e` loading under `--no-extensions`.
+- `npm pack --dry-run`: 123 entries and all required templates, runtime helpers, policy rules, and agents present.
+- Graph lint, changelog validation/mirror, and `git diff --check` passed; the changelog validator reports only the repository's existing historical empty-section and missing-comparison-link warnings.
+
 ## 2026-08-01 — Matt skills refresh audit and orchestration hardening
 
 ### Scope

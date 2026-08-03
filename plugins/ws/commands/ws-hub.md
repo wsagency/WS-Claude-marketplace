@@ -38,6 +38,8 @@ with one bullet per harness — support a new harness by adding a bullet there
 (and an `agent_cmd_<name>()` entry in `invoke-ai.sh`), never by forking the
 flow.
 
+**Artifact language.** Everything this command writes — scoping docs, hub `dev-docs/` pages, generated `AGENTS.md` regions, `project.yaml` descriptions, and the explained artefact — is English, whatever language the conversation is in.
+
 ## Context
 
 - Hub directory: !`pwd`
@@ -239,8 +241,8 @@ on first run.
 
 **5c — herdr (agent fleet multiplexer).** Ask: "Set up herdr for this hub?"
 
-- **Yes** → the ws plugin SHIPS the vendored `herdr` skill (`plugins/ws/skills/herdr`, self-guarded by `HERDR_ENV=1`), so no per-repo or global skill install is needed where the plugin is installed. Verify `command -v herdr`; if the binary is missing print the install options (`curl -fsSL https://herdr.dev/install.sh | sh`, or `brew install herdr`). On machines WITHOUT the ws plugin, install the skill globally instead: `npx skills add ogulcancelik/herdr --skill herdr -g` (covers every repo and every agent that reads `~/.claude/skills/` — Claude Code and omp). Keep the template's "Herdr" section in the hub AGENTS.md (workspace-per-sub-repo pattern).
-- **No** → prune the template's "Herdr" section from the hub AGENTS.md.
+- **Yes** → the ws plugin SHIPS the vendored `herdr` skill (`plugins/ws/skills/herdr`, self-guarded by `HERDR_ENV=1`), so no per-repo or global skill install is needed where the plugin is installed. Verify `command -v herdr`; if the binary is missing print the install options (`curl -fsSL https://herdr.dev/install.sh | sh`, or `brew install herdr`). On machines WITHOUT the ws plugin, install the skill globally instead: `npx skills add ogulcancelik/herdr --skill herdr -g` (covers every repo and every agent that reads `~/.claude/skills/` — Claude Code and omp). Keep the template's "Herdr" section in the hub AGENTS.md (workspace-per-sub-repo pattern). Tell the user the resulting layer split: once `HERDR_ENV=1` and two or more working sub-repos are genuinely in play, Herdr panes are the outer backend without them naming Herdr again; parallel edits need `herdr worktree` (shared-cwd panes are coordination-only); a per-repo agent may still fan out inner `task` workers over its own repo's disjoint slices, and no sub-repo is scheduled at both layers.
+- **No** → prune the template's "Herdr" section from the hub AGENTS.md. Without herdr, multi-repo work stays inner: one batched same-session `task` call.
 
 #### 6. Initialize hub git
 
@@ -905,10 +907,15 @@ For each repo to register:
    invocations. Continue only at a hub root; if `./project.yaml` disappeared
    after dispatch, abort without suggesting another hub.
 
-2. For each registered repo with an accessible local path:
-   - Read its `README.md` (or `README` / first `.md` file at root)
-   - Check the repo root for the manifest files listed in the project-hub-conventions skill's "Tech inference" table — that table is the single source for the manifest → tech mapping
-   - Glance at top-level directory structure
+2. Inspect each registered repo with an accessible local path. At two or more
+   repos, fan this read-only work out by default — one worker per repo in a
+   single batched `task` call (Claude Code: one Task call per repo in one
+   message), using `effort: lo` when the active schema exposes it. With one
+   repo, inspect inline. Each inspection:
+   - reads its `README.md` (or `README` / first `.md` file at root);
+   - checks the repo-root manifests from the project-hub-conventions skill's
+     "Tech inference" table — the single source for manifest → tech mapping;
+   - glances at the top-level directory structure.
 
 3. Propose updates to `description` and `tech` fields. Show the user a diff (current vs proposed) and ask for confirmation before writing.
 
@@ -916,23 +923,49 @@ For each repo to register:
 
 5. Regenerate the `AGENTS.md` region between `<!-- ws-hub:repos:start -->` and `<!-- ws-hub:repos:end -->` from the updated yaml (see the marker-pair definition in the project-hub-conventions skill).
 
-6. For projects with 4+ sub-repos, optionally delegate the per-repo analysis to the `hub-architect` agent via the Task tool (omp: its task agent) in parallel to keep it fast.
 
 Be conservative — only overwrite a `description` if the new one is clearly better than the existing one (e.g. existing is `"TODO"` or empty).
 
 ### verb = docs
 
-Produce or refresh the hub's cross-repo documentation by dispatching the `hub-architect` agent.
+Produce or refresh the hub's cross-repo documentation with a parallel gather
+wave followed by one `hub-architect` synthesis.
 
 1. The project-shape dispatch above has already handled sub-repo and standalone
    invocations. Continue only at a hub root: read `./project.yaml`; if it
    disappeared after dispatch, abort without suggesting another hub.
 
-2. Spawn the `hub-architect` agent via the Task tool (omp: its task agent), running from the hub directory. Its job is defined in its own prompt: analyze every accessible **`type: working`** sub-repo registered in `project.yaml` (legacy hubs: entries with neither `type` nor `role` — `type: input` and `type: output` repos are excluded, per ADR 0006) and produce/refresh the cross-repo docs — `architecture.md`, plus `contracts.md` (only if shared contracts exist) and `deployment.md` (only if deployment files are found). Pass along any focus the user asked for (e.g. "just refresh deployment").
+2. Resolve every accessible **`type: working`** repo (legacy: neither `type` nor
+   `role`). Exclude `type: input` and `type: output` per ADR 0006.
 
-3. **Confirm before overwriting `architecture.md`.** `dev-docs/architecture.md` is curated authored truth (see the skill's "Hub dev-docs"). Before hub-architect's writes land, show a diff vs the current `dev-docs/architecture.md` (if it exists) and AskUserQuestion: **proceed | cancel** — the same gate `/ws-docs architecture` applies. On proceed, write; on cancel, leave it untouched and say so. (`contracts.md` / `deployment.md` are regenerated in full when their trigger exists.)
+3. With two or more working repos, gather one read-only inventory per repo in
+   parallel: purpose, primary tech, entry points, public interfaces, shared
+   contracts, deployment signals, and notable ADRs. Use the chooser in
+   `ws-graph-engineering`: a Herdr director uses one stamped repo lane per
+   substantial long-lived repo; otherwise omp uses one batched `task` call with
+   one `researcher` item per repo (`effort: med` when exposed), and Claude Code
+   issues the equivalent Task calls in one message. Every gatherer returns a
+   scratch artifact path. One small repo is cheaper to leave to
+   `hub-architect`. Never gather the same repo through both Herdr and Task/task.
 
-4. Relay the agent's report to the user: files written, key cross-repo findings, and anything flagged for human attention.
+4. Spawn one `hub-architect` agent via Task (omp: unprefixed
+   `agent: hub-architect`, with `effort: hi` when exposed) from the hub
+   directory. Pass the repo inventory artifact paths and any focus the user
+   asked for (for example, "just refresh deployment"). It synthesizes
+   `dev-docs/architecture.md`, plus `contracts.md` only when shared contracts
+   exist and `deployment.md` only when deployment files are found. It reads
+   covered repos again only to resolve a concrete gap.
+
+5. **Confirm before overwriting `architecture.md`.**
+   `dev-docs/architecture.md` is curated authored truth (see the skill's "Hub
+   dev-docs"). Before hub-architect's writes land, show a diff vs the current
+   file (if it exists) and AskUserQuestion: **proceed | cancel** — the same gate
+   `/ws-docs architecture` applies. On proceed, write; on cancel, leave it
+   untouched and say so. (`contracts.md` / `deployment.md` are regenerated in
+   full when their trigger exists.)
+
+6. Relay the agent's report to the user: files written, key cross-repo findings,
+   and anything flagged for human attention.
 
 After the cross-repo docs are generated: if `<hub>/openwiki/` exists, offer to
 refresh the hub knowledge wiki. Refresh MUST use an explicit prompt (sub-repo
@@ -1048,10 +1081,13 @@ Gather sources, by shape:
   Synthesize from: `project.yaml`, `openwiki/` (primary derived map), the
   hub's own `dev-docs/` (architecture, product ADRs), per-`type: working` repo
   (legacy hubs: entries with neither `type` nor `role`) `dev-docs/` and READMEs,
-  and `CONTEXT.md` for the glossary. When the product is large (many sub-repos),
-  fan out per-repo content gathering via the Task tool (omp: its task agent) —
-  one gatherer per sub-repo returning purpose, tech, key flows, and notable
-  decisions.
+  and `CONTEXT.md` for the glossary. At two or more accessible working repos,
+  fan out one read-only inventory per repo by default through the
+  `ws-graph-engineering` chooser: Herdr repo lanes for substantial long-lived
+  work, otherwise one batched omp `task` call (one `researcher` item per repo)
+  or equivalent Claude Code Task calls in one message. Each returns purpose,
+  tech, key flows, notable decisions, and a scratch artifact path; never scan
+  the same repo at both layers.
 - **Standalone** — if `./openwiki/` exists and looks stale, offer the same
   prompted refresh. Synthesize from the current repo only: its README, `docs/`,
   `dev-docs/` (architecture, decisions), `CONTEXT.md`, and any other

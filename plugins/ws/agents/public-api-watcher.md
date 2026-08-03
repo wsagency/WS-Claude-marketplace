@@ -10,6 +10,8 @@ tools:
 
 # Public API Watcher Agent
 
+**Artifact language:** Write every file, summary, finding, and proposed text in English, regardless of the conversation language.
+
 Detect changes to a project's externally-visible surface between two git refs and identify which `docs/reference/` files should be updated.
 
 ## Process

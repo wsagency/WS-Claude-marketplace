@@ -113,7 +113,7 @@ User invokes with a loose idea.
 2. **Map the frontier.** Grill again, **breadth-first** this time: fan out across the whole space rather than deep on any one thread, surfacing the open decisions and the first steps takeable now. **If this surfaces no fog** — the way to the destination is already clear, the whole journey small enough for one session — you don't need a map. Stop and ask the user how they'd like to proceed.
 3. **Create the map** (label `wayfinder:map`): Destination and Notes filled in, Decisions-so-far empty, the fog sketched into **Not yet specified**.
 4. **Create the tickets you can specify now** as child issues of the map — then wire blocking edges in a **second pass** (issues need ids before they can reference each other). Wiring sorts them into the frontier and the blocked; everything you can't yet specify stays in the fog — the **Not yet specified** section.
-5. **Fire the research subagents.** For each `research` ticket you just created, spin up a `/ws-research` subagent (in Claude Code: a `researcher` agent) to resolve it in parallel, capturing its findings on a throwaway `research/<name>` branch with a context pointer from the ticket.
+5. **Fire the research workers.** For each `research` ticket you just created, resolve it with `/ws-research`; at two or more tickets this fans out by default, one `researcher` per ticket, in parallel. omp: one batched `task` call, one item per ticket carrying `agent: researcher` and, when the active schema exposes it, `effort: med`; Claude Code: one Task call per ticket in a single message. Each captures its findings on a throwaway `research/<name>` branch with a context pointer from the ticket.
 6. Stop — charting is one session's work; it hand-resolves nothing.
 
 ### Work through the map
@@ -126,7 +126,9 @@ User invokes with a map (URL or number). A ticket is **optional** — without on
 4. Record the resolution: post the answer as a **resolution comment**, **close** the issue, and **append a context pointer** to the map's Decisions-so-far.
 5. Add newly-surfaced tickets (create-then-wire); graduate any fog the answer has made specifiable, clearing each graduated patch from **Not yet specified** so it lives only as its new ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, **rule it out of scope** rather than resolving it on the route. If the decision invalidates other parts of the map, update or delete those tickets.
 
-The user may run unblocked tickets in parallel, so expect other sessions to be editing the tracker concurrently.
+The user may run unblocked tickets in parallel, so expect other sessions to be editing the tracker concurrently. Those concurrent tickets are outer lanes — one session per ticket, Herdr's backend when `HERDR_ENV=1` and the lane shape holds — while the research fan-out inside this session is inner `task` work. The same ticket is never scheduled at both layers; the precedence table lives in `ws-graph-engineering`.
+
+**Artifact language.** Everything this node writes — the map, its tickets, resolution comments, and the findings files researchers produce — is English, whatever language the conversation is in.
 
 ## Graph node
 
@@ -134,7 +136,7 @@ The user may run unblocked tickets in parallel, so expect other sessions to be e
 - **Reads:** charting — the loose idea; working — the map issue (`wayfinder:map`) at low resolution, the frontier of open, unblocked, unclaimed child tickets, and the tracker config's "Wayfinding operations"
 - **Emits:** the map issue; decision tickets as child issues with native blocking edges; at most one resolution per session (resolution comment + close + a Decisions-so-far pointer on the map); graduated fog; out-of-scope rulings
 - **Edges:**
-  - fan-out: for each `research` ticket spawn ws-research — in Claude Code, via a researcher agent (schema: a cited findings file on a throwaway `research/<name>` branch + a context pointer on the ticket)
+  - fan-out (default at 2+ tickets): for each `research` ticket spawn ws-research via a `researcher` agent (schema: a cited findings file on a throwaway `research/<name>` branch + a context pointer on the ticket)
   - when ticket type = prototype → ws-prototype (HITL — a concrete artifact to react to)
   - when ticket type = grilling → ws-domain-modeling, driven with /ws-grilling (HITL, the default type)
   - when the map is clear → hand off to ws-to-spec, which collapses the linked decisions into a buildable plan (user-mediated — wayfinder hands off, it never builds)

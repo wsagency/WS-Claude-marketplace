@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
+import * as path from "node:path";
 import {
 	AGENT_MODEL_MAP,
 	agentModel,
+	generate,
+	RUNTIME_SCRIPT_FILES,
 	extractKeyBlock,
 	skillHasDescription,
 	splitFrontmatter,
@@ -70,16 +75,17 @@ describe("transformCommand", () => {
 });
 
 describe("agentModel", () => {
-	test("maps reviewer to @slow and workers to @task", () => {
+	test("maps agents to purpose-specific roles", () => {
 		expect(agentModel("reviewer")).toBe("@slow");
+		expect(agentModel("hub-architect")).toBe("@plan");
+		expect(agentModel("architecture-documenter")).toBe("@plan");
 		expect(agentModel("researcher")).toBe("@task");
 		expect(agentModel("tdd-runner")).toBe("@task");
-		expect(agentModel("hub-architect")).toBe("@task");
-	});
-
-	test("docs agents default to @task", () => {
 		expect(agentModel("adr-writer")).toBe("@task");
-		expect(agentModel("docs-doctor")).toBe("@task");
+		expect(agentModel("changelog-analyzer")).toBe("@smol");
+		expect(agentModel("public-api-watcher")).toBe("@smol");
+		expect(agentModel("docs-doctor")).toBe("@tiny");
+		expect(agentModel("unknown-future-agent")).toBe("@task");
 	});
 
 	test("every mapped model is an @role alias, never a Claude model id", () => {
@@ -157,5 +163,45 @@ describe("skillHasDescription", () => {
 		expect(skillHasDescription("---\nname: adr\n---\nbody\n")).toBe(false);
 		expect(skillHasDescription("---\ndescription:\nname: adr\n---\nbody\n")).toBe(false);
 		expect(skillHasDescription("# no frontmatter\n")).toBe(false);
+	});
+});
+
+describe("generate runtime assets", () => {
+	test("copies templates and only the shipped helper scripts", async () => {
+		const sourceRoot = path.resolve(import.meta.dir, "../../../plugins/ws");
+		const outRoot = await fs.mkdtemp(path.join(os.tmpdir(), "omp-ws-generate-"));
+
+		try {
+			const counts = await generate(sourceRoot, outRoot);
+			expect(counts.runtimeScripts).toBe(RUNTIME_SCRIPT_FILES.length);
+			expect((await fs.readdir(path.join(outRoot, "scripts"))).sort()).toEqual([...RUNTIME_SCRIPT_FILES].sort());
+			expect(counts.commands).toBe(7);
+			expect(counts.skills).toBe(30);
+			expect(counts.agents).toBe(14);
+			expect(counts.rules).toBe(4);
+			for (const agentFile of await fs.readdir(path.join(outRoot, "agents"))) {
+				const agentPrompt = await fs.readFile(path.join(outRoot, "agents", agentFile), "utf8");
+				expect(agentPrompt).toContain("**Artifact language:**");
+			}
+			const readme = (await fs.readFile(path.resolve(import.meta.dir, "../README.md"), "utf8")).replace(/\s+/g, " ");
+			expect(readme).toContain(`\`commands/\` (${counts.commands})`);
+			expect(readme).toContain(`\`skills/\` (${counts.skills})`);
+			expect(readme).toContain(`\`agents/\` (${counts.agents}`);
+			expect(readme).toContain(`\`rules/\` (${counts.rules} TTSR`);
+			expect(await fs.readFile(path.join(outRoot, "templates", "project.yaml.tmpl"), "utf8")).toContain(
+				"__PROJECT_NAME__",
+			);
+			expect(await fs.readFile(path.join(outRoot, "scripts", "outline-sync.py"), "utf8")).toContain(
+				"Outline",
+			);
+			const edgeRule = await fs.readFile(
+				path.join(outRoot, "rules", "omp-edge-discipline.md"),
+				"utf8",
+			);
+			expect(edgeRule).toContain("One owner per work unit");
+			expect(edgeRule).toContain("English artifacts");
+		} finally {
+			await fs.rm(outRoot, { recursive: true, force: true });
+		}
 	});
 });

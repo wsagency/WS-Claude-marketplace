@@ -1,7 +1,7 @@
 # Set up omp for the WS stack
 
 One-time machine setup for the full omp experience with the WS marketplace.
-Verified against omp docs (2026-07-26). Everything here is copy-paste.
+Verified against the omp 17.2.4 source (2026-08-01). Everything here is copy-paste.
 
 ## Install & auth
 
@@ -46,9 +46,12 @@ bash:
 ```
 
 Personal standing rules: create `~/.omp/agent/RULES.md` (e.g. "Never commit or
-push unless asked"). Project rules live in `.omp/rules/` — the ws plugin installs
-`omp-edge-discipline` and `openwiki-freshness` there via `/ws-matt setup` and
-`/ws-hub init`.
+push unless asked"). Project rules live in `.omp/rules/`, and the ws plugin
+populates that directory one command at a time: `/ws-matt setup` installs
+`omp-edge-discipline.md` — the WS **session policy** rule. `/ws-hub init`
+installs the WS TTSR pack (`ws-guard-git`, `ws-commit-format`,
+`ws-generated-files`); its OpenWiki flow additionally installs
+`openwiki-freshness`.
 
 ## Features worth switching on (one-liners)
 
@@ -59,8 +62,34 @@ omp config set autolearn.enabled true      # agent stores lessons as skills
 omp config set checkpoint.enabled true     # checkpoint/rewind for deep dives
 omp config set branchSummary.enabled true  # breadcrumbs on /tree jumps
 omp config set task.isolation.mode auto    # isolated subagent workspaces
+omp config set task.enableEffort true      # expose lo/med/hi per task item
 omp config set collab.displayName "Kristijan"
 ```
+
+`task.enableEffort` requires omp 17.1.6 or newer; omit that line on 17.1.5.
+
+## Orchestration layers
+
+A **lane** is one independent, long-lived unit of work — its own repo or
+subsystem, running for many turns, not sharing a working tree with its peers.
+Each work unit has one scheduling owner:
+
+- **Herdr — outer.** With `HERDR_ENV=1` and 2+ substantial lanes, Herdr
+  partitions the lanes and you need not name Herdr again. Parallel edits need
+  `herdr worktree`; shared-cwd panes are coordination-only. Outside Herdr,
+  never attempt a `herdr` command.
+- **Batched `task` — inner.** Everything else that decomposes: one same-session
+  call with per-item `agent` and, when `task.enableEffort` is on, `effort`.
+  A stamped Herdr lane may use this for disjoint slices it alone owns.
+
+No layer schedules the same unit twice. Full precedence table:
+`ws-graph-engineering`.
+
+## Artifact language
+
+Every artifact the suite generates — specs, tickets, ADRs, changelog entries, commit
+and PR bodies, review findings, research notes, generated docs and HTML — is written
+in English regardless of the conversation language.
 
 ## WS stack wiring
 

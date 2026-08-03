@@ -62,8 +62,9 @@ The canonical ws-matt workflow:
    artifact paths it needs, and produces the final output.
 
 `ws-code-review` fanning out `reviewer` workers is the archetype;
-[[ws-implement]] can optionally fan out `tdd-runner` workers per agreed
-seam, using the same shape.
+[[ws-implement]] uses the same shape by default for two or more independent,
+disjoint-file `tdd-runner` cycles, skipping it only when delegation would cost
+more than the work.
 
 ## File-handoff protocol
 
@@ -113,35 +114,102 @@ above, made concrete — it points at the next entry; it never auto-invokes it. 
 vendored skill carries its own routing in one `**Exit report:**` bullet at the end of
 its `## Graph node` section (ADR 0008).
 
+## Backend precedence
+
+> Every work unit has exactly ONE scheduling owner. Schedulers may nest only
+> by subdivision: Herdr can own top-level lanes and `task` can own disjoint
+> sub-slices inside one lane, but neither may schedule the same unit twice.
+
+**Substantial lane** — the unit that justifies Herdr outer — is decidable at
+runtime with no user input: an independent, long-lived unit of work scoped to
+its own repo or subsystem, that will run for many turns and does not share a
+working tree with its peers. Herdr outer is the default only at 2+ such lanes.
+Contrast this with short disjoint units — one review axis, one research
+question, one TDD seam — which are batched `task` work, not lanes.
+
+| # | Owner | Use when | Never |
+|---|---|---|---|
+| 1 | Leaf | Your tool inventory lacks `task` / `Agent`, or you are any shipped WS worker agent under `plugins/ws/agents/`. | Spawn; drive Herdr; inject a magic keyword; render an exit report. |
+| 2 | User-selected backend | The current user turn explicitly selects an available backend: Herdr, standalone `orchestrate` / `workflowz`, or `/vibe`. | Treat a keyword buried inside a lane prompt, ticket, or quoted text as user-selected. |
+| 3 | Herdr director (outer) | `HERDR_ENV=1`, your prompt is not stamped `WS-HERDR-LANE`, and the work is 2+ substantial lanes. Under WS policy the user need not name Herdr again. | Duplicate lanes already owned by a live fleet, or run parallel edits in shared-cwd panes. |
+| 4 | Herdr lane → batched `task` (inner) | Your prompt carries `WS-HERDR-LANE`; your lane itself contains 2+ independent sub-slices worth delegating. | Drive Herdr, resubmit your lane or a sibling lane, or assign the same sub-slice twice. |
+| 5 | Batched same-session `task` | No outer lane owns the work and it still decomposes: one `{ context, tasks[] }` call with per-item `agent` / `outputSchema` and optional `effort` when the active schema exposes it. | Serialize genuinely independent items, or let a leaf worker spawn. |
+| 6 | Sequential | Nothing above matched, or delegation would cost more than doing the work. | Spawn at all. |
+
+**Herdr director/lane protocol.** `HERDR_ENV=1` does NOT identify a leaf —
+every pane carries it, the director included, and no harness bit distinguishes
+them. When row 3 fires, explicitly load the vendored `herdr` skill before any
+Herdr CLI call. The binding WS policy is the authorization for that explicit
+load; the upstream skill's frontmatter remains the guard against unrelated
+implicit self-selection. The director stamps every top-level prompt
+`WS-HERDR-LANE: <stable-lane-id>`. A stamped lane never drives Herdr; it may
+use one inner batched `task` call for non-overlapping sub-slices that it alone
+owns. Task workers are leaves. Shared-cwd panes are coordination-only; parallel
+edits require `herdr worktree`.
+
+**Leaf status is a guarantee, not an honour system.** WS worker agents declare
+no `spawns`, so omp does not give them `task`; the harness also caps recursion
+with `task.maxRecursionDepth` (default 2) and blocks self-spawn with
+`PI_BLOCKED_AGENT`. Claude Code follows the same leaf contract by design.
+
+### Worker roles and effort
+`effort` is an optional per-call task-item field (`lo|med|hi`), NOT an
+agent-definition key. omp 17.1.6+ exposes it only when
+`task.enableEffort: true` (default false); when it is absent from the active
+tool schema, omit it and let the selected role/model use its configured
+reasoning level.
+
+| Agent | Role | Effort | Why |
+|---|---|---|---|
+| reviewer | @slow | hi | deepest judgement on a diff slice |
+| hub-architect | @plan | hi | cross-repo architecture synthesis |
+| architecture-documenter | @plan | med | structured doc from a known template |
+| researcher | @task | med | one sourced question, scoped legwork |
+| tdd-runner | @task | med | one red-green cycle per seam |
+| adr-writer | @task | med | one decision, structured output |
+| diataxis-writer | @task | med | one doc quadrant, disciplined |
+| release-notes-writer | @task | med | changelog → prose synthesis |
+| api-documenter | @task | lo | signature extraction, light prose |
+| changelog-analyzer | @smol | lo | classify commits into sections |
+| contributing-generator | @smol | lo | scaffold from repo conventions |
+| public-api-watcher | @smol | lo | diff an export surface |
+| arch-watcher | @smol | lo | flag commit signals |
+| docs-doctor | @tiny | lo | pure classification of doc state |
+
 ## Per-harness execution
 
-**Claude Code** — the model orchestrates by following edges; workers spawn via the
-Task tool. Subagents cannot nest: fan-out is one level deep (orchestrator → workers,
-never worker → worker). For hot fan-outs, compiling the shape into a dynamic
-workflow is a documented option, not shipped in v1 — interpreted execution is the
+**Claude Code** — the model orchestrates by following edges; workers spawn via
+the Task tool. For hot fan-outs, compiling the shape into a dynamic workflow
+is a documented option, not shipped in v1 — interpreted execution is the
 default.
 
 **omp** — plugin skills, commands, and agents ingest natively, and the harness
 carries graph primitives directly (verified against omp docs, 2026-07):
 
 - **Fan-out**: the `task` tool is batched — `{ context, tasks[] }` spawns one
-  subagent per item with shared context injected; per-item `agent`, `effort`,
-  and `outputSchema` give schema-validated JSON fan-in (exactly this skill's
-  Send + reducer semantics). `isolated: true` runs a worker in a cloned
-  workspace returning patches — safe parallel edits.
-- **Handoff/liveness**: finished agents park and stay addressable — message
-  them via the `hub` tool (`send`/`wait`), read outputs at `agent://<id>` and
-  transcripts at `history://<id>`; that is the state-passing channel between
-  nodes beyond `DONE|{path}`.
+  subagent per item with shared context injected; per-item `agent`,
+  `outputSchema`, and optional `effort` (`lo|med|hi`, exposed only when
+  `task.enableEffort: true`) give schema-validated JSON fan-in (exactly this
+  skill's Send + reducer semantics). Concurrency is a session-scoped
+  semaphore (`task.maxConcurrency`, default 32); recursion is bounded by
+  `task.maxRecursionDepth` (default 2 — the `task` tool is hidden at or beyond
+  the limit and stripped from children at max depth; it is only auto-added to
+  a child when its agent declares `spawns`). `isolated: true` appears in the
+  wire schema only when `task.isolation.mode != none` (default `none`): it
+  needs a git repo, merges as a patch or a branch `omp/task/<id>`, and the
+  isolated agent is NOT revivable.
+- **Handoff/liveness**: finished agents go `idle`, then park after
+  `task.agentIdleTtlMs` (default ~7 minutes); `hub` messaging revives a parked
+  agent. Read outputs at `agent://<id>` and transcripts at `history://<id>` —
+  the state-passing channel between nodes beyond `DONE|{path}`.
 - **Magic keywords**: a standalone `orchestrate` in the prompt activates omp's
   multi-agent orchestration contract; `workflowz` builds a deterministic
-  multi-subagent workflow over `task`. **Proactively SUGGEST them** (ask, don't
-  self-start): when work decomposes into N independent items (same change over
-  many files/repos, review of N branches) → suggest `workflowz`; when a run
-  spans multiple graph nodes or tickets → suggest `orchestrate`. Ordering
-  comes from the data, not intuition: follow the **dependency frontier** of
-  `Blocked by:` edges in `dev-docs/tickets/open/` — no-open-blockers run in
-  parallel, the rest wait for their blockers to reach `done/`.
+  multi-subagent workflow over `task`. When (or whether) to invoke either is
+  decided by `## Backend precedence` above — that section is the chooser.
+  Ordering comes from the data, not intuition: follow the **dependency
+  frontier** of `Blocked by:` edges in `dev-docs/tickets/open/` —
+  no-open-blockers run in parallel, the rest wait for their blockers to reach
+  `done/`.
 - **/vibe** turns the session into a director of persistent fast/good worker
   tiers — matches this skill's classify → workers → synthesize shape.
 - Task agents also support `spawns` chains and `autoloadSkills` (workers

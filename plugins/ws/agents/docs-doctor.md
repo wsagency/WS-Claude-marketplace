@@ -10,6 +10,8 @@ tools:
 
 # Docs Doctor Agent
 
+**Artifact language:** Write every file, summary, finding, and proposed text in English, regardless of the conversation language.
+
 Inspect a project to report on the state of its documentation in the dual-track-docs convention. Your scope is artifact presence and staleness scanning — which artifacts exist, which are stale or behind, which are missing. You produce a status table, not file changes.
 
 ## Process

@@ -2,13 +2,17 @@
  * generate.ts — builds the native omp package surface from the single source
  * of truth in plugins/ws/ (ADR 0004, full-native omp package).
  *
- * Generates (wipe + rewrite on every run; all four dirs are gitignored
- * build artifacts, never hand-edited):
+ * Generates:
  *   commands/  <- plugins/ws/commands/*.md      (frontmatter reduced to `description`)
  *   skills/    <- plugins/ws/skills/<name>/     (verbatim tree copy; SKILL.md must have `description`)
  *   agents/    <- plugins/ws/agents/*.md        (frontmatter transform: ensure `name`, map `model` to @role aliases)
  *   rules/     <- plugins/ws/templates/omp/rules/*.md + plugins/ws/rules/omp-edge-discipline.md (verbatim)
+ *   templates/ <- plugins/ws/templates/         (runtime assets used by /ws-hub)
+ *   scripts/{outline-sync.py,parse-git-log.sh,validate-changelog.sh}
+ *              <- plugins/ws/scripts/           (runtime helpers used by commands/skills)
  *
+ * Generated directories are wiped and rewritten; runtime helpers sharing this
+ * source `scripts/` directory are overwritten by name. Never hand-edit them.
  * Run via `bun run generate` (also the first step of `bun run build`).
  */
 import * as fs from "node:fs/promises";
@@ -68,18 +72,41 @@ export function transformCommand(content: string, fileName: string): string {
 // --- agents -----------------------------------------------------------
 
 /**
- * Per-agent omp model alias (single @role alias strings — never Claude model
- * ids). reviewer gets the slow reviewer-grade role; every other agent in the
- * suite (researcher, tdd-runner, hub-architect, and all docs agents) runs on
- * the task role.
+ * Per-agent omp model alias — single `@role` alias strings only, NEVER
+ * Claude model ids. The source agents under `plugins/ws/agents/` deliberately
+ * carry NO `model:` key: that same frontmatter also feeds the Claude Code
+ * plugin, which does not understand the `@role` alias syntax. `transformAgent`
+ * strips any `model:` and appends the mapped alias, so the alias exists ONLY
+ * in the generated omp package. A project can override a mapped agent through
+ * `task.agentModelOverrides`, which outranks the generated frontmatter.
  */
 export const AGENT_MODEL_MAP: Record<string, string> = {
+	// @slow — deepest judgement (code review, speculative critique)
 	reviewer: "@slow",
+
+	// @plan — architecture and spec mapping (deep structure + design)
+	"hub-architect": "@plan",
+	"architecture-documenter": "@plan",
+
+	// @task — skilled writing and synthesis (research, TDD, docs authoring)
 	researcher: "@task",
 	"tdd-runner": "@task",
-	"hub-architect": "@task",
+	"adr-writer": "@task",
+	"diataxis-writer": "@task",
+	"release-notes-writer": "@task",
+	"api-documenter": "@task",
+
+	// @smol — mechanical scan and extract (pattern grep over diffs/repos)
+	"changelog-analyzer": "@smol",
+	"contributing-generator": "@smol",
+	"public-api-watcher": "@smol",
+	"arch-watcher": "@smol",
+
+	// @tiny — pure classification (doc-state audit, no authoring)
+	"docs-doctor": "@tiny",
 };
 
+/** Safety net for an UNKNOWN future agent stem, not the common path. */
 export const DEFAULT_AGENT_MODEL = "@task";
 
 export function agentModel(stem: string): string {
@@ -129,7 +156,8 @@ export function skillHasDescription(skillMd: string): boolean {
 
 // --- main -------------------------------------------------------------
 
-const GENERATED_DIRS = ["commands", "skills", "agents", "rules"] as const;
+const GENERATED_DIRS = ["commands", "skills", "agents", "rules", "templates"] as const;
+export const RUNTIME_SCRIPT_FILES = ["outline-sync.py", "parse-git-log.sh", "validate-changelog.sh"] as const;
 
 async function listMarkdown(dir: string): Promise<string[]> {
 	const entries = await fs.readdir(dir, { withFileTypes: true });
@@ -139,7 +167,10 @@ async function listMarkdown(dir: string): Promise<string[]> {
 		.sort();
 }
 
-export async function generate(sourceRoot: string, outRoot: string): Promise<{ commands: number; skills: number; agents: number; rules: number }> {
+export async function generate(
+	sourceRoot: string,
+	outRoot: string,
+): Promise<{ commands: number; skills: number; agents: number; rules: number; runtimeScripts: number }> {
 	for (const dir of GENERATED_DIRS) {
 		const target = path.join(outRoot, dir);
 		await fs.rm(target, { recursive: true, force: true });
@@ -206,7 +237,20 @@ export async function generate(sourceRoot: string, outRoot: string): Promise<{ c
 		await fs.copyFile(source, path.join(outRoot, "rules", path.basename(source)));
 	}
 
-	return { commands: commandFiles.length, skills: skillEntries.length, agents: agentFiles.length, rules: ruleSources.length };
+	// Runtime assets referenced by generated commands and skills.
+	await fs.cp(path.join(sourceRoot, "templates"), path.join(outRoot, "templates"), { recursive: true });
+	await fs.mkdir(path.join(outRoot, "scripts"), { recursive: true });
+	for (const name of RUNTIME_SCRIPT_FILES) {
+		await fs.copyFile(path.join(sourceRoot, "scripts", name), path.join(outRoot, "scripts", name));
+	}
+
+	return {
+		commands: commandFiles.length,
+		skills: skillEntries.length,
+		agents: agentFiles.length,
+		rules: ruleSources.length,
+		runtimeScripts: RUNTIME_SCRIPT_FILES.length,
+	};
 }
 
 async function main(): Promise<void> {
@@ -214,7 +258,7 @@ async function main(): Promise<void> {
 	const sourceRoot = path.resolve(outRoot, "../../plugins/ws");
 	const counts = await generate(sourceRoot, outRoot);
 	console.log(
-		`omp-ws generate: ${counts.commands} commands, ${counts.skills} skills, ${counts.agents} agents, ${counts.rules} rules (from ${sourceRoot})`,
+		`omp-ws generate: ${counts.commands} commands, ${counts.skills} skills, ${counts.agents} agents, ${counts.rules} rules, templates, ${counts.runtimeScripts} runtime scripts (from ${sourceRoot})`,
 	);
 }
 

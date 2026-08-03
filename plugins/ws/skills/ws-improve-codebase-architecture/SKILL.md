@@ -25,7 +25,11 @@ This command is _informed_ by the project's domain model and built on a shared d
 
 Read the project's domain glossary (`CONTEXT.md`) and any ADRs in the area you're touching first.
 
-Then use the Agent tool with `subagent_type=Explore` to walk the codebase. Don't follow rigid heuristics — explore organically and note where you experience friction:
+Then delegate one read-only exploration pass: Claude Code uses the Agent tool
+with `subagent_type=Explore`; omp uses one `scout` task agent (and `effort: med`
+when the active schema exposes it). This is one bounded scan, not a fan-out.
+Do not follow rigid heuristics — explore organically and note where you
+experience friction:
 
 - Where does understanding one concept require bouncing between many small modules?
 - Where are modules **shallow** — interface nearly as complex as the implementation?

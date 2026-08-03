@@ -38,9 +38,35 @@ compaction:
 #   advisor: <CROSS-FAMILY reviewer — different vendor than default!
 #             e.g. xai/grok-4.5:medium or google/gemini-3.5-pro:medium>
 
-# Per-agent "custom roles" — pin specific models to WS worker agents:
-# task:
-#   agentModelOverrides:
-#     reviewer: "@slow"        # review = deep reasoning
-#     researcher: "<long-context model — e.g. kimi-k3>"
-#     tdd-runner: "@task"
+# Per-spawn effort is schema-gated in omp 17.1.6+ (default off). Enable it so
+# WS skills can select lo/med/hi reasoning independently of the agent's model
+# role. Omit this block on omp 17.1.5.
+task:
+  enableEffort: true
+
+  # Per-agent "custom roles" — pin specific models to WS worker agents. The
+  # values below MIRROR the role each agent already declares in its shipped
+  # frontmatter (generated in extensions/omp-ws), so this block stays commented:
+  # uncomment ONLY to deviate — e.g. pin `researcher` to a long-context model.
+  # A value is either a role ref ("@role") or a literal model id;
+  # agentModelOverrides outranks shipped frontmatter.
+  # agentModelOverrides:
+  #   # @slow — deepest judgement.
+  #   reviewer: "@slow"
+  #   # @plan — architecture and spec maps.
+  #   hub-architect: "@plan"
+  #   architecture-documenter: "@plan"
+  #   # @task — skilled workers that write or synthesise.
+  #   researcher: "@task"
+  #   tdd-runner: "@task"
+  #   adr-writer: "@task"
+  #   diataxis-writer: "@task"
+  #   release-notes-writer: "@task"
+  #   api-documenter: "@task"
+  #   # @smol — mechanical scan/extract jobs.
+  #   changelog-analyzer: "@smol"
+  #   contributing-generator: "@smol"
+  #   public-api-watcher: "@smol"
+  #   arch-watcher: "@smol"
+  #   # @tiny — pure classification.
+  #   docs-doctor: "@tiny"

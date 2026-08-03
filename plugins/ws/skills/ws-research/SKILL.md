@@ -5,6 +5,10 @@ description: Investigate a question against high-trust primary sources and captu
 
 Spin up a **`researcher` worker agent** to do the research, so you keep working while it reads.
 
+> **Autoloaded by the `researcher` leaf agent?** Skip the fan-out above — you *are* the worker:
+> investigate the single question you were given and return its findings path. Only a caller
+> that owns scheduling fans out researchers.
+
 Its job:
 
 1. Investigate the question against **primary sources** — official docs, source code, specs, first-party APIs — not a secondary write-up of them. Follow every claim back to the source that owns it.

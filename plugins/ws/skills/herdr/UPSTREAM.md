@@ -13,3 +13,17 @@
   --skill herdr -g` install remains only for machines WITHOUT the plugin.
   The skill self-guards with `HERDR_ENV=1`, so it is inert outside
   herdr-managed panes.
+
+## WS wrapper policy
+
+- `SKILL.md` stays verbatim and is replaced wholesale on sync (see the pin and
+  policy above); WS-specific proactive behaviour lives OUTSIDE this directory so
+  a sync can never clobber it.
+- Where WS behaviour lives: when to reach for Herdr, the director/worker prompt
+  stamp, and worktrees for parallel edits are defined in the `omp-edge-discipline`
+  rule, the `ws-graph-engineering` skill, and the SessionStart discipline hook.
+- When the Herdr-director row fires, the binding WS rule explicitly authorizes
+  loading this vendored skill for its CLI contract. The upstream description
+  remains the guard against unrelated implicit self-selection.
+- A syncer MUST NOT port those behaviours into `SKILL.md` — doing so would be
+  silently overwritten on the next wholesale refresh.

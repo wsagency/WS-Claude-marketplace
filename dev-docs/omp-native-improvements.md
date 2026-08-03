@@ -1,7 +1,7 @@
 # omp-Native Improvements — Capability Audit & Port Plan
 
 Living document. Maps every WS surface to omp's native capabilities (verified
-against the omp 17.1.5 SOURCE, 2026-07), records what going native improves,
+against the omp 17.2.4 source, 2026-08), records what going native improves,
 and tiers the work. Supersedes the extension bullet in
 `omp-integration-backlog.md` (which now points here).
 
@@ -34,8 +34,8 @@ marketplace `ws` plugin + this package would register everything twice — the
 extension warns at session start; omp users run ONLY the npm package.
 
 Churn risk: LOW — no experimental markers in `src/extensibility`; the
-17.1.3→17.1.5 delta touched no extensibility surface; the dir conventions
-date to 15.x/16.x.
+17.1.3→17.1.5 delta touched no extensibility surface, and the 17.2.4 re-audit
+confirmed the package's discovery, settings-store, and ExtensionAPI contracts.
 
 ## Principle: one source, two complete artifacts
 
@@ -103,7 +103,7 @@ Each tool duplicates a convention that already exists as prose — so each is
 added ONLY when we see the prose version misfire in practice (evidence-driven,
 not speculative).
 
-## Adopted omp-specific improvements (from the 17.1.5 source audit)
+## Adopted omp-specific improvements (current through the 17.2.4 source audit)
 
 1. **Plugin `settings` schema** (`PluginManifest`): typed settings with env
    fallback and secret masking (Jira project binding, guard/dashboard
@@ -119,10 +119,29 @@ not speculative).
    compaction without losing WS state.
 4. **Both-installed detection** — session_start warns when the marketplace
    `ws` plugin is also enabled in omp (duplication).
-5. Cataloged for later: `.mcp.json` bundling (jira/OpenWiki MCP zero-setup),
+5. **Purpose-specific worker roles** — generated agents use omp's fixed
+   `@slow`, `@plan`, `@task`, `@smol`, and `@tiny` roles; project-specific
+   `task.agentModelOverrides` remain optional and outrank frontmatter.
+6. **Per-spawn effort** — introduced in 17.1.6 and schema-gated behind
+   `task.enableEffort`; hub presets enable it and fan-out sites choose
+   `hi|med|lo` per task item without multiplying model definitions.
+7. Cataloged for later: `.mcp.json` bundling (jira/OpenWiki MCP zero-setup),
    `askDialog` rich forms, `registerShortcut`/`registerFlag`, memory API
    (`ctx.memory.save`), `resources_discover` conditional skill packs,
-   `before_agent_start` per-turn prompt shaping, `user_bash` interception.
+   `before_agent_start` per-turn prompt shaping, and `user_bash` interception.
+
+### 17.2.4 re-audit outcome
+
+- The extension SDK/typecheck pin now matches the installed runtime at 17.2.4.
+- omp 17.2.4 preserves explicit `-e` extension paths under
+  `--no-extensions`; the headless guard smoke now uses both flags to isolate
+  the package from ambient plugins.
+- `ExtensionContext.getAsyncJobSnapshot()` and `ctx.invokeTool()` were reviewed
+  but not adopted: no WS extension behavior needs to inspect task jobs or wrap
+  native tool execution, so adding either would create code without a contract.
+- The fixed role keys, `task.enableEffort`, `task.maxConcurrency`,
+  `task.maxRecursionDepth`, and parked-agent TTL are configuration concerns;
+  they belong in generated prompts/presets rather than the TypeScript extension.
 
 ## Tier 3 — config-level improvements (no code, document + preset)
 

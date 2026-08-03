@@ -66,7 +66,10 @@ table plus the graph status.
 
 1. Load the **ws-setup-matt-pocock-skills** skill and run its content.
 2. Check for omp: run `ls -d .omp` at the project root. If `.omp/` exists — or the
-   user says they use omp (ask when unsure) — install the edge-discipline rule:
+   user says they use omp (ask when unsure) — install **the WS session policy**
+   (the rule file carries its edge-discipline clauses — entry→worker topology,
+   state-delta workers, `DONE|{path}` handoffs, layer ownership and the
+   English-artifact rule):
    - `mkdir -p .omp/rules`
    - copy `${CLAUDE_PLUGIN_ROOT}/rules/omp-edge-discipline.md` (if
      CLAUDE_PLUGIN_ROOT is unset — e.g. in omp — use the plugin's install
@@ -74,14 +77,28 @@ table plus the graph status.
      `.omp/rules/omp-edge-discipline.md`
    - If `.omp/rules/omp-edge-discipline.md` already exists, confirm before
      overwriting.
-3. Report what was installed and where.
+3. Report that the WS session policy was installed and where.
 
-### Graph discipline (all verbs)
+### Session policy (all verbs)
 
 Entry nodes may invoke worker nodes, **never another entry node**. Workers return
-state deltas and hand large artifacts back by path (`DONE|{path}`). The
-ws-graph-engineering skill is the contract — consult it before orchestrating any
-fan-out.
+state deltas and hand large artifacts back by path (`DONE|{path}`).
+
+Every artifact the suite generates — specs, tickets, ADRs, `CONTEXT.md`, changelog
+entries, commit and PR bodies, review findings, research notes, generated docs and
+HTML — is English regardless of the conversation language.
+
+Each work unit has one scheduling owner. With `HERDR_ENV=1` and 2+
+substantial lanes, Herdr partitions the outer lanes and the user need not name
+it again; outside Herdr, never attempt a `herdr` command. A stamped lane may
+batch `task` workers over its own disjoint inner slices, but no layer resubmits
+the same unit. Prefer the specialized agent type. When the active `task` schema
+exposes `effort`, use `hi` for review and architecture synthesis, `med` for
+implementation and research, and `lo` for mechanical checks.
+
+The `omp-edge-discipline` rule is the binding form and the ws-graph-engineering
+skill carries the full backend-precedence and role/effort tables — consult it
+before orchestrating any fan-out.
 
 ## When you finish
 

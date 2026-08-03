@@ -64,15 +64,32 @@ are unavailable: fall back to repo-level and mention that `/ws-hub init` step
 The scope answer may be cached in `.claude/docs-config.yaml` as
 `default_scope: repo | product | ask` (honor it like `default_audience`).
 
+### Worker dispatch (all scopes)
+
+- **Claude Code:** issue all independent Task calls in one message. Use
+  background execution only while the main session has independent preparation
+  to do; collect every result before synthesis.
+- **omp:** issue one batched `task` call per wave, with shared context at the
+  top and one item per unprefixed agent name. Include `effort` only when the
+  active task schema exposes it.
+- **Herdr outer:** only a hub-root sweep with 2+ substantial, independent repo
+  lanes qualifies. The director stamps each pane `WS-HERDR-LANE`; parallel
+  writes need `herdr worktree`. A lane may use inner `task` workers for
+  disjoint slices it alone owns. Never dispatch the same repo at both layers.
+
+Single-worker verbs use one Task/task worker, never a Herdr pane. The canonical
+chooser and lane definition live in `ws-graph-engineering`.
+
 ### Hub sweep (invoked at the hub root)
 
 Sweep targets: every `type: working` repo (legacy hubs: entries with neither
 `type` nor `role`) in `project.yaml` that exists on disk — `type: input` and
 `type: output` repos are excluded (inputs are raw deliveries processed via
 `/ws-hub intake`, outputs are covered by the product-level rows). Each working
-repo is its own git, so per-repo subagents cannot conflict: dispatch **one
-subagent per target repo in parallel** (`run_in_background: true`), passing
-the repo's absolute path as its working root, and aggregate when all report.
+repo is its own git, so per-repo workers cannot conflict across repos: dispatch
+**one worker per target repo in parallel** through the Worker dispatch contract,
+passing the repo's absolute path as its working root, and aggregate only after
+all report.
 Each subagent honors that repo's own `.claude/docs-config.yaml` (the hub has
 none).
 
@@ -111,7 +128,8 @@ The verb is `$1` (the first word of `$ARGUMENTS`). If empty → **discovery** mo
 
 ### No verb → Discovery
 
-Run the `docs-doctor` agent (Task tool (omp: its task agent), foreground — fast). It returns a structured report. Render this exact table format:
+Run one `docs-doctor` worker through the Worker dispatch contract (foreground;
+it is fast). It returns a structured report. Render this exact table format:
 
 ```
 ws-docs status
@@ -138,7 +156,8 @@ State icons: `✓ present`, `⚠ stale|behind|empty`, `✗ missing`. Suggest ver
 
 ### verb = init
 
-First-time setup. Dispatch in parallel (Task tool with `run_in_background: true`):
+First-time setup. Dispatch the following as one parallel wave through the Worker
+dispatch contract:
 
 1. `architecture-documenter` → writes `dev-docs/architecture.md`
 2. `contributing-generator` → writes the 3-file CONTRIBUTING set
@@ -159,7 +178,8 @@ While they run, in the main session:
 
 - If a real (non-thin) `CLAUDE.md` exists (anything beyond the `@AGENTS.md` import — including a v2.x/v3.x `# Documentation maintenance` section), offer migration via AskUserQuestion: move its content into `AGENTS.md` (dropping any old maintenance section there — the fresh one is appended above), then replace `CLAUDE.md` with the two-line import. If the user declines, leave `CLAUDE.md` untouched; the maintenance section still goes to `AGENTS.md`.
 
-Wait for the background agents' completion notifications; summarize when all report. As agents finish, you may print a status block like:
+Collect every worker result and summarize only when all report. While workers
+run, you may print a status block like:
 
 ```
 /ws-docs init  —  4 subagents
@@ -180,12 +200,14 @@ Suggested commit:
 
 ### verb = audit
 
-Verbose diagnosis. Run 3 agents in parallel (background) — same dispatch pattern as `catchup`:
+Verbose diagnosis. Run these 3 agents as one parallel wave through the Worker
+dispatch contract:
 1. `docs-doctor` with `mode: audit` — returns the artifact table plus per-commit details since last CHANGELOG entry
 2. `public-api-watcher` — returns detected public API changes needing `docs/reference/` updates
 3. `arch-watcher` — returns ADR candidates (architectural signals)
 
-Wait for the background agents' completion notifications; summarize when all report. Then merge the three reports: render the same table as discovery (from `docs-doctor`), then a follow-up section combining the watcher findings:
+Collect all three reports, then merge them: render the same table as discovery
+(from `docs-doctor`), then a follow-up section combining the watcher findings:
 
 ```
 ─────────────────
@@ -207,12 +229,12 @@ Optionally write the report to `docs-audit-<YYYY-MM-DD>.md` if the user opts in 
 
 ### verb = catchup
 
-Run 3 agents in parallel (background):
+Run these 3 agents as one parallel wave through the Worker dispatch contract:
 1. `changelog-analyzer` (mode: propose) — returns proposed [Unreleased] entries
 2. `public-api-watcher` — returns reference files needing update
 3. `arch-watcher` — returns ADR candidates
 
-Wait for the background agents' completion notifications; summarize when all report. Then present an interactive triage:
+Collect all three reports, then present an interactive triage:
 
 ```
 ─────────────────
@@ -282,13 +304,13 @@ In a hub with `openwiki/`, significant dev-docs changes warrant an OpenWiki refr
 
 ### verb = architecture
 
-Dispatch `architecture-documenter` in the background (`run_in_background: true`) and wait for its completion notification. Before writing, show a diff vs current `dev-docs/architecture.md` (if it exists) and AskUserQuestion: proceed | cancel. On proceed, write the new version.
+Run one `architecture-documenter` through the Worker dispatch contract. Before writing, show a diff vs current `dev-docs/architecture.md` (if it exists) and AskUserQuestion: proceed | cancel. On proceed, write the new version.
 
 **When the project sits in a hub with `openwiki/`** (or its own OpenWiki): `architecture.md` is deliberately THIN — curated boundaries, cross-module contracts, and invariants only, opening with a pointer: "The living structural map is the OpenWiki (`openwiki/architecture/`) — this file records only what a map cannot: intended boundaries and contracts." Do not duplicate the wiki's derivable content; pass this constraint to the agent.
 
 ### verb = contributing
 
-Dispatch `contributing-generator` in the background (`run_in_background: true`) and wait for its completion notification. It will produce 3 file contents (root router, `docs/contributing.md`, `dev-docs/development.md`). Before writing, show a diff per file vs current content and AskUserQuestion per file: write | skip. Write only the confirmed files.
+Run one `contributing-generator` through the Worker dispatch contract. It will produce 3 file contents (root router, `docs/contributing.md`, `dev-docs/development.md`). Before writing, show a diff per file vs current content and AskUserQuestion per file: write | skip. Write only the confirmed files.
 
 ### verb = changelog
 
@@ -366,7 +388,7 @@ docs:
 - Never overwrite files without prompt + confirmation (except in `init` when files are missing).
 - Never push or commit on the user's behalf without explicit verb authorization (only `catchup` commits automatically after user triage; `publish` commits `.outline-sync.json`).
 - All file paths are relative to the project root unless explicitly noted.
-- Background verbs (`init`, `audit`, `catchup`, `architecture`, `contributing`) dispatch agents with `run_in_background: true`; all other verbs (`repair`, `write`, `adr`, `changelog`, `release-notes`, `explain`, `publish`) run foreground. This is the single authoritative list for the repo-level case (standalone repo or hub sub-repo) — the per-verb sections above follow it; at the hub root, dispatch per the Hub sweep section instead.
+- Parallel worker verbs (`init`, `audit`, `catchup`) dispatch one complete wave through the Worker dispatch contract; `architecture` and `contributing` use one worker and may overlap only independent main-session preparation. Other verbs (`repair`, `write`, `adr`, `changelog`, `release-notes`, `explain`, `publish`) run foreground. At the hub root, the same contract decides between Herdr repo lanes and same-session workers.
 
 
 ## When you finish

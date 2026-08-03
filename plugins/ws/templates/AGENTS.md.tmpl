@@ -50,6 +50,11 @@ __REPO_SECTIONS__
 
 ## Documentation
 
+**Written artifacts are English-only**: code, comments, specs, ADRs, changelogs,
+commit messages, dev-docs, and tickets. The conversation may be in any language,
+but artifacts never follow it; user-facing translations are derived copies
+(originals stay English) and proper nouns keep their spelling.
+
 Product-level INTERNAL documentation lives in this hub's own `dev-docs/` —
 the knowledge root beside `openwiki/`: cross-repo architecture (written by
 `/ws-hub docs`), product ADRs (`decisions/`), runbooks, and processed client
@@ -91,11 +96,22 @@ thin-CLAUDE.md rule).
 
 <!-- Prune this section if the hub was initialized without herdr. -->
 
-Agent fleets for this hub run under [herdr](https://herdr.dev). If `HERDR_ENV=1`
-is set you are inside a herdr-managed pane — the globally installed `herdr`
-skill governs fleet control. Hub pattern: one workspace per sub-repo
-(`herdr workspace create --cwd <hub>/<repo> --label <repo>`); worktrees via
-`herdr worktree create`. Works with both Claude Code and omp agent kinds.
+Herdr panes are the OUTER scheduling backend — the default when `HERDR_ENV=1`
+AND the work is 2+ substantial, independent, long-lived repo or subsystem lanes
+(in a hub, typically one lane per sub-repo); under WS policy the user need not
+name Herdr again. Smaller work that decomposes — review axes, research
+questions, TDD seams — is a batched same-session `task` call, not panes.
+When the Herdr-director row wins, explicitly load the vendored `herdr` skill
+before any Herdr CLI call; the binding WS policy authorizes that load.
+
+`HERDR_ENV=1` does not distinguish director from lane — every pane carries it.
+The director stamps each top-level prompt `WS-HERDR-LANE: <stable-lane-id>`.
+A stamped lane never starts more panes or resubmits any lane; it may use one
+batched `task` call for genuinely disjoint sub-slices that it alone owns.
+Shared-cwd panes are COORDINATION ONLY — parallel EDITS need
+`herdr worktree create`. The `herdr` skill ships with the ws plugin (no global
+install); topology is one workspace per sub-repo
+(`herdr workspace create --cwd <hub>/<repo> --label <repo>`), Claude and omp kinds.
 
 ## Access notes
 

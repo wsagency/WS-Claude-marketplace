@@ -1,14 +1,17 @@
 ---
-description: Edge discipline for the ws-matt skill graph — two-tier topology, state-delta workers, file handoffs, small orchestrator context
+description: Edge discipline for the ws-matt skill graph — two-tier topology, state-delta workers, file handoffs, small orchestrator context, orchestration layer ownership, English-only artifacts
 alwaysApply: true
 ---
 
-# ws-matt edge discipline
+# WS session and graph discipline
 
-When executing any ws-matt graph node (ws-ask-matt, ws-implement, ws-to-spec,
-ws-to-tickets, ws-triage, ws-grill-with-docs, ws-improve-codebase-architecture,
-ws-wayfinder, ws-setup-matt-pocock-skills) or spawning the worker agents
-(`reviewer`, `researcher`, `tdd-runner`):
+The **English artifacts**, **one owner per work unit**, and **Herdr outer /
+task inner** bullets apply whenever any WS command, skill, agent, or tool runs.
+The remaining graph bullets apply when executing a ws-matt graph node
+(ws-ask-matt, ws-implement, ws-to-spec, ws-to-tickets, ws-triage,
+ws-grill-with-docs, ws-improve-codebase-architecture, ws-wayfinder,
+ws-setup-matt-pocock-skills) or spawning its worker agents (`reviewer`,
+`researcher`, `tdd-runner`):
 
 - **Never chain entry → entry.** An entry (user-invoked) node may invoke worker
   (model-invoked) nodes and worker agents only. When an entry node's output should
@@ -39,3 +42,19 @@ ws-wayfinder, ws-setup-matt-pocock-skills) or spawning the worker agents
 - **Durable outcomes are recorded in authored docs (dev-docs).** A session that
   changed decisions or architecture without recording them (ADR in
   `dev-docs/decisions/`, `CONTEXT.md`) is incomplete.
+- **English artifacts.** Every artifact a skill, agent, or tool writes — specs,
+  tickets, ADRs, changelogs, commits, research, reviews, docs — is ENGLISH. The
+  conversation may be in any language; written artifacts never follow it.
+  User-facing translations are derived copies; the originals stay English.
+- **One owner per work unit.** A work unit is scheduled at exactly one layer.
+  Herdr may partition top-level lanes; within one lane, `task` may partition
+  genuinely disjoint sub-slices, but it must never resubmit the lane or its
+  siblings. Leaf workers never spawn or re-orchestrate. See
+  `ws-graph-engineering` for the full precedence table.
+- **Herdr outer / task inner.** With `HERDR_ENV=1` and 2+ substantial,
+  independent, long-lived lanes, Herdr is the default outer backend (the user
+  need not name it again). This binding WS policy authorizes the choice:
+  explicitly load the vendored `herdr` skill before issuing Herdr CLI calls.
+  Stamp each lane prompt; a stamped lane never starts more panes, though it may
+  batch its own disjoint inner slices. Shared-cwd panes are coordination-only;
+  parallel edits require `herdr worktree`.

@@ -1,5 +1,5 @@
 {
-  "description": "ws plugin hooks — docs enforcement (opt-in via .claude/docs-config.yaml), OpenWiki freshness reminder (hubs), and the Jira session dashboard.",
+  "description": "ws plugin hooks — docs enforcement (opt-in via .claude/docs-config.yaml), OpenWiki freshness reminder (hubs), the Jira session dashboard, and the orchestration and English-artifact discipline contract injected at SessionStart.",
   "hooks": {
     "SessionStart": [
       {
@@ -8,6 +8,16 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start-dashboard.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-discipline.sh",
+            "timeout": 5
           }
         ]
       }

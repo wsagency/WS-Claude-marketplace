@@ -14,6 +14,8 @@ versions checked, drift found, actions taken.
 Follow the phases in order; each is skippable when its scope is untouched,
 but say so in the log entry.
 
+**Artifact language.** Everything this process writes — the `dev-docs/maintenance-log.md` entry, any ADR it files, and every doc fix it lands — is English, whatever language the conversation is in.
+
 ## 1. Vendored upstreams
 
 ### ws-matt skills (orchestrated)
@@ -54,7 +56,9 @@ upstream inventory/content; WS adaptations (does the change hit a preserve-list
 item?); graph routing (do nodes/tiers/edges move?); omp distribution (will the
 `plugins/ws/` surface change?). Use `researcher` for upstream fact gathering
 and `reviewer` for WS, graph, and distribution audits; reserve `tdd-runner` for
-implementation seams if a contentful sync requires code changes.
+implementation seams if a contentful sync requires code changes. When the
+active task schema exposes `effort`, use `hi` for the review-grade audits and
+`med` for fact gathering.
 
 **Gate 4 — Conscious porting (WS precedence).** Port through the rename map with
 WS-local precedence — upstream never overwrites a WS adaptation. The full
@@ -95,9 +99,17 @@ take upstream verbatim (no WS-local adaptations by policy), update the pin.
 
 ## 2. External tools — versions and doc drift
 
-For each tool: check installed vs latest, skim release notes since the last
-log entry, and verify OUR documented invocations still hold. Fix docs where
-drift is found; flag behavior changes that affect commands/skills.
+Fan this audit out by default rather than looping the seven tools serially.
+Each check is read-only and touches a disjoint set of docs, so run one worker
+per tool in a single batched `task` call — `{ context, tasks: [...] }`, one
+item per tool and, when the active task schema exposes it, `effort: lo`
+(mechanical version-and-doc checks) — then one synthesis pass merges the
+version table and the doc-drift fixes. Claude Code:
+one Task call per tool in a single message. Each worker checks installed vs
+latest, skims release notes since the last log entry, and verifies OUR
+documented invocations still hold. Fix docs where drift is found; flag behavior
+changes that affect commands/skills. This is inner same-session fan-out, not
+Herdr panes.
 
 | Tool | Latest check | Our claims to re-verify |
 |---|---|---|
@@ -120,8 +132,8 @@ extensibility changes; record adoption candidates (new events, APIs) in
 ## 4. Rebuild and release
 
 Any change to `plugins/ws/` surface or the extension → `cd extensions/omp-ws
-&& bun run build` (regenerates commands/skills/agents/rules; verify the
-printed counts) and rerun tests. Then the standard release flow
+&& bun run build` (regenerates commands, skills, agents, rules, templates, and
+runtime helpers; verify the printed counts) and rerun tests. Then the standard release flow
 (`dev-docs/development.md`): changelog, lockstep version, mirror, tag, push.
 Team announcement lines: `claude plugin marketplace update ws-marketplace` +
 plugin update; omp users rebuild + relink the native package.
