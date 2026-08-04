@@ -2,15 +2,17 @@
  * Changelog gate: `tool_call` hook on bash `git commit` commands — the omp
  * port of hooks/enforce-changelog.sh.
  *
- * Only enforces when `.claude/docs-config.yaml` in cwd sets
+ * Only enforces when `.claude/docs-config.yaml` at the commit's repository root sets
  * `auto.changelog_per_commit: true` (PR-time is the canonical WS timing;
  * per-commit is opt-in). Skip types (docs/chore/test/style/build/ci by
  * default) pass; commits whose type cannot be extracted from `-m` pass;
  * staged sets that are docs-only or already include CHANGELOG.md pass.
  */
+import * as path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { splitSegments, tokenize } from "./guard";
 import { hasCodeChanges, loadDocsConfig, touchesChangelog, type DocsConfig } from "./lib/docs-config";
+import { run } from "./lib/exec";
 import { stagedFiles } from "./lib/git";
 
 export const CHANGELOG_BLOCK_REASON =
@@ -43,14 +45,73 @@ export function isGitCommitCommand(command: string): boolean {
 }
 
 /**
- * Best-effort extraction of the Conventional Commits type from a `-m`
- * message inside the command string. Returns undefined when no type can be
- * extracted (multi-line heredocs, -F files, editor commits) — callers PASS
- * in that case.
+ * Resolve the directory a `git commit` command actually targets. `git -C <dir>
+ * commit` runs against <dir> (relative to cwd; repeatable, each chained to the
+ * last), so the gate must read THAT repo's docs-config and staged set, not the
+ * session repo's. Returns cwd unchanged when no -C is present.
+ */
+export function resolveCommitCwd(command: string, cwd: string): string {
+	for (const segment of splitSegments(command)) {
+		const tokens = tokenize(segment);
+		const gitIndex = tokens.indexOf("git");
+		if (gitIndex === -1) continue;
+		let index = gitIndex + 1;
+		let target = cwd;
+		let isCommit = false;
+		while (index < tokens.length) {
+			const token = tokens[index] as string;
+			if (token === "-C") {
+				const operand = tokens[index + 1];
+				if (operand !== undefined) target = path.resolve(target, operand);
+				index += operand !== undefined ? 2 : 1;
+				continue;
+			}
+			if (token === "-c") {
+				index += 2; // config key=value — consumes the next token, not a path
+				continue;
+			}
+			if (token.startsWith("-")) {
+				index += 1;
+				continue;
+			}
+			isCommit = token === "commit"; // first non-option token is the subcommand
+			break;
+		}
+		// Only the segment that runs `git commit` carries the -C target that
+		// applies to the commit — a -C on a sibling `git add` does not move it.
+		if (isCommit) return target;
+	}
+	return cwd;
+}
+
+/**
+ * Resolve the repository root git would operate on from <target>. `git diff`
+ * walks up to the work-tree top and reports root-relative paths, but
+ * loadDocsConfig reads <dir>/.claude/docs-config.yaml without walking — so a
+ * `-C <subdir>` commit in a root-config/nested-package layout (this very repo)
+ * would miss the governing config and silently skip the gate. Returns <target>
+ * unchanged when git cannot resolve a work tree (fail-open: missing config ⇒
+ * exists:false ⇒ gate off).
+ */
+async function resolveRepoRoot(target: string): Promise<string> {
+	const result = await run("git", ["rev-parse", "--show-toplevel"], { cwd: target });
+	const top = result.code === 0 ? result.stdout.trim() : "";
+	return top !== "" ? top : target;
+}
+
+/**
+ * Best-effort extraction of the Conventional Commits type from a `-m` /
+ * `--message` argument, including clustered short flags such as `-am` /
+ * `-sm` (the most common combined form, which contains no standalone `-m`
+ * token). Returns undefined when no type can be extracted (multi-line
+ * heredocs, -F files, editor commits) — callers PASS in that case.
  */
 export function extractCommitType(command: string): string | undefined {
 	const unescaped = command.replace(/\\"/g, '"');
-	const match = /(?:-m|--message)[=\s]*["']([^"']*)["']/.exec(unescaped);
+	// `-[A-Za-z]*m` matches -m and any short cluster ending in m (-am, -sm, …);
+	// --message is the long form. `(?:^|\s)` pins the match to a token start so
+	// the tail of an unrelated long flag (--rm, --form, --stream) cannot win.
+	const match = /(?:^|\s)(?:-[A-Za-z]*m|--message)[=\s]*["']([^"']*)["']/.exec(unescaped);
 	if (!match) return undefined;
 	const message = match[1] ?? "";
 	const type = /^([a-z]+)[(:!]/.exec(message);
@@ -85,10 +146,16 @@ export function registerChangelogGate(pi: ExtensionAPI): void {
 			if (!isGitCommitCommand(command)) return;
 
 			const cwd = typeof input.cwd === "string" && input.cwd !== "" ? input.cwd : ctx.cwd;
-			const config = await loadDocsConfig(cwd);
+			// `git -C <dir> commit` targets <dir>, not the session repo. loadDocsConfig
+			// reads <dir>/.claude/docs-config.yaml without walking up to the repo root
+			// the way `git diff` does, so resolve the root once and use it for both the
+			// config lookup and the staged-file query (falls back to <dir> off-repo).
+			const target = resolveCommitCwd(command, cwd);
+			const repoRoot = await resolveRepoRoot(target);
+			const config = await loadDocsConfig(repoRoot);
 			if (!config.exists || !config.enforceViaHooks || !config.changelogPerCommit) return;
 
-			const staged = await stagedFiles(cwd);
+			const staged = await stagedFiles(repoRoot);
 			const reason = evaluateChangelogGate(command, config, staged);
 			if (reason !== undefined) return { block: true, reason };
 		} catch (error) {

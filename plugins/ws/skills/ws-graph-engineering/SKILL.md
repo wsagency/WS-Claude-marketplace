@@ -57,11 +57,11 @@ The canonical ws-matt workflow:
 1. **Classify** — an entry node reads the request and partitions it into independent
    units (diff slices to review, questions to answer, seams to test).
 2. **Parallel workers** — dynamic fan-out: one worker agent per unit
-   (`reviewer`, `researcher`, `tdd-runner`).
+   (`ws-reviewer`, `researcher`, `tdd-runner`).
 3. **Synthesize** — the orchestrator merges returns per the reducers, reads only the
    artifact paths it needs, and produces the final output.
 
-`ws-code-review` fanning out `reviewer` workers is the archetype;
+`ws-code-review` fanning out `ws-reviewer` workers is the archetype;
 [[ws-implement]] uses the same shape by default for two or more independent,
 disjoint-file `tdd-runner` cycles, skipping it only when delegation would cost
 more than the work.
@@ -70,12 +70,19 @@ more than the work.
 
 Workers keep the orchestrator's context small:
 
-- Write any large output (full review write-up, research notes, test transcript) as a
-  file in the **scratch directory** — the directory the orchestrator names in the
-  worker's prompt (fall back to the harness scratchpad dir, else a `ws-matt/` subdir
-  of the system temp dir).
+- Write any large output (full review write-up, test transcript) as a file in the
+  **scratch directory** — the directory the orchestrator names in the worker's prompt
+  (fall back to the harness scratchpad dir, else a `ws-matt/` subdir of the system
+  temp dir). **Exception:** a durable findings file that downstream entry nodes read
+  after the worker exits (e.g. `researcher`'s `dev-docs/research/` findings) lives in
+  the repo where such notes are kept, not in scratch — scratch holds only the working
+  evidence and dead ends that do not outlive the run.
 - Return exactly `DONE|{path}` plus a summary of at most a few lines and the
-  structured fields the worker's `output` schema declares.
+  structured fields the worker's `output` schema declares. A worker that is blocked —
+  it resolved what it could but cannot finish without inventing behaviour or without
+  outside agreement — returns `DONE|BLOCKED|{reason}` instead (e.g. a merge worker
+  leaving the merge in progress with the unresolved hunks / failing checks); the
+  orchestrator treats this as a blocked edge, not a path to open.
 - **Never paste large artifacts into the conversation.** The orchestrator reads the
   paths it needs, when it needs them — most paths are only ever opened by the
   synthesizer.
@@ -161,7 +168,7 @@ reasoning level.
 
 | Agent | Role | Effort | Why |
 |---|---|---|---|
-| reviewer | @slow | hi | deepest judgement on a diff slice |
+| ws-reviewer | @slow | hi | deepest judgement on a diff slice |
 | hub-architect | @plan | hi | cross-repo architecture synthesis |
 | architecture-documenter | @plan | med | structured doc from a known template |
 | researcher | @task | med | one sourced question, scoped legwork |

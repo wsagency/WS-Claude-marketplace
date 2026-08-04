@@ -59,7 +59,7 @@ if [[ -f "./project.yaml" ]]; then
 		# A comment-only or blank line never opens or closes a block, so a
 		# column-0 comment inside `repos:` cannot terminate it.
 		/^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
-		/^[^[:space:]]/ {
+		/^[^[:space:]]/ && !/^-[[:space:]]/ {
 			if (have) flush()
 			have=0; name=""; type=""; role=""; purpose=""; path=""
 			key=$0; sub(/[[:space:]]+#.*$/, "", key)

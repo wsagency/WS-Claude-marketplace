@@ -6,9 +6,11 @@ install, zero marketplace coupling:
 
 - **Generated at build time** from `plugins/ws/` in the ws-claude-marketplace
   repo (single source of truth): `commands/` (7), `skills/` (30), `agents/`
-  (14, with omp `@role` model aliases), `rules/` (4 TTSR/always-apply rules),
-  `templates/`, and three command/skill runtime helpers under `scripts/`.
-  Generated directories are gitignored, wiped and rewritten by
+  (14, with omp `@role` model aliases and Claude tool names remapped to
+  omp-resolvable ids), `rules/` (4 TTSR/always-apply rules), `templates/`
+  (including the hub-only `openwiki-freshness` rule under
+  `templates/omp/hub-rules/`), and three command/skill runtime helpers under
+  `scripts/`. Generated directories are gitignored, wiped and rewritten by
   `scripts/generate.ts`; helper copies sharing that directory are overwritten.
   Never hand-edit generated assets.
 - **Hand-written TS** (`src/` → `dist/index.js`): the behaviors markdown
@@ -20,6 +22,15 @@ plugin (its `omp-plugins` provider scans `commands/*.md`, `skills/<name>/
 SKILL.md`, `rules/*.md`, and the task system scans `agents/*.md`). Claude
 Code users keep using the marketplace `ws` plugin; the two artifacts are
 independent, complete distributions generated from the same source.
+
+The hub-only `openwiki-freshness` rule carries `alwaysApply: true`, so it is
+deliberately NOT shipped under the auto-scanned `rules/` — it would otherwise
+inject hub-only OpenWiki discipline into every omp session. It is packaged at
+`templates/omp/hub-rules/` (outside omp's discovery scan) for `/ws-hub` to copy
+into each hub's `.omp/rules/` on init. Likewise, the `researcher` agent keeps
+web/read capability under omp: `generate.ts` remaps the Claude tool names
+`WebSearch` → `web_search` and `WebFetch` → `read` (omp's tool resolver would
+otherwise silently drop them).
 
 ## Install
 
@@ -37,6 +48,11 @@ Restart omp. Once published to npm:
 ```bash
 omp plugin install @wsagency/omp-ws
 ```
+
+`npm pack` and `npm publish` run the `prepack` script (`bun run build`)
+automatically, so a clean checkout produces a complete tarball with no manual
+build step — every path in `package.json#files` is regenerated from
+`plugins/ws/` before the tarball is created.
 
 **Rebuild after plugin changes:** any change to `plugins/ws/` that the generator
 consumes (commands, skills, agents, rules, templates, or runtime scripts)
@@ -56,9 +72,13 @@ omp 17.2.4 source):
   `omp plugin disable ws@ws-marketplace` (or uninstall it).
 - **On machines where Claude Code also has `ws` installed** (omp reads
   Claude's `~/.claude/plugins/installed_plugins.json` too): add a disabled
-  entry for the id to `~/.omp/plugins/installed_plugins.json` — omp's own
-  registry is authoritative and drops the Claude-sourced root, while Claude
-  Code keeps its copy untouched:
+  entry for the id to omp's own user registry — `installed_plugins.json` under
+  omp's plugins dir. That dir is profile/XDG/legacy-aware (a named
+  `OMP_PROFILE` roots it at `~/.omp/profiles/<p>/plugins`; `XDG_DATA_HOME`
+  relocates it to `$XDG_DATA_HOME/omp[/profiles/<p>]/plugins` once omp migrated
+  the data root; otherwise `~/.omp/plugins`) — the session-start warning names
+  the exact resolved path. omp's user registry is authoritative and drops the
+  Claude-sourced root, while Claude Code keeps its copy untouched:
 
   ```json
   { "version": 2, "plugins": { "ws@ws-marketplace": [
@@ -88,9 +108,11 @@ every WS command, skill, agent, and tool:
 ## Settings
 
 Declared in `package.json` under `omp.settings`; set globally via
-`omp plugin settings @wsagency/omp-ws` (stored in
-`~/.omp/plugins/omp-plugins.lock.json`) or per-project in
-`.omp/plugin-overrides.json`:
+`omp plugin settings @wsagency/omp-ws` (stored in `omp-plugins.lock.json` under
+omp's plugins dir — profile/XDG/legacy-aware, same resolution as `omp plugin`
+itself: `~/.omp/plugins` by default, `~/.omp/profiles/<p>/plugins` under a named
+`OMP_PROFILE`, or `$XDG_DATA_HOME/omp[/profiles/<p>]/plugins` once omp migrated
+the data root) or per-project in `.omp/plugin-overrides.json`:
 
 ```json
 { "settings": { "@wsagency/omp-ws": { "guard": false, "dashboard": false, "jiraProject": "WSC" } } }

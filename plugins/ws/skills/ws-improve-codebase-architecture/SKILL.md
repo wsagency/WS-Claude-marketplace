@@ -12,7 +12,7 @@ Surface architectural friction and propose **deepening opportunities** — refac
 This command is _informed_ by the project's domain model and built on a shared design vocabulary:
 
 - Run the `/ws-codebase-design` skill for the architecture vocabulary (**module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**) and its principles (the deletion test, "the interface is the test surface", "one adapter = hypothetical seam, two = real"). Use these terms exactly in every suggestion — don't drift into "component," "service," "API," or "boundary."
-- The domain language in `CONTEXT.md` gives names to good seams; ADRs in `dev-docs/decisions/` record decisions this command should not re-litigate.
+- The domain language in `CONTEXT.md` gives names to good seams; ADRs record decisions this command should not re-litigate — discover them by project shape (see `project-hub-conventions`), not only at the repo root.
 
 ## Process
 
@@ -23,7 +23,7 @@ This command is _informed_ by the project's domain model and built on a shared d
 - If the user named a direction — a module, a subsystem, a pain point — take it, and skip the inference below.
 - Otherwise, walk back a good stretch of the commit history (`git log --oneline`) to find the codebase's hot spots — the files and areas that keep coming up — and let those paths pull your attention first. If the changes are scattered with no clear hot spot, widen the net.
 
-Read the project's domain glossary (`CONTEXT.md`) and any ADRs in the area you're touching first.
+Read the project's domain model and governing ADRs first — by project shape (see `project-hub-conventions`): resolve `CONTEXT-MAP.md` before `CONTEXT.md` for a multi-context repo, and scan the hub, repo-root, and any bounded-context `dev-docs/decisions/` you're touching. This is the same set `ws-domain-modeling` owns; missing it re-proposes already-rejected refactors.
 
 Then delegate one read-only exploration pass: Claude Code uses the Agent tool
 with `subagent_type=Explore`; omp uses one `scout` task agent (and `effort: med`
@@ -73,19 +73,20 @@ Side effects happen inline as decisions crystallize — run the `/ws-domain-mode
 - **Naming a deepened module after a concept not in `CONTEXT.md`?** Add the term to `CONTEXT.md`. Create the file lazily if it doesn't exist.
 - **Sharpening a fuzzy term during the conversation?** Update `CONTEXT.md` right there.
 - **User rejects the candidate with a load-bearing reason?** Offer an ADR, framed as: _"Want me to record this as an ADR so future architecture reviews don't re-suggest it?"_ Only offer when the reason would actually be needed by a future explorer to avoid re-suggesting the same thing — skip ephemeral reasons ("not worth it right now") and self-evident ones.
+- **User accepts a candidate that contradicts an existing ADR?** Supersede it through `/ws-domain-modeling`: record the new decision as an ADR and set `superseded by ADR-NNNN` in the old ADR's Status frontmatter ([ADR-FORMAT.md](../ws-domain-modeling/ADR-FORMAT.md), Optional sections).
 - **Want to explore alternative interfaces for the deepened module?** Run the `/ws-codebase-design` skill and use its design-it-twice parallel sub-agent pattern.
 
 ## Graph node
 
 - **Tier:** user-invoked (entry)
-- **Reads:** git history hot spots (`git log --oneline`), `CONTEXT.md`, ADRs in the area, the codebase (walked by an Explore sub-agent)
+- **Reads:** git history hot spots (`git log --oneline`), `CONTEXT.md` (or `CONTEXT-MAP.md` plus per-context files), ADRs across the hub, repo root, and any touched bounded-context `dev-docs/decisions/` (by project shape, see `project-hub-conventions`), the codebase (walked by one bounded Explore pass)
 - **Emits:** a self-contained HTML report of deepening candidates at `<tmpdir>/architecture-review-<timestamp>.html`; then, per picked candidate: `CONTEXT.md` updates and sparing ADRs from the grilling loop
 - **Edges:**
-  - then → ws-codebase-design (the vocabulary every suggestion is written in; its design-it-twice pattern for alternative interfaces)
+  - then → ws-codebase-design (the vocabulary every suggestion is written in; its design-it-twice pattern for alternative interfaces inside the grilling loop)
   - then → ws-grilling (walks the picked candidate's decision tree in the grilling loop)
   - then → ws-domain-modeling (inline `CONTEXT.md`/ADR upkeep as decisions crystallise)
-  - fan-out: an Explore sub-agent walks the codebase (schema: friction notes — shallow modules, missing locality, untestable seams)
-  - when the user picks a candidate → the pick generates an idea; hand off to ws-grill-with-docs on the main flow (user-mediated)
+  - then → one bounded read-only exploration pass (Claude Code: Agent tool, `subagent_type=Explore`; omp: one `scout` task agent) returning friction notes — shallow modules, missing locality, untestable seams. Not a fan-out.
+  - when the grilled candidate becomes a build the loop can't hold → hand off to ws-grill-with-docs on the main flow (user-mediated) — the pick itself stays inside the grilling loop
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** the report is written to the OS temp dir and referenced by absolute path — never pasted into conversation (DONE|{report path}).
-- **Exit report:** report presented and a candidate is picked → ws-grill-with-docs on the main flow (user-mediated); the design is still open → ws-codebase-design. (Format: `ws-graph-engineering`.)
+- **Exit report:** candidate grilled to a decision and the work fits this session → stop with the report path plus the landed `CONTEXT.md`/ADR paths (DONE|{report path, decision paths}); the work outgrows this session → ws-grill-with-docs (user-mediated); the design is still open → ws-codebase-design; report presented but nothing picked yet → stop and wait for the pick. (Format: `ws-graph-engineering`.)

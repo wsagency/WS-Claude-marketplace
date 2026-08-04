@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
 	AGENT_MODEL_MAP,
+	AGENT_TOOL_MAP,
 	agentModel,
 	generate,
 	RUNTIME_SCRIPT_FILES,
@@ -76,7 +77,7 @@ describe("transformCommand", () => {
 
 describe("agentModel", () => {
 	test("maps agents to purpose-specific roles", () => {
-		expect(agentModel("reviewer")).toBe("@slow");
+		expect(agentModel("ws-reviewer")).toBe("@slow");
 		expect(agentModel("hub-architect")).toBe("@plan");
 		expect(agentModel("architecture-documenter")).toBe("@plan");
 		expect(agentModel("researcher")).toBe("@task");
@@ -93,6 +94,12 @@ describe("agentModel", () => {
 			expect(model).toMatch(/^@[a-z-]+$/);
 			expect(model).not.toMatch(/claude|sonnet|opus|haiku/i);
 		}
+	});
+});
+
+describe("AGENT_TOOL_MAP", () => {
+	test("maps Claude agent tools to omp-resolvable ids", () => {
+		expect(AGENT_TOOL_MAP).toEqual({ WebSearch: "web_search", WebFetch: "read" });
 	});
 });
 
@@ -120,7 +127,7 @@ describe("transformAgent", () => {
 	test("preserves existing name, output schema, and autoloadSkills", () => {
 		const source = [
 			"---",
-			"name: reviewer",
+			"name: ws-reviewer",
 			"description: Review worker",
 			"tools: Read, Bash",
 			"output:",
@@ -131,8 +138,8 @@ describe("transformAgent", () => {
 			"Body.",
 			"",
 		].join("\n");
-		const result = transformAgent(source, "reviewer");
-		expect(result).toContain("name: reviewer\n");
+		const result = transformAgent(source, "ws-reviewer");
+		expect(result).toContain("name: ws-reviewer\n");
 		expect(result).toContain("output:\n  type: object\n  required: [findings]\n");
 		expect(result).toContain("autoloadSkills: [ws-code-review]\n");
 		expect(result).toContain('model: "@slow"\n');
@@ -151,6 +158,64 @@ describe("transformAgent", () => {
 
 	test("fails without description", () => {
 		expect(() => transformAgent("---\nname: x\n---\nb\n", "x")).toThrow(/no description/);
+	});
+
+	test("remaps Claude-only tool names to their omp equivalents (inline form)", () => {
+		const source = [
+			"---",
+			"name: researcher",
+			"description: d",
+			"tools: Read, Glob, Grep, Bash, WebSearch, WebFetch, Write",
+			"---",
+			"b",
+			"",
+		].join("\n");
+		const result = transformAgent(source, "researcher");
+		expect(result).toContain("tools: Read, Glob, Grep, Bash, web_search, read, Write");
+		expect(result).not.toContain("WebSearch");
+		expect(result).not.toContain("WebFetch");
+	});
+
+	test("remaps Claude-only tool names to their omp equivalents (block form)", () => {
+		const source = [
+			"---",
+			"name: researcher",
+			"description: d",
+			"tools:",
+			"  - Read",
+			"  - WebSearch",
+			"  - WebFetch",
+			"  - Bash",
+			"---",
+			"b",
+			"",
+		].join("\n");
+		const result = transformAgent(source, "researcher");
+		expect(result).toContain("- web_search");
+		expect(result).toContain("- read");
+		expect(result).toContain("- Read");
+		expect(result).toContain("- Bash");
+		expect(result).not.toContain("- WebSearch");
+		expect(result).not.toContain("- WebFetch");
+	});
+	test("preserves trailing text after a block-form tool item", () => {
+		// Inline comments, YAML anchors, or quoted suffixes on a `  - name` item must
+		// survive the tool-name remap — the contract is "kept textually verbatim".
+		const source = [
+			"---",
+			"name: researcher",
+			"description: d",
+			"tools:",
+			"  - Read  # inline note",
+			"  - WebSearch  # search the web",
+			"---",
+			"b",
+			"",
+		].join("\n");
+		const result = transformAgent(source, "researcher");
+		expect(result).toContain("  - Read  # inline note");
+		expect(result).toContain("  - web_search  # search the web");
+		expect(result).not.toContain("WebSearch");
 	});
 });
 
@@ -200,6 +265,17 @@ describe("generate runtime assets", () => {
 			);
 			expect(edgeRule).toContain("One owner per work unit");
 			expect(edgeRule).toContain("English artifacts");
+			// Hub-only openwiki-freshness rule: packaged for /ws-hub to copy into
+			// a hub's .omp/rules/, but OUTSIDE the auto-discovered rules/ dir.
+			expect(counts.hubRules).toBe(1);
+			const hubRule = await fs.readFile(
+				path.join(outRoot, "templates", "omp", "hub-rules", "openwiki-freshness.md"),
+				"utf8",
+			);
+			expect(hubRule).toContain("alwaysApply: true");
+			const packagedRules = await fs.readdir(path.join(outRoot, "rules"));
+			expect(packagedRules).not.toContain("openwiki-freshness.md");
+			expect(packagedRules).toContain("omp-edge-discipline.md");
 		} finally {
 			await fs.rm(outRoot, { recursive: true, force: true });
 		}

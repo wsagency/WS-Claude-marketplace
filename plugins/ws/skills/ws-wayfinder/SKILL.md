@@ -19,7 +19,7 @@ Every map and ticket is an issue, so it has a **name** — its title. In everyth
 
 ## The Map
 
-The map is a single issue on this repo's issue tracker, labelled `wayfinder:map` — the canonical artifact. Its tickets are child issues of the map.
+The map is a single issue on this repo's issue tracker, labelled `wayfinder:map` — the canonical artifact. Its tickets are child issues of the map. On a tracker without native sub-issue parentage (the local-markdown default), each child ticket carries a `Map: <map-slug>` line — mirroring `Part of #<map>` — so the frontier can be scoped to this map's children and the map file itself excluded.
 
 The map is an **index**, not a store. It lists the decisions made and points at the tickets that hold their detail; a decision lives in exactly one place — its ticket — so the map never restates it, only gists it and links.
 
@@ -65,9 +65,9 @@ Each ticket is a **child issue** of the map; the tracker's issue id is its ident
 
 Each ticket carries a `wayfinder:<type>` label — one of `research`, `prototype`, `grilling`, `task` (see [Ticket Types](#ticket-types)).
 
-A session **claims** a ticket by assigning it to the dev driving the map, **first**, before any work, so concurrent sessions skip it. That assignee _is_ the claim: an open, unassigned ticket is unclaimed.
+A session **claims** a ticket by assigning it to the dev driving the map, **first**, before any work, so concurrent sessions skip it. That assignee _is_ the claim: an open, unassigned ticket is unclaimed. A session that ends without resolving its ticket **unassigns it first** — release the claim so the frontier heals — and a claimed ticket whose assignee has posted no activity since the claim is **stale** and may be re-claimed by a later session.
 
-Blocking uses the tracker's **native** dependency relationship — essential because it renders the frontier _visually_ in the tracker's own UI, so the human sees what's takeable without opening the map. Only a tracker that lacks native blocking falls back to a body convention. A ticket is **unblocked** when every ticket blocking it is closed; the **frontier** is the open, unblocked, unclaimed children — the edge of the known.
+Blocking uses the tracker's **native** dependency relationship — essential because it renders the frontier _visually_ in the tracker's own UI, so the human sees what's takeable without opening the map. Only a tracker that lacks native blocking falls back to a body convention. A ticket is **unblocked** when every ticket blocking it is closed; the **frontier** is the open, unblocked, unclaimed children — scoped to those carrying the map's pointer on trackers without native parentage, and excluding the map file itself — the edge of the known.
 
 The answer isn't part of the body — it's recorded on resolution (see [Work through the map](#work-through-the-map)). Assets created while resolving a ticket are linked from the issue, not pasted in.
 
@@ -113,18 +113,19 @@ User invokes with a loose idea.
 2. **Map the frontier.** Grill again, **breadth-first** this time: fan out across the whole space rather than deep on any one thread, surfacing the open decisions and the first steps takeable now. **If this surfaces no fog** — the way to the destination is already clear, the whole journey small enough for one session — you don't need a map. Stop and ask the user how they'd like to proceed.
 3. **Create the map** (label `wayfinder:map`): Destination and Notes filled in, Decisions-so-far empty, the fog sketched into **Not yet specified**.
 4. **Create the tickets you can specify now** as child issues of the map — then wire blocking edges in a **second pass** (issues need ids before they can reference each other). Wiring sorts them into the frontier and the blocked; everything you can't yet specify stays in the fog — the **Not yet specified** section.
-5. **Fire the research workers.** For each `research` ticket you just created, resolve it with `/ws-research`; at two or more tickets this fans out by default, one `researcher` per ticket, in parallel. omp: one batched `task` call, one item per ticket carrying `agent: researcher` and, when the active schema exposes it, `effort: med`; Claude Code: one Task call per ticket in a single message. Each captures its findings on a throwaway `research/<name>` branch with a context pointer from the ticket.
-6. Stop — charting is one session's work; it hand-resolves nothing.
+5. **Fire the research workers.** For each `research` ticket you just created: **claim it** (assign it to yourself, first, before any work), then resolve it with `/ws-research`. At two or more tickets this fans out by default, one `researcher` per ticket, in parallel — omp: one batched `task` call, one item per ticket carrying `agent: researcher` and, when the active schema exposes it, `effort: med`; Claude Code: one Task call per ticket in a single message. Each `researcher` returns `DONE|{path}` to its scratch dir — the charting session persists those findings into `dev-docs/research/` and writes that path onto the ticket. On a worker's return, **resolve the ticket** by the work-through step-4 ritual below: post the answer as a **resolution comment** pointing at the findings file, **close** the issue, and **append** a one-line gist to the map's Decisions-so-far. This is the one-per-session exception stated at the top of ## Invocation — charting resolves its own research tickets inline and leaves none open.
+6. Stop — charting is one session's work; it resolves only its own research tickets (step 5), leaving every other ticket open for a working session.
 
 ### Work through the map
 
 User invokes with a map (URL or number). A ticket is **optional** — without one, you pick the next decision, not the user.
 
 1. Load the **map** — the low-res view, not every ticket body.
-2. Choose the ticket. If the user named one, use it. Otherwise take the first frontier ticket in order. **Claim it**: assign it to yourself before any work.
+2. Choose the ticket. If the user named one, use it. Otherwise take the first frontier ticket in order — **ascending ticket id**, i.e. creation order (the map body carries no separate ordering of open tickets; it doesn't list them). **Claim it**: assign it to yourself before any work.
 3. Resolve it — **zoom as needed**: fetch the full body of any related or closed ticket on demand; invoke the skills the `## Notes` block names. If in doubt, use `/ws-grilling` and `/ws-domain-modeling`.
 4. Record the resolution: post the answer as a **resolution comment**, **close** the issue, and **append a context pointer** to the map's Decisions-so-far.
 5. Add newly-surfaced tickets (create-then-wire); graduate any fog the answer has made specifiable, clearing each graduated patch from **Not yet specified** so it lives only as its new ticket. If the answer reveals a ticket — this one or another — sits beyond the destination, **rule it out of scope** rather than resolving it on the route. If the decision invalidates other parts of the map, update or delete those tickets.
+6. **When the frontier is empty.** If no open child tickets remain, check **Not yet specified**: if it is empty too, the map is **clear** — hand off to ws-to-spec; if fog remains, re-run charting step 2's breadth-first grill to graduate it into fresh tickets before the next working session, rather than shipping a spec over unmade decisions.
 
 The user may run unblocked tickets in parallel, so expect other sessions to be editing the tracker concurrently. Those concurrent tickets are outer lanes — one session per ticket, Herdr's backend when `HERDR_ENV=1` and the lane shape holds — while the research fan-out inside this session is inner `task` work. The same ticket is never scheduled at both layers; the precedence table lives in `ws-graph-engineering`.
 
@@ -134,12 +135,12 @@ The user may run unblocked tickets in parallel, so expect other sessions to be e
 
 - **Tier:** user-invoked (entry)
 - **Reads:** charting — the loose idea; working — the map issue (`wayfinder:map`) at low resolution, the frontier of open, unblocked, unclaimed child tickets, and the tracker config's "Wayfinding operations"
-- **Emits:** the map issue; decision tickets as child issues with native blocking edges; at most one resolution per session (resolution comment + close + a Decisions-so-far pointer on the map); graduated fog; out-of-scope rulings
+- **Emits:** the map issue; decision tickets as child issues with native blocking edges (plus a `Map: <map-slug>` pointer on trackers without native parentage); one resolution per session (resolution comment + close + a Decisions-so-far pointer on the map) — with the exception that charting resolves its own research tickets inline (step 5), so a charting session may resolve several; graduated fog; out-of-scope rulings
 - **Edges:**
-  - fan-out (default at 2+ tickets): for each `research` ticket spawn ws-research via a `researcher` agent (schema: a cited findings file on a throwaway `research/<name>` branch + a context pointer on the ticket)
+  - fan-out (default at 2+ tickets): for each `research` ticket spawn ws-research via a `researcher` agent (schema: the researcher returns `DONE|{path}`; the charting session persists the findings into `dev-docs/research/`, writes that path onto the ticket, and resolves the ticket by the work-through step-4 ritual)
   - when ticket type = prototype → ws-prototype (HITL — a concrete artifact to react to)
   - when ticket type = grilling → ws-domain-modeling, driven with /ws-grilling (HITL, the default type)
   - when the map is clear → hand off to ws-to-spec, which collapses the linked decisions into a buildable plan (user-mediated — wayfinder hands off, it never builds)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** the map and its tickets on the tracker are the shared state; assets are linked from issues, never pasted; claim a ticket by assignment before working it (DONE|{map link}).
-- **Exit report:** select the single most-likely next move: map clear, nothing left to decide → ws-to-spec (collapse the linked decisions into a buildable plan; user-mediated — wayfinder hands off, never builds); otherwise re-invoke ws-wayfinder on the next frontier ticket. At most one alternative when charting left open research tickets → ws-research. The user invokes the next entry; never auto-invoke it. (Format: `ws-graph-engineering`.)
+- **Exit report:** select the single most-likely next move: map clear (no open child tickets **and** an empty **Not yet specified**) → ws-to-spec (collapse the linked decisions into a buildable plan; user-mediated — wayfinder hands off, never builds); no open child tickets but **Not yet specified** still carries fog → re-run the charting step 2 breadth-first grill to graduate it into fresh tickets, then re-invoke ws-wayfinder; frontier empty but open children remain (claimed elsewhere or blocked) → stop and report the frontier is occupied; re-claim only a stale claim; otherwise re-invoke ws-wayfinder on the next frontier ticket. The user invokes the next entry; never auto-invoke it. (Format: `ws-graph-engineering`.)

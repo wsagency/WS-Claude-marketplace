@@ -12,8 +12,9 @@ Spin up a **`researcher` worker agent** to do the research, so you keep working 
 Its job:
 
 1. Investigate the question against **primary sources** — official docs, source code, specs, first-party APIs — not a secondary write-up of them. Follow every claim back to the source that owns it.
-2. Write the findings to a single Markdown file, citing each claim's source.
-3. Save it where the repo already keeps such notes; match the existing convention, and if there is none, default to `dev-docs/research/` (the internal authored-docs track) and say where.
+2. Write the findings to a single Markdown file, citing each claim's source. This repo file is the deliverable — the path you return to the caller is this repo file, never a scratch path.
+3. Save it where the repo already keeps such notes; match the existing convention, and if there is none, default to `dev-docs/research/` (the internal authored-docs track) and say where. Keep raw evidence, dead ends, and working notes in a scratch area separate from the findings file — they are not the deliverable.
+4. Return `DONE|{findings path}` pointing at the repo file above.
 
 ## Graph node
 

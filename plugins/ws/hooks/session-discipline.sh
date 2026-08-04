@@ -44,16 +44,6 @@ emit() {
     'Shared-cwd panes are coordination-only; parallel edits require'
     '`herdr worktree`. The full precedence table and substantial-lane definition'
     'live in the `ws-graph-engineering` skill.'
-    ''
-    'AGENT EFFORT'
-    ''
-    'WS worker agents have assigned tiers: `reviewer` is deepest judgement;'
-    '`hub-architect` and `architecture-documenter` are architecture and spec maps;'
-    '`researcher`, `tdd-runner`, `adr-writer`, `diataxis-writer`,'
-    '`release-notes-writer`, and `api-documenter` are skilled workers;'
-    '`changelog-analyzer`, `contributing-generator`, `public-api-watcher`, and'
-    '`arch-watcher` are mechanical scans; `docs-doctor` is pure classification.'
-    'The full role and effort table lives in `ws-graph-engineering`.'
   )
 
   # Join lines with a literal backslash-n (the JSON escape). No source line

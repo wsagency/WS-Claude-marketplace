@@ -107,6 +107,95 @@ describe("ws_ticket", () => {
 		expect(await fs.readFile(path.join(cwd, "dev-docs", "tickets", "done", "dup.md"), "utf8")).toBe("# Old\n");
 		expect(await fs.readFile(path.join(cwd, "dev-docs", "tickets", "open", "dup.md"), "utf8")).toBe("# New\n");
 	});
+	test("move/close preserve the exact hand-authored ticket slug", async () => {
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "open"), { recursive: true });
+		const openPath = path.join(cwd, "dev-docs", "tickets", "open", "Fix Login.md");
+		const donePath = path.join(cwd, "dev-docs", "tickets", "done", "Fix Login.md");
+		await fs.writeFile(openPath, "# Fix Login\n", "utf8");
+
+		const closed = await call(tool, { op: "close", slug: "Fix Login.md" });
+		expect(closed.isError).toBeFalsy();
+		await expect(fs.stat(openPath)).rejects.toThrow();
+		expect(await fs.readFile(donePath, "utf8")).toContain("# Fix Login");
+
+		const moved = await call(tool, { op: "move", slug: "Fix Login.md", to: "open" });
+		expect(moved.isError).toBeFalsy();
+		expect(await fs.readFile(openPath, "utf8")).toContain("# Fix Login");
+		await expect(fs.stat(donePath)).rejects.toThrow();
+	});
+
+	test("close does not mutate the source on a destination collision", async () => {
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "open"), { recursive: true });
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "done"), { recursive: true });
+		const openPath = path.join(cwd, "dev-docs", "tickets", "open", "stale.md");
+		const donePath = path.join(cwd, "dev-docs", "tickets", "done", "stale.md");
+		await fs.writeFile(openPath, "# Stale\n", "utf8");
+		await fs.writeFile(donePath, "# Archived\n", "utf8");
+		const result = await call(tool, { op: "close", slug: "stale", share: "https://example.com/s/9" });
+		expect(result.isError).toBe(true);
+		// The specific collision message tells the caller the ticket is already
+		// archived and needs a different slug (the recovery path).
+		expect(result.content[0]?.text).toContain("already exists");
+		// reported as failed AND left BOTH files untouched (no share line written,
+		// destination not overwritten).
+		expect(await fs.readFile(openPath, "utf8")).toBe("# Stale\n");
+		expect(await fs.readFile(donePath, "utf8")).toBe("# Archived\n");
+		// Recovery: clear the collision, then the close succeeds.
+		await fs.rm(donePath);
+		const recovered = await call(tool, { op: "close", slug: "stale", share: "https://example.com/s/9" });
+		expect(recovered.isError).toBeFalsy();
+		expect(await fs.readFile(donePath, "utf8")).toContain("share: https://example.com/s/9");
+		await expect(fs.stat(openPath)).rejects.toThrow();
+	});
+
+	test("move does not overwrite a destination on a collision", async () => {
+		// Mirror of the close-collision guard for op=move: an unguarded rename
+		// would silently destroy the destination ticket.
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "open"), { recursive: true });
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "done"), { recursive: true });
+		await fs.writeFile(path.join(cwd, "dev-docs", "tickets", "done", "x.md"), "# Done\n", "utf8");
+		await fs.writeFile(path.join(cwd, "dev-docs", "tickets", "open", "x.md"), "# Open\n", "utf8");
+		const result = await call(tool, { op: "move", slug: "x", to: "open" });
+		expect(result.isError).toBe(true);
+		expect(result.content[0]?.text).toContain("already exists");
+		expect(await fs.readFile(path.join(cwd, "dev-docs", "tickets", "done", "x.md"), "utf8")).toBe("# Done\n");
+		expect(await fs.readFile(path.join(cwd, "dev-docs", "tickets", "open", "x.md"), "utf8")).toBe("# Open\n");
+	});
+
+	test("a path-traversal slug is rejected before any write", async () => {
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "open"), { recursive: true });
+		const result = await call(tool, { op: "close", slug: ".." });
+		expect(result.isError).toBe(true);
+		expect(result.content[0]?.text).toContain("bare slug");
+	});
+
+	test("create rejects a title that slugifies to empty", async () => {
+		// slugify("..") and a CJK-only title both reduce to "" (ticket.test.ts), so
+		// create — the op that writes a new file from caller text — must refuse
+		// before writing dev-docs/tickets/open/.md (a hidden file the tracker never
+		// lists again). close's non-empty guard is already pinned; create needs its
+		// own. (An explicit slug that slugifies to a safe value, e.g. "../escape"
+		// -> "escape", is correctly accepted and is NOT a defect.)
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "open"), { recursive: true });
+		const dots = await call(tool, { op: "create", title: "..", body: "x" });
+		expect(dots.isError).toBe(true);
+		expect(dots.content[0]?.text).toContain("empty slug");
+		const cjk = await call(tool, { op: "create", title: "日本語", body: "x" });
+		expect(cjk.isError).toBe(true);
+		expect(cjk.content[0]?.text).toContain("empty slug");
+		// No file (especially no hidden .md) appeared under open/.
+		expect(await fs.readdir(path.join(cwd, "dev-docs", "tickets", "open"))).toEqual([]);
+	});
+
+	test("create refuses a slug already archived in done/", async () => {
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "open"), { recursive: true });
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "done"), { recursive: true });
+		await fs.writeFile(path.join(cwd, "dev-docs", "tickets", "done", "revive.md"), "# Done\n", "utf8");
+		const result = await call(tool, { op: "create", title: "Revive", body: "Again", slug: "revive" });
+		expect(result.isError).toBe(true);
+		expect(result.content[0]?.text).toContain("already archived");
+		await expect(fs.stat(path.join(cwd, "dev-docs", "tickets", "open", "revive.md"))).rejects.toThrow();
+	});
 });
 
 describe("ws_adr", () => {
@@ -130,6 +219,36 @@ describe("ws_adr", () => {
 		const result = await call(tool, { title: "First decision", sentences: "Because." });
 		expect(result.isError).toBeFalsy();
 		expect(result.content[0]?.text).toContain("0001-first-decision.md");
+	});
+	test("returns an error envelope (not a crash) when decisions exists as a file", async () => {
+		await fs.mkdir(path.join(cwd, "dev-docs"), { recursive: true });
+		await fs.writeFile(path.join(cwd, "dev-docs", "decisions"), "not a dir", "utf8");
+		const result = await call(tool, { title: "Blocked", sentences: "Because." });
+		expect(result.isError).toBe(true);
+		expect(result.content[0]?.text).toContain("cannot use");
+	});
+
+	test("ignores non-numeric siblings (README/template) when continuing the sequence", async () => {
+		// A real repo's decisions/ often carries README.md or template.md; only
+		// NNNN-prefixed files advance the counter. An impl using Math.max over
+		// parseInt(names) would yield NaN, and a lexicographic-last impl would
+		// restart at 0001, silently overwriting an existing decision.
+		const dir = path.join(cwd, "dev-docs", "decisions");
+		await fs.mkdir(dir, { recursive: true });
+		await fs.writeFile(path.join(dir, "0003-single-ws-plugin.md"), "# 0003 — x\n", "utf8");
+		await fs.writeFile(path.join(dir, "README.md"), "# Decisions\n", "utf8");
+		await fs.writeFile(path.join(dir, "template.md"), "template\n", "utf8");
+		const result = await call(tool, { title: "Next decision", sentences: "Because." });
+		expect(result.isError).toBeFalsy();
+		expect(result.content[0]?.text).toContain("0004-next-decision.md");
+	});
+	test("rolls zero-padding over at the 0009 -> 0010 boundary", async () => {
+		const dir = path.join(cwd, "dev-docs", "decisions");
+		await fs.mkdir(dir, { recursive: true });
+		await fs.writeFile(path.join(dir, "0009-ninth.md"), "# 0009 — x\n", "utf8");
+		const result = await call(tool, { title: "Tenth", sentences: "Because." });
+		expect(result.isError).toBeFalsy();
+		expect(result.content[0]?.text).toContain("0010-tenth.md");
 	});
 });
 
@@ -163,5 +282,24 @@ describe("ws_changelog", () => {
 		expect(result.isError).toBeFalsy();
 		expect(result.content[0]?.text).not.toContain("mirrored");
 		await expect(fs.stat(path.join(cwd, "docs", "changelog.md"))).rejects.toThrow();
+	});
+	test("success message tells the caller to stage CHANGELOG.md", async () => {
+		await fs.writeFile(path.join(cwd, "CHANGELOG.md"), BASE, "utf8");
+		const result = await call(tool, { type: "feat", text: "Add thing" });
+		expect(result.isError).toBeFalsy();
+		expect(result.content[0]?.text).toContain("git add CHANGELOG.md");
+	});
+
+	test("surfaces a failed mirror write instead of reporting no mirror", async () => {
+		await fs.writeFile(path.join(cwd, "CHANGELOG.md"), BASE, "utf8");
+		await fs.mkdir(path.join(cwd, "docs"), { recursive: true });
+		// docs/changelog.md exists as a directory -> stat succeeds (mirror exists)
+		// but the write fails (EISDIR). Must be reported, not swallowed as "no mirror".
+		await fs.mkdir(path.join(cwd, "docs", "changelog.md"), { recursive: true });
+		const result = await call(tool, { type: "fix", text: "Repair race" });
+		expect(result.isError).toBe(true);
+		expect(result.content[0]?.text).toContain("could not mirror");
+		// the root source-of-truth entry was still written
+		expect(await fs.readFile(path.join(cwd, "CHANGELOG.md"), "utf8")).toContain("- Repair race");
 	});
 });

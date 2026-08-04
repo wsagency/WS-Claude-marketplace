@@ -104,7 +104,8 @@ invoked **inside a sub-repo** → repo-level with the product routing below;
 invoked **at the hub root** → **hub sweep** — discovery/audit/catchup/repair/
 init fan out one subagent per `type: working` sub-repo (each its own git, so
 parallel runs never conflict; catchup commits per repo) and aggregate, while
-write/adr/architecture default to product scope without asking. Hubs never
+write/adr/architecture default to product scope without asking, and
+`explain`/`publish` target `DOCS_REPO` (never the hub). Hubs never
 carry `docs/` of their own; input and output repos are never swept.
 
 Scope routing in sub-repo position (repo-level behavior is unchanged outside hubs):
@@ -116,6 +117,7 @@ Scope routing in sub-repo position (repo-level behavior is unchanged outside hub
 | `adr` | Ask scope: local ADR (repo-wide or bounded-context-specific; choose the narrowest local `dev-docs/decisions/`) or product ADR (hub `dev-docs/decisions/`) |
 | `architecture` | Ask scope; product scope targets hub `dev-docs/architecture.md` (delegate to the ws plugin's hub-architect agent when available) |
 | `changelog`, `release-notes` | Repo-level, unchanged |
+| `explain`, `publish` | Operate on `DOCS_REPO` — both take `--root DOCS_REPO` (the user track lives there). If no `purpose: docs` repo is registered, refuse and point at `/ws-hub init` step 4b |
 
 The scope answer may be cached in `.claude/docs-config.yaml` as
 `default_scope: repo | product | ask` (honored like `default_audience`).

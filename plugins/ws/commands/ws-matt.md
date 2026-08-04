@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, Write, Glob, AskUserQuestion, Task
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, AskUserQuestion
 description: Entry point for the ws-matt skill graph — graph status, entry-node routing, and per-project setup
 argument-hint: "[ask | implement | spec | tickets | triage | grill | architecture | wayfinder | setup] [input...]"
 ---
@@ -11,9 +11,11 @@ interlinked per the **ws-graph-engineering** methodology. Dispatch on:
 
 $ARGUMENTS
 
-This command is hub-independent: it routes into skill graphs and never reads
-`project.yaml`, so it runs identically in a standalone repo, a hub sub-repo,
-or at the hub root.
+This command is hub-independent: graph status and entry routing never read
+`project.yaml`, so they run identically in a standalone repo, a hub sub-repo,
+or at the hub root. The `setup` verb is the exception — it detects project
+shape (walks up for `project.yaml` to tell a hub sub-repo from a standalone
+repo) so it places ADRs in the right `dev-docs/decisions/`.
 
 ### No arguments — graph status
 
@@ -25,7 +27,7 @@ or at the hub root.
      ws-diagnosing-bugs, ws-domain-modeling, ws-codebase-design,
      ws-resolving-merge-conflicts, ws-grilling
    - **Foundation:** ws-graph-engineering (the node/edge/state contract)
-   - **Worker agents:** reviewer, researcher, tdd-runner —
+   - **Worker agents:** ws-reviewer, researcher, tdd-runner —
      fanned out via the Task tool (omp: its task agent)
 2. Render this mini-map; the full graph with every edge is the plugin's
    `docs/graph.md`:
@@ -33,15 +35,17 @@ or at the hub root.
    ```mermaid
    flowchart LR
      U([user]) --> R[ws-ask-matt]
-     R --> E[8 more entry nodes]
+    R -. user-mediated .-> E[8 more entry nodes]
      E --> W[9 worker skills]
-     W -. fan-out .-> A[[3 worker agents]]
+    W --> A[[3 worker agents]]
    ```
 
-3. Suggest one entry node from the conversation so far (mid-bug → `triage`, spec in
-   hand → `implement`, vague idea → `spec`, backlog to cut → `tickets`). If nothing
-   suggests itself, ask via AskUserQuestion (or a plain chat question when that tool
-   is unavailable) which entry fits.
+3. Suggest one entry node from the conversation so far (something broken →
+   `triage` (or invoke the `ws-diagnosing-bugs` worker skill directly), vague idea → `grill`,
+   sharpened multi-session thread → `spec`, spec in hand → `implement`,
+   backlog to cut → `tickets`). If nothing suggests itself, ask via
+   AskUserQuestion (or a plain chat question when that tool is unavailable)
+   which entry fits.
 
 ### `/ws-matt <entry>` — route into the graph
 
@@ -58,6 +62,7 @@ equivalent to invoking the skill directly — the command just makes it discover
 | grill | ws-grill-with-docs |
 | architecture | ws-improve-codebase-architecture |
 | wayfinder | ws-wayfinder |
+| setup | ws-setup-matt-pocock-skills (see below) |
 
 Everything after the entry word is the skill's input. Unknown entry → show this
 table plus the graph status.
@@ -88,12 +93,14 @@ Every artifact the suite generates — specs, tickets, ADRs, `CONTEXT.md`, chang
 entries, commit and PR bodies, review findings, research notes, generated docs and
 HTML — is English regardless of the conversation language.
 
-Each work unit has one scheduling owner. With `HERDR_ENV=1` and 2+
-substantial lanes, Herdr partitions the outer lanes and the user need not name
-it again; outside Herdr, never attempt a `herdr` command. A stamped lane may
-batch `task` workers over its own disjoint inner slices, but no layer resubmits
-the same unit. Prefer the specialized agent type. When the active `task` schema
-exposes `effort`, use `hi` for review and architecture synthesis, `med` for
+Each work unit has one scheduling owner. With `HERDR_ENV=1`, a prompt **not**
+stamped `WS-HERDR-LANE`, and 2+ substantial lanes, Herdr partitions the outer
+lanes and the user need not name it again — explicitly load the vendored
+`herdr` skill before any Herdr CLI call. A stamped lane never drives Herdr; it
+may batch `task` workers over its own disjoint inner slices, but no layer
+resubmits the same unit. Outside Herdr, never attempt a `herdr` command.
+Prefer the specialized agent type. When the active `task` schema exposes
+`effort`, use `hi` for review and architecture synthesis, `med` for
 implementation and research, and `lo` for mechanical checks.
 
 The `omp-edge-discipline` rule is the binding form and the ws-graph-engineering

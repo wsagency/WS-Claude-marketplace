@@ -212,10 +212,10 @@ def cmd_push(root, state, dry_run, force, collection_name=None):
     docs_dir = state["docs_dir"]
     texts = read_tree(root, docs_dir)  # one read per file: hash + title + render
     files = list(texts)
-    if not files and state["documents"]:
+    if not files:
         sys.exit(f"push refused: no markdown files under {docs_dir}/ in {root} "
-                 f"but state tracks {len(state['documents'])} documents "
-                 "(wrong --root? deleted docs dir?)")
+                 "(run /ws-docs init or write first — publishing an empty tree "
+                 "would create a junk Outline collection and bind this repo to it)")
     failures = lint_files(texts)
     report = {"lint": {"clean": not failures, "violations": failures},
               "created": [], "updated": [], "skipped": [], "conflicts": [],

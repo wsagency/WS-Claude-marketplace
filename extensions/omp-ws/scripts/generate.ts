@@ -82,7 +82,7 @@ export function transformCommand(content: string, fileName: string): string {
  */
 export const AGENT_MODEL_MAP: Record<string, string> = {
 	// @slow — deepest judgement (code review, speculative critique)
-	reviewer: "@slow",
+	"ws-reviewer": "@slow",
 
 	// @plan — architecture and spec mapping (deep structure + design)
 	"hub-architect": "@plan",
@@ -118,6 +118,65 @@ export function agentModel(stem: string): string {
 }
 
 /**
+ * Per-agent omp tool-name remap. The source agents under `plugins/ws/agents/`
+ * carry Claude Code tool names in `tools:` — that same frontmatter also feeds
+ * the Claude Code plugin, which does not understand omp tool ids. omp's tool
+ * resolver (`normalizeToolName`) only lowercases plus maps `search`→`grep` and
+ * `find`→`glob`, so `WebSearch`→`websearch` and `WebFetch`→`webfetch` are NOT
+ * in its builtin set (the real names are `web_search` and `read`) and
+ * `createTools` silently drops them — without this remap the shipped omp
+ * researcher would lose all web/read capability. We rewrite these two at
+ * generate time so the omp package resolves them while the Claude plugin keeps
+ * its original names. Names omp already resolves (Read, Bash, Glob, Grep) are
+ * left untouched — omp's own normalizer lowercases them.
+ */
+export const AGENT_TOOL_MAP: Record<string, string> = {
+	WebSearch: "web_search",
+	WebFetch: "read",
+};
+
+/**
+ * Rewrite the `tools:` frontmatter key, mapping Claude-only tool names to their
+ * omp equivalents (see AGENT_TOOL_MAP). Handles both the inline (`tools: A, B`)
+ * and block (`tools:\n  - A`) forms; names not in the map are preserved verbatim.
+ */
+function rewriteAgentTools(frontmatter: string): string {
+	if (Object.keys(AGENT_TOOL_MAP).length === 0) return frontmatter;
+	const lines = frontmatter.split("\n");
+	const toolsIdx = lines.findIndex(line => /^tools:[ \t]*.*$/.test(line));
+	if (toolsIdx === -1) return frontmatter;
+	const toolsLine = lines[toolsIdx];
+	if (toolsLine === undefined) return frontmatter;
+	const colonIdx = toolsLine.indexOf(":");
+	const head = toolsLine.slice(0, colonIdx + 1);
+	const value = toolsLine.slice(colonIdx + 1);
+	if (value.trim().length > 0) {
+		// Inline form: `tools: Read, Glob, Grep, Bash, WebSearch, WebFetch, Write`.
+		lines[toolsIdx] =
+			head +
+			value
+				.split(",")
+				.map(tok => {
+					const name = tok.trim();
+					return tok.replace(name, AGENT_TOOL_MAP[name] ?? name);
+				})
+				.join(",");
+	} else {
+		// Block form: `tools:` followed by indented `  - name` items.
+		for (let j = toolsIdx + 1; j < lines.length; j++) {
+			const raw = lines[j];
+			if (raw === undefined) break;
+			const match = raw.match(/^([ \t]+-[ \t]+)(\w[\w-]*)/);
+			const prefix = match?.[1];
+			const name = match?.[2];
+			if (prefix === undefined || name === undefined) break;
+			lines[j] = prefix + (AGENT_TOOL_MAP[name] ?? name) + raw.slice(prefix.length + name.length);
+		}
+	}
+	return lines.join("\n");
+}
+
+/**
  * Agent transform: body verbatim; frontmatter kept textually verbatim
  * (preserves description/tools/output/autoloadSkills and comments) except:
  *   - `name:` is injected from the filename when missing (omp requires it —
@@ -136,6 +195,9 @@ export function transformAgent(content: string, stem: string): string {
 	if (!hasKey(frontmatter, "description")) {
 		throw new Error(`${stem}.md: frontmatter has no description (required by omp)`);
 	}
+
+	// Remap Claude-only tool names to their omp equivalents (see AGENT_TOOL_MAP).
+	frontmatter = rewriteAgentTools(frontmatter);
 
 	// Drop any existing model declaration, then append the mapped alias.
 	frontmatter = frontmatter.replace(/^model:[^\n]*(?:\n[ \t]+[^\n]*)*\n?/m, "");
@@ -170,7 +232,7 @@ async function listMarkdown(dir: string): Promise<string[]> {
 export async function generate(
 	sourceRoot: string,
 	outRoot: string,
-): Promise<{ commands: number; skills: number; agents: number; rules: number; runtimeScripts: number }> {
+): Promise<{ commands: number; skills: number; agents: number; rules: number; hubRules: number; runtimeScripts: number }> {
 	for (const dir of GENERATED_DIRS) {
 		const target = path.join(outRoot, dir);
 		await fs.rm(target, { recursive: true, force: true });
@@ -218,7 +280,8 @@ export async function generate(
 
 	// rules (verbatim: TTSR templates + the always-apply edge discipline)
 	const packagedPluginRules = ["omp-edge-discipline.md"];
-	// Per-hub rules: /ws-hub installs these into each hub's .omp/rules/, never the package.
+	// Hub-only rules: packaged under templates/omp/hub-rules/ for /ws-hub to copy
+	// into each hub's .omp/rules/, but kept OUT of the auto-applied rules/ dir.
 	const excludedPluginRules = ["openwiki-freshness.md"];
 	const pluginRules = await listMarkdown(path.join(sourceRoot, "rules"));
 	const unaccountedRules = pluginRules.filter(name => !packagedPluginRules.includes(name) && !excludedPluginRules.includes(name));
@@ -239,6 +302,15 @@ export async function generate(
 
 	// Runtime assets referenced by generated commands and skills.
 	await fs.cp(path.join(sourceRoot, "templates"), path.join(outRoot, "templates"), { recursive: true });
+
+	// Hub-only rule packaged for /ws-hub to copy into a hub's .omp/rules/ —
+	// deliberately OUTSIDE the auto-discovered rules/ dir so it never applies
+	// globally (it carries alwaysApply: true). templates/omp/rules/ IS globbed
+	// into rules/ above, so we ship this at templates/omp/hub-rules/ instead.
+	await fs.mkdir(path.join(outRoot, "templates", "omp", "hub-rules"), { recursive: true });
+	for (const name of excludedPluginRules) {
+		await fs.copyFile(path.join(sourceRoot, "rules", name), path.join(outRoot, "templates", "omp", "hub-rules", name));
+	}
 	await fs.mkdir(path.join(outRoot, "scripts"), { recursive: true });
 	for (const name of RUNTIME_SCRIPT_FILES) {
 		await fs.copyFile(path.join(sourceRoot, "scripts", name), path.join(outRoot, "scripts", name));
@@ -249,6 +321,7 @@ export async function generate(
 		skills: skillEntries.length,
 		agents: agentFiles.length,
 		rules: ruleSources.length,
+		hubRules: excludedPluginRules.length,
 		runtimeScripts: RUNTIME_SCRIPT_FILES.length,
 	};
 }
@@ -258,7 +331,7 @@ async function main(): Promise<void> {
 	const sourceRoot = path.resolve(outRoot, "../../plugins/ws");
 	const counts = await generate(sourceRoot, outRoot);
 	console.log(
-		`omp-ws generate: ${counts.commands} commands, ${counts.skills} skills, ${counts.agents} agents, ${counts.rules} rules, templates, ${counts.runtimeScripts} runtime scripts (from ${sourceRoot})`,
+		`omp-ws generate: ${counts.commands} commands, ${counts.skills} skills, ${counts.agents} agents, ${counts.rules} rules, ${counts.hubRules} hub-only rules, templates, ${counts.runtimeScripts} runtime scripts (from ${sourceRoot})`,
 	);
 }
 

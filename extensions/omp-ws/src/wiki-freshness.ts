@@ -157,8 +157,10 @@ export async function readWorkingRepos(cwd: string): Promise<HubRepo[] | undefin
 		// uses this rule).
 		const cmt = line.search(/(^|\s)#/);
 		const code = cmt === -1 ? line : line.slice(0, cmt);
-		// A column-0 key ends the current top-level block.
-		if (/^[^\s]/.test(code)) {
+		// A column-0 key ends the current top-level block — but a block sequence
+		// item (`- name:`) is valid YAML at the parent key's indentation and must
+		// NOT terminate it, or every entry of a column-0 `repos:` list is dropped.
+		if (/^[^\s]/.test(code) && !/^-\s/.test(code)) {
 			if (have) { flush(); have = false; }
 			inRepos = code.trim() === "repos:";
 			if (inRepos) sawReposBlock = true;
@@ -184,14 +186,27 @@ export async function readWorkingRepos(cwd: string): Promise<HubRepo[] | undefin
 		}
 	}
 	flush();
-	if (sawReposBlock && !sawNameEntry && !warnedMalformedRepos) {
+	if (sawReposBlock && !sawNameEntry) {
 		warnedMalformedRepos = true;
-		console.warn("openwiki-freshness: project.yaml has a `repos:` block but no list entries were recognised (expected `- name: <repo>`). Sub-repo scanning may be misconfigured — see ADR 0006.");
 	}
 	return repos;
 }
 
 // @twin-end
+
+/**
+ * Consume (and clear) the once-per-parse malformed-repos flag the twin-pure
+ * parser sets when a `repos:` block yields no recognised entries. The caller
+ * emits the diagnostic through a TUI-safe channel (the parser stays console-free
+ * so the @twin region ports byte-identical into the per-project hook).
+ */
+export function consumeMalformedReposWarning(): boolean {
+	if (warnedMalformedRepos) {
+		warnedMalformedRepos = false;
+		return true;
+	}
+	return false;
+}
 
 async function localHookPresent(cwd: string): Promise<boolean> {
 	try {
@@ -205,29 +220,52 @@ async function localHookPresent(cwd: string): Promise<boolean> {
 export function registerWikiFreshness(pi: ExtensionAPI): void {
 	// Debounce: only re-announce when the set of stale files actually changes.
 	let lastAnnouncedKey: string | undefined;
+	let malformedAnnounced = false;
 
 	pi.on("session_stop", async (event, ctx) => {
 		// Never act while a stop-hook continuation chain is already running.
 		if (event.stop_hook_active) return;
 
+		// Clears any previously-rendered stale banner. Shared by every exit path so
+		// a banner raised earlier in the session never strands on screen when the
+		// hook later short-circuits (per-project hook appears, marker removed).
+		const clearBanner = () => {
+			if (lastAnnouncedKey === undefined) return;
+			lastAnnouncedKey = undefined;
+			if (ctx.hasUI) ctx.ui.setWidget(WIDGET_KEY, undefined);
+		};
+
 		// The per-project hook already covers this repo — skip to avoid double banners.
-		if (await localHookPresent(ctx.cwd)) return;
+		if (await localHookPresent(ctx.cwd)) {
+			clearBanner();
+			return;
+		}
 
 		const markerPath = path.join(ctx.cwd, MARKER_RELPATH);
 		let markerMtimeMs: number;
 		try {
 			markerMtimeMs = (await fs.stat(markerPath)).mtimeMs;
 		} catch {
+			clearBanner();
 			return; // no OpenWiki marker in this project — hook is a no-op
 		}
 
 		const repos = await readWorkingRepos(ctx.cwd);
+		// Surface a silently-malformed project.yaml once per process, through a
+		// TUI-safe channel (the parser only sets a flag — see consumeMalformedReposWarning).
+		// Drain the flag every session_stop so it always reflects the latest parse
+		// (a healthy parse leaves it false); announce at most once per process.
+		const malformed = consumeMalformedReposWarning();
+		if (malformed && !malformedAnnounced) {
+			malformedAnnounced = true;
+			pi.logger.warn("openwiki-freshness: project.yaml has a `repos:` block but no list entries were recognised (expected `- name: <repo>`). Sub-repo scanning may be misconfigured — see ADR 0006.");
+			if (ctx.hasUI) {
+				ctx.ui.notify("OpenWiki freshness: project.yaml `repos:` block has no recognised entries — sub-repo scanning may be misconfigured.", "warning");
+			}
+		}
 		const stale = await collectStale(ctx.cwd, markerMtimeMs, repos);
 		if (stale.length === 0) {
-			if (lastAnnouncedKey !== undefined) {
-				lastAnnouncedKey = undefined;
-				if (ctx.hasUI) ctx.ui.setWidget(WIDGET_KEY, undefined); // clear stale banner
-			}
+			clearBanner();
 			return; // wiki is fresh — settle normally
 		}
 

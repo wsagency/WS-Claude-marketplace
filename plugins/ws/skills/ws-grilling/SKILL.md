@@ -18,7 +18,7 @@ Do not act on it until I confirm we have reached a shared understanding.
 - **Emits:** resolved decisions recorded one at a time; a shared-understanding confirmation before any action
 - **Edges:**
   - then → ws-domain-modeling (runs alongside every grilling session, keeping glossary/ADRs current)
-  - invoked by: ws-grill-with-docs, ws-triage (step 4), ws-improve-codebase-architecture (grilling loop), ws-wayfinder (HITL grilling tickets)
+- **Invoked by (inbound, not an edge):** ws-grill-with-docs, ws-triage (step 4), ws-improve-codebase-architecture (grilling loop), ws-wayfinder (charting steps 1–2 and any working-mode grilling ticket)
 - **Handoff protocol:** decisions land in the project docs (CONTEXT.md/ADRs) as they are made; no large artifacts — the conversation is the work.
 - **Exit report:** nested under a driver, return the resolved decisions (captured in `CONTEXT.md`/ADRs) as state delta and emit no route; invoked directly, report the grilling verdict and stop — no invented driver. (Format: `ws-graph-engineering`.)
 

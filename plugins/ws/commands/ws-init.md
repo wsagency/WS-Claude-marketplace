@@ -63,7 +63,8 @@ If yes:
 
 1. Run `jira project list` and offer the results via AskUserQuestion.
 2. Optionally ask for a board id (skippable) and default issue type (Task / Story / Bug).
-3. Write `./.claude/ws-project.yaml`:
+3. **If `./.claude/ws-project.yaml` already exists** (a re-run — e.g. binding a different project, or returning after step 1 walked you through jira-cli auth): read it and carry the existing `changelog:` and `hooks:` values forward verbatim, updating **only** the `jira:` block (`project`, `board`, `default_issue_type`). Show a diff before writing so the user sees exactly what changed. Never overwrite a team's narrowed `skip_types`, chosen `board`, or disabled dashboard on a re-run.
+4. **Otherwise** (first binding), write `./.claude/ws-project.yaml`:
 
 ```yaml
 jira:
@@ -78,7 +79,7 @@ hooks:
   session_start_dashboard: true   # overrides global default
 ```
 
-Ask the user (AskUserQuestion) whether to enable changelog auto-update and, if they want to narrow the skip set (e.g. only `style, build, ci` so docs/chore/test also get logged), adjust `skip_types` accordingly.
+On a first binding, ask the user (AskUserQuestion) whether to enable changelog auto-update and, if they want to narrow the skip set (e.g. only `style, build, ci` so docs/chore/test also get logged), adjust `skip_types` accordingly. On a re-run, skip this prompt — those settings carry forward unless the user asks to revisit them.
 
 (`mkdir -p ./.claude/` first.)
 

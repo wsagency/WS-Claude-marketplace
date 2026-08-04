@@ -70,8 +70,13 @@ omp plugin link .
 ```
 
 Restart open omp sessions afterwards. Do NOT also install the marketplace
-`ws` plugin in omp — everything would load twice (the package warns at
-session start with the remedy: `omp plugin disable ws@ws-marketplace`).
+`ws` plugin in omp — everything would load twice (the package warns at session
+start and prints the applicable remedy: `omp plugin disable ws@ws-marketplace`
+when the duplicate was installed through omp, or an `enabled: false` entry in
+omp's **user plugin registry** — `installed_plugins.json` under omp's plugins
+dir, whose path the warning prints exactly (`OMP_PROFILE`/`PI_PROFILE` and
+`XDG_DATA_HOME` relocate it off the default `~/.omp`) — when it came from
+Claude Code. omp reads both registries.
 Details, settings, and off-switches:
 [extensions/omp-ws/README.md](./extensions/omp-ws/README.md).
 
@@ -158,7 +163,7 @@ Jira-aware git workflow commands, powered by [jira-cli](https://github.com/ankit
 
 **Commands:**
 - `/ws-init` — Verify jira-cli setup and bind the current project to a Jira project
-- `/ws-status` — Show your Jira assignments, sprint status, and a suggestion for what to pick up next
+- `/ws-status` — Show your Jira assignments grouped by status and a suggestion for what to pick up next
 - `/ws-commit` — Jira-aware commit (Conventional Commits + ticket suffix, optional worklog and transition via jira-cli)
 - `/ws-commit pr` — Commit + update CHANGELOG.md + push + open PR with Jira link; optionally transitions ticket to In Review
 - `/ws-commit clean` — Clean up git branches marked as `[gone]`
@@ -166,7 +171,7 @@ Jira-aware git workflow commands, powered by [jira-cli](https://github.com/ankit
 
 **Changelog integration:** `/ws-commit pr` auto-updates `CHANGELOG.md` (Keep a Changelog format) at PR time, mapping commit types to sections (`feat`→Added, `fix`→Fixed, etc.). Auto-creates the file if missing. Skips non-functional types (`docs, chore, test, style, build, ci`) by default — configurable per-project. Powered by the ws plugin's `keep-a-changelog` skill, which auto-loads on the word "CHANGELOG".
 
-**Hooks:** `SessionStart` — when claude opens in a folder bound to a WS project, injects a brief Jira dashboard so the user sees their workload without running `/ws-status` manually. Toggle via `hooks.session_start_dashboard: false` in `.claude/ws-project.yaml`.
+**Hooks:** `SessionStart` — when claude opens in a folder bound to a WS project, injects the project binding, current branch, and a prompt to run `/ws-status` for the rendered workload (the omp native package renders a live Jira dashboard widget instead). Toggle via `hooks.session_start_dashboard: false` in `.claude/ws-project.yaml`.
 
 **Skills:** `ws-jira-conventions` — branch naming, commit format, Smart Commit syntax
 
@@ -178,7 +183,7 @@ Tickets default to the **local tracker** (`dev-docs/tickets/open|done/` — fast
 
 **Commands:** `/ws-matt` — graph status; `/ws-matt <entry>` routes to an entry node; `/ws-matt setup` bootstraps a project (and installs the omp edge-discipline rule).
 
-**Agents:** `reviewer` (fan-out code review), `researcher`, `tdd-runner` — addressed as `ws:<agent>` in Claude Code and by the unprefixed stem in omp — with structured-output schemas for omp's task system.
+**Agents:** `ws-reviewer` (fan-out code review on `@slow`), `researcher`, `tdd-runner` — addressed as `ws:<agent>` in Claude Code (so `ws:ws-reviewer`, `ws:researcher`, `ws:tdd-runner`) and by the agent name in omp — with structured-output schemas for omp's task system.
 
 **Graph map:** [plugins/ws/docs/graph.md](./plugins/ws/docs/graph.md) (mermaid). Upstream sync: [plugins/ws/UPSTREAM.md](./plugins/ws/UPSTREAM.md).
 
@@ -206,7 +211,7 @@ Because a standalone repo's `dev-docs/` already uses the hub layout, adopting a 
 - `/ws-hub add [--scan]` — Register a new sub-repo; `--scan` first discovers unregistered repos in/near the hub
 - `/ws-hub describe` — Refresh sub-repo descriptions from their READMEs
 - `/ws-hub docs` — Generate cross-repo architecture/contracts/deployment docs (hub-architect agent; written into the hub's own `dev-docs/`; analyzes `type: working` repos only)
-- `/ws-hub explained` — Generate the product explainer artefact (ws-artefacts format): at a hub root into the `type: output, purpose: explained` repo; standalone (no hub) into a validated output location in the current repo, merging a valid manifest and requiring an explicit dedicated subdirectory / replace / cancel choice for authored collisions — audience: product owner + dev team
+- `/ws-hub explained` — Generate the product explainer artefact (ws-artefacts format): at a hub root into the `type: output, purpose: explained` repo, or standalone (no hub) into the current repo. In **both shapes** it validates the output location before writing — merging a valid manifest and requiring an explicit dedicated subdirectory / replace / cancel choice for authored collisions — audience: product owner + dev team
 
 One sub-repo per hub can be marked `type: output, purpose: docs` — the product docs repo (`<project>-docs`), source of truth for the USER track only (synced to Outline via `/ws-docs publish`); cross-repo internal docs live in the hub's own `dev-docs/`. `/ws-hub init` offers to scaffold it — plus optional hub-level [OpenWiki](https://github.com/langchain-ai/openwiki) (one knowledge wiki for all sub-repos, referenced from every sub-repo's AGENTS.md, refreshed via `/ws-hub docs`) and [herdr](https://herdr.dev) fleet setup (the ws plugin ships the vendored `herdr` skill; works with Claude Code and omp).
 
