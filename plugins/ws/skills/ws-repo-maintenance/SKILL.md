@@ -50,15 +50,16 @@ defined in `UPSTREAM.md` — `no-delta`, `non-vendored-docs-only`, `contentful`,
   `candidate` and the class; the ws-matt phase ends here.
 - `contentful` or `inventory` → continue.
 
-**Gate 3 — Parallel audits, then synthesize.** Fan out four read-only audits in
+**Gate 3 — Parallel audits, then synthesize.** Fan out four audits in
 parallel and reconcile before porting anything — no porting until they agree:
 upstream inventory/content; WS adaptations (does the change hit a preserve-list
 item?); graph routing (do nodes/tiers/edges move?); omp distribution (will the
 `plugins/ws/` surface change?). Use `researcher` for upstream fact gathering
-and `reviewer` for WS, graph, and distribution audits; reserve `tdd-runner` for
-implementation seams if a contentful sync requires code changes. When the
-active task schema exposes `effort`, use `hi` for the review-grade audits and
-`med` for fact gathering.
+(its findings file lands under `dev-docs/research/` — an expected artifact of
+this gate, not drift) and `ws-reviewer` for the read-only WS, graph, and
+distribution audits; reserve `tdd-runner` for implementation seams if a
+contentful sync requires code changes. When the active task schema exposes
+`effort`, use `hi` for the review-grade audits and `med` for fact gathering.
 
 **Gate 4 — Conscious porting (WS precedence).** Port through the rename map with
 WS-local precedence — upstream never overwrites a WS adaptation. The full

@@ -119,7 +119,8 @@ Good interfaces make testing natural:
 - **Reads:** the module or interface being designed; `CONTEXT.md` (domain names for good seams); [DEEPENING.md](DEEPENING.md) and [DESIGN-IT-TWICE.md](DESIGN-IT-TWICE.md)
 - **Emits:** interface and seam decisions stated in the shared vocabulary (module, interface, depth, seam, adapter, leverage, locality) — a deep-module shape, not code
 - **Edges:**
-  - fan-out: design-it-twice — parallel sub-agents each design the interface a radically different way (schema: candidate interfaces compared on depth, locality, and seam placement)
+  - fan-out: design-it-twice — spawn one sub-agent per design constraint, minimum two radically different approaches (schema: interface, usage, what the seam hides, dependency strategy, trade-offs; reducer: append to `candidate_interfaces[]`, each write-up returned as `DONE|{scratch path}` and read by the comparison step)
+  - when the chosen interface is ADR-worthy, or names a concept absent from `CONTEXT.md` → ws-domain-modeling (ADR routed to hub, repo root, or bounded context by scope; glossary updated inline)
   - then → return to the driving node — this is the vocabulary layer beneath ws-improve-codebase-architecture
 - **Handoff protocol:** the chosen interface is recorded wherever the caller keeps decisions (spec, ADR, ticket) and referenced from there (DONE|{decision location}).
 - **Exit report:** nested, return the chosen interface and seam as state delta (DONE|{decision location}) and emit no route; invoked directly, report the seam and where the decision was recorded, then stop — no invented driver. (Format: `ws-graph-engineering`.)

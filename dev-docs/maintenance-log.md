@@ -9,7 +9,7 @@
 | Herdr vendored skill | Current — pinned `a979916` matches upstream `master` |
 | omp runtime and task schema | Audited on omp 17.2.4 |
 | WS commands, skills, and agents | Scheduler ownership, fan-out, roles, effort, and artifact language aligned |
-| omp generated distribution | Rebuilt and packaged as `@wsagency/omp-ws` 0.5.0 |
+| omp generated distribution | Rebuilt and packaged as `@wsagency/omp-ws` 0.6.0 |
 
 ### Outcome
 
@@ -21,10 +21,10 @@
 ### Evidence
 
 - Herdr's vendored `SKILL.md` is content-identical to pinned upstream `a979916` (the local file adds only the conventional terminal newline); proactive WS scheduling lives only in the rule, graph-engineering skill, SessionStart hook, and hub templates.
-- `bun run build`: 7 commands, 30 skills, 14 agents, 4 rules, templates, and 3 runtime scripts.
-- `bun test`: 186 passed, 0 failed, 352 assertions; `bun run typecheck`: passed.
-- The native SDK/typecheck pin now matches installed omp 17.2.4; the audit confirmed `task.enableEffort` (introduced in 17.1.6), fixed role aliases, and isolated explicit `-e` loading under `--no-extensions`.
-- `npm pack --dry-run`: 123 entries and all required templates, runtime helpers, policy rules, and agents present.
+- `bun run build`: 7 commands, 30 skills, 14 agents, 4 global rules, 1 hub-only rule, templates, and 3 runtime scripts.
+- `bun test`: 262 passed, 0 failed, 499 assertions; `bun run typecheck`: passed.
+- The native SDK/typecheck pin now matches installed omp 17.2.4; the audit confirmed `task.enableEffort` (introduced in 17.1.6), fixed role aliases, profile/XDG-aware settings and registries, and isolated explicit `-e` loading under `--no-extensions`.
+- `npm pack --dry-run`: 124 entries and all required templates, runtime helpers, policy rules, and agents present.
 - Graph lint, changelog validation/mirror, and `git diff --check` passed; the changelog validator reports only the repository's existing historical empty-section and missing-comparison-link warnings.
 
 ## 2026-08-01 — Matt skills refresh audit and orchestration hardening

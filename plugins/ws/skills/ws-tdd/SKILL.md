@@ -23,6 +23,8 @@ A **seam** is the public boundary you test at: the interface where you observe b
 
 Ask: "What's the public interface, and which seams should we test?"
 
+> **Autoloaded by the `tdd-runner` leaf agent?** The seam named in your prompt is already pre-agreed: treat it as confirmed, never ask the user, and go straight to the red → green cycle. If the named seam turns out to be genuinely unclear or wrong, return that to the caller un-tested rather than confirming or inventing it yourself.
+
 ## Anti-patterns
 
 - **Implementation-coupled** — mocks internal collaborators, tests private methods, or verifies through a side channel (querying the database instead of using the interface). The tell: the test breaks when you refactor but behavior hasn't changed.

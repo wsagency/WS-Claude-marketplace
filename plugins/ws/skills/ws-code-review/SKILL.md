@@ -12,11 +12,12 @@ The applicable axes run as **parallel sub-agents** so they do not pollute each
 other's context, then this skill aggregates their findings. Standards always
 runs; Spec runs when a spec exists. At two axes, fan-out is the default.
 
-> Autoloaded by the `reviewer` leaf agent? Skip the fan-out in step 4 — you
-> are one reviewer. Perform only the Standards or Spec axis named in your prompt
-> and return its findings to the caller.
+> Autoloaded by the `ws-reviewer` leaf agent? Skip the fan-out in step 4 — you
+> are one reviewer. Perform only the Standards or Spec axis named in your prompt,
+> write the full write-up to the per-run scratch directory named in your prompt,
+> and return `DONE|{path}` to the caller.
 
-The issue tracker should have been provided to you — run `/ws-setup-matt-pocock-skills` if `dev-docs/agents/issue-tracker.md` is missing.
+The issue tracker workflow should have been provided to you. If `dev-docs/agents/issue-tracker.md` is missing, tell the user to run `/ws-setup-matt-pocock-skills` and continue with the spec sources in step 2.
 
 ## Process
 
@@ -24,9 +25,14 @@ The issue tracker should have been provided to you — run `/ws-setup-matt-pococ
 
 Whatever the user said is the fixed point — a commit SHA, branch name, tag, `main`, `HEAD~5`, etc. If they didn't specify one, ask for it.
 
-Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
+Capture the diff command once, branching on tree state:
 
-Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or empty diff should fail here — not inside two parallel sub-agents.
+- If the change under review is already committed: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base).
+- If it is still uncommitted in the working tree: stage untracked files as intent-to-add first — `git add -N -- .` (it respects `.gitignore`, so ignored files and a gitignored scratch directory stay out) — then capture `git diff $(git merge-base <fixed-point> HEAD)`, which now includes new files as well as modifications to tracked ones. The sub-agents run that same diff command themselves, so the intent-to-add must be in place before fan-out.
+
+Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
+
+Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the captured diff is non-empty. Judge non-emptiness on the diff output itself, not on whether the tree is dirty: after `git add -N`, a change that adds only ignored files can still yield an empty diff, and that is a real empty diff — fail here, not inside two parallel sub-agents.
 
 ### 2. Identify the spec source
 
@@ -63,37 +69,41 @@ Each smell reads *what it is* → *how to fix*; match it against the diff:
 
 ### 4. Spawn the applicable reviewers in parallel
 
-The two-axis fan-out is the **default** — one `reviewer` per applicable axis,
+The two-axis fan-out is the **default** — one `ws-reviewer` per applicable axis,
 both at once. If no spec was found, run Standards alone and skip Spec (see
 below). The assignments are disjoint (one axis each), so findings merge by
 appending per axis and are never reranked across axes.
 
+Pick and create one per-run scratch directory for this review outside the tracked tree (or at a gitignored path), and name that same path in both reviewer prompts below — the reviewers write their full write-ups there and return `DONE|{path}`, never pasting the write-up into the conversation. An outside-tree or ignored path keeps the write-ups out of the step-1 diff and out of the follow-up commit.
+
 omp: one batched `task` call — `{ context, tasks: [...] }`, shared context in
-`context`, one item per axis carrying `agent: reviewer` and, when the active
+`context`, one item per axis carrying `agent: ws-reviewer` and, when the active
 schema exposes it, `effort: hi` (review is the deepest-judgement work;
-`reviewer` ships on the `@slow` role). Claude Code: two Task calls in a single
+`ws-reviewer` ships on the `@slow` role). Claude Code: two Task calls in a single
 message. The role/effort table and backend precedence live in
 `ws-graph-engineering`.
 
 **Standards sub-agent prompt** — include:
 
+- The per-run scratch directory you picked for this review (name the path), where the reviewer writes its full write-up.
 - The full diff command and commit list.
 - The list of standards-source files you found in step 3, **plus the smell baseline from step 3** pasted in full — the sub-agent has no other access to it.
-- The brief: "Report — per file/hunk where relevant — (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. Distinguish hard violations from judgement calls — documented-standard breaches can be hard, but baseline smells are always judgement calls, and a documented repo standard overrides the baseline. Skip anything tooling enforces. Under 400 words."
+- The brief: "Write the full write-up to the scratch directory named above and return `DONE|{path}` — never paste the full write-up into the conversation. Report — per file/hunk where relevant — (a) every place the diff violates a documented standard: cite the standard (file + the rule); and (b) any baseline smell you spot: name it and quote the hunk. Distinguish hard violations from judgement calls — documented-standard breaches can be hard, but baseline smells are always judgement calls, and a documented repo standard overrides the baseline. Skip anything tooling enforces. Under 400 words."
 
 **Spec sub-agent prompt** — include:
 
+- The same per-run scratch directory (name the path), where the reviewer writes its full write-up.
 - The diff command and commit list.
 - The path or fetched contents of the spec.
-- The brief: "Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
+- The brief: "Write the full write-up to the scratch directory named above and return `DONE|{path}` — never paste the full write-up into the conversation. Report: (a) requirements the spec asked for that are missing or partial; (b) behaviour in the diff that wasn't asked for (scope creep); (c) requirements that look implemented but where the implementation looks wrong. Quote the spec line for each finding. Under 400 words."
 
 If the spec is missing, skip the Spec sub-agent and note this in the final report.
 
-**Artifact language.** Everything this node writes — the two axis reports and any review write-up a `reviewer` files in the scratch directory — is English, whatever language the conversation is in. A translation is a derived copy; the original stays English.
+**Artifact language.** Everything this node writes — the two axis reports and any review write-up a `ws-reviewer` files in the scratch directory — is English, whatever language the conversation is in. A translation is a derived copy; the original stays English.
 
 ### 5. Aggregate
 
-Present the two reports under `## Standards` and `## Spec` headings, verbatim or lightly cleaned. Do **not** merge or rerank findings — the two axes are deliberately separate (see _Why two axes_).
+Open each reviewer's returned `DONE|{path}` artifact and present its contents under `## Standards` and `## Spec` headings, verbatim or lightly cleaned — the reviewers return a path, not the write-up inline. Do **not** merge or rerank findings — the two axes are deliberately separate (see _Why two axes_).
 
 End with a one-line summary: total findings per axis, and the worst issue _within each axis_ (if any). Don't pick a single winner across axes — that's the reranking the separation exists to prevent.
 
@@ -109,11 +119,11 @@ Reporting them separately stops one axis from masking the other.
 ## Graph node
 
 - **Tier:** model-invoked (worker)
-- **Reads:** the diff `git diff <fixed-point>...HEAD` and its commit list; the spec source (issue / PRD / spec file); the repo's standards sources plus the built-in Fowler smell baseline
+- **Reads:** the diff — `git diff <fixed-point>...HEAD` when the change is committed, or `git add -N -- .` then `git diff $(git merge-base <fixed-point> HEAD)` when it is still in the working tree — and its commit list; the spec source (issue / PRD / spec file); the repo's standards sources plus the built-in Fowler smell baseline
 - **Emits:** two side-by-side reports — `## Standards` and `## Spec` — plus a one-line per-axis summary; findings are never merged or reranked across axes
 - **Edges:**
-  - fan-out (default): one `reviewer` per axis, in parallel — one Standards, one Spec (schema: findings per file/hunk, under 400 words, hard violations distinguished from judgement calls)
+  - fan-out (default): one `ws-reviewer` per axis, in parallel — one Standards, one Spec (schema: findings per file/hunk, under 400 words, hard violations distinguished from judgement calls)
   - when no spec can be found → skip the Spec agent and say so in the report
   - then → findings return to the caller as state delta (never route back into a live ws-implement)
-- **Handoff protocol:** pin the fixed point first; pass each reviewer the diff command, commit list, and source paths — commands and paths, not pasted artifacts (DONE|two axis reports).
-- **Exit report:** nested, return the two axis reports as state delta (DONE|two axis reports) and emit no route — never route back into a live ws-implement; invoked directly, report both axes (clean, or the findings) and stop. (Format: `ws-graph-engineering`.)
+- **Handoff protocol:** pin the fixed point first; pick one per-run scratch directory and name it in each reviewer's prompt; pass each reviewer the diff command, commit list, and source paths — commands and paths, not pasted artifacts. Each reviewer writes its write-up to that scratch dir and returns `DONE|{path}` (DONE|two axis report paths).
+- **Exit report:** nested, return the two axis report paths as state delta (DONE|{two report paths}) and emit no route — open each reviewer's `DONE|{path}` to present them; never route back into a live ws-implement; invoked directly, report both axes (clean, or the findings) and stop. (Format: `ws-graph-engineering`.)

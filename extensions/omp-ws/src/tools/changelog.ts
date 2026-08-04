@@ -150,16 +150,40 @@ export function registerChangelogTool(pi: ExtensionAPI): void {
 			// Mirror (dual-track-docs): docs/changelog.md is a full copy of the root file.
 			const mirrorPath = path.join(ctx.cwd, "docs", "changelog.md");
 			let mirrored = false;
+			let mirrorExists = false;
 			try {
 				await fs.stat(mirrorPath);
-				await fs.writeFile(mirrorPath, updated, "utf8");
-				mirrored = true;
+				mirrorExists = true;
 			} catch {
 				// No mirror in this repo — root file only.
 			}
+			let mirrorError: string | undefined;
+			if (mirrorExists) {
+				// stat succeeded => a mirror exists. Keep it in sync; a write
+				// failure here would leave the mirror stale, so surface it
+				// rather than swallowing it as "no mirror".
+				try {
+					await fs.writeFile(mirrorPath, updated, "utf8");
+					mirrored = true;
+				} catch (error) {
+					mirrorError = String(error instanceof Error ? error.message : error);
+				}
+			}
 
 			const section = TYPE_TO_SECTION[params.type];
-			return textResult(`Added entry under [Unreleased] > ${section} in CHANGELOG.md${mirrored ? " (mirrored to docs/changelog.md)" : ""}.`);
+			if (mirrorError) {
+				return textResult(
+					`ws_changelog added the entry to CHANGELOG.md but could not mirror it to docs/changelog.md: ${mirrorError}. ` +
+						`The mirror is now stale. Do NOT re-run ws_changelog (the root entry is already written) — ` +
+						`copy CHANGELOG.md over docs/changelog.md (or fix the mirror's permissions), ` +
+						`then stage both files (git add CHANGELOG.md docs/changelog.md) before committing.`,
+					true,
+				);
+			}
+			return textResult(
+				`Added entry under [Unreleased] > ${section} in CHANGELOG.md${mirrored ? " (mirrored to docs/changelog.md)" : ""}. ` +
+					`Stage it (git add CHANGELOG.md${mirrored ? " docs/changelog.md" : ""}) before committing — the changelog gate only sees staged files.`,
+			);
 		},
 	});
 }

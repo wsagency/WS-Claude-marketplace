@@ -113,8 +113,8 @@ and all `/grilling` references are rewritten to `/ws-grilling`.
   check); in a hub sub-repo, PRODUCT-level decisions belong in the hub's
   `dev-docs/decisions/` (ADR 0006), while repo-wide and bounded-context
   decisions stay at their narrowest local scope.
-- **Worker alignment** — `ws-code-review` names `reviewer` for both axis
-  reviewers (not `general-purpose`); `agents/reviewer.md` scopes to one
+- **Worker alignment** — `ws-code-review` names `ws-reviewer` for both axis
+  reviewers (not `general-purpose`); `agents/ws-reviewer.md` scopes to one
   review assignment (a single axis over the whole diff, or a single slice);
   `agents/tdd-runner.md` runs red-green only (no in-cycle refactor, no
   `refactored` output field — cleanup belongs to the caller's review stage
@@ -294,7 +294,7 @@ If the inventory or any edge/behaviour changed:
 - worker tier plus `ws-graph-engineering` match the subgraphs in `docs/graph.md`;
 - each Graph node's edges agree with the skill body's handoffs (no stale edges,
   no missing ones);
-- the agent legend names `reviewer`, `researcher`, and the default repeatable
+- the agent legend names `ws-reviewer`, `researcher`, and the default repeatable
   `ws-implement` → `tdd-runner` fan-out.
 
 ### omp rebuild

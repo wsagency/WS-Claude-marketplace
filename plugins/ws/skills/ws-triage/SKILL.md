@@ -63,6 +63,7 @@ Query the issue tracker and present three buckets, oldest first:
 3. **`needs-info` with reporter activity since the last triage notes** — needs re-evaluation.
 
 When PRs are in scope, include external PRs in these buckets and tag each line `[PR]` or `[issue]`. Discovery surfaces only *external* PRs (the tracker config defines who counts as external) — a collaborator's in-flight PR is not triage work. This filter is discovery-only; an explicitly named PR is always triaged regardless of author.
+Discovery also excludes issues that are plans — a spec or other issue whose tracer-bullet children already exist is in build, not triage work (discovery-only; an explicitly named issue is always triaged regardless).
 
 Show counts and a one-line summary per item. Let the maintainer pick.
 
@@ -76,7 +77,7 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 4. **Grill (if needed).** If the request needs fleshing out, run the `/ws-grilling` and `/ws-domain-modeling` skills together — grill it into shape one question at a time, sharpening domain terms and updating `CONTEXT.md`/ADRs inline as decisions land.
 
-5. **Apply the outcome:**
+5. **Apply the outcome:** applying a state role **replaces** the existing one — remove the prior state role in the same action, so an issue never carries two (otherwise the next triage pass trips the one-state-role conflict rule and blocks on the maintainer).
    - `ready-for-agent` — post an agent brief comment ([AGENT-BRIEF.md](AGENT-BRIEF.md)).
    - `ready-for-human` — same structure as an agent brief, but note why it can't be delegated (judgment calls, external access, design decisions, manual testing).
    - `needs-info` — post triage notes (template below).
@@ -88,7 +89,7 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 ## Quick state override
 
-If the maintainer says "move #42 to ready-for-agent", trust them and apply the role directly. Confirm what you're about to do (role changes, comment, close), then act. Skip grilling. If moving to `ready-for-agent` without a grilling session, ask whether they want to write an agent brief.
+If the maintainer says "move #42 to ready-for-agent", trust them and apply the role directly — replacing any state role already on the issue in the same action. Confirm what you're about to do (role changes, comment, close), then act. Skip grilling. If moving to `ready-for-agent` without a grilling session, ask whether they want to write an agent brief.
 
 ## Needs-info template
 
@@ -120,7 +121,8 @@ If prior triage notes exist on the issue or PR, read them, check whether the rep
 - **Edges:**
   - when a request needs fleshing out → ws-grilling (step 4 — drives the interview one question at a time)
   - when a request needs fleshing out → ws-domain-modeling (grilled one question at a time, decisions captured inline)
+  - when a request needs deeper grilling than one triage pass → ws-grill-with-docs (user-mediated: the entry node that pairs grilling with domain-modeling and leaves the paper trail; re-invoke /ws-triage afterwards to post the sharpened brief)
   - then (data edge) → issues this node marks `ready-for-agent` become the input ws-implement picks up in a later session (user-mediated pickup)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** every outcome is posted to the tracker and referenced by issue; nothing triage produces lives only in conversation (DONE|{issue link}).
-- **Exit report:** one current route, at most one alternative — the user invokes the next entry; never auto-invoke it. An issue verified and marked ready-for-agent → ws-implement (build the brief in a fresh session); the alternative, when a request needs deeper grilling than one triage pass → ws-grilling (ws-domain-modeling runs beneath it, not as a separate route). When the queue is clear, that is the terminal outcome — stop. Fresh issues arriving later may invoke a new ws-triage session — a new run, not a third current route. (Format: `ws-graph-engineering`.)
+- **Exit report:** one current route, at most one alternative — the user invokes the next entry; never auto-invoke it. An issue verified and marked ready-for-agent → ws-implement (build the brief in a fresh session); the alternative, when a request needs deeper grilling than one triage pass → ws-grill-with-docs (the entry node that pairs grilling with domain-modeling and leaves the paper trail), then re-invoke /ws-triage on the issue to post the sharpened brief. When the queue is clear, that is the terminal outcome — stop. Fresh issues arriving later may invoke a new ws-triage session — a new run, not a third current route. (Format: `ws-graph-engineering`.)

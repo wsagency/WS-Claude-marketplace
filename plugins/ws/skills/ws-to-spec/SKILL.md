@@ -11,13 +11,15 @@ The issue tracker and triage label vocabulary should have been provided to you �
 
 ## Process
 
-1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout the spec, and respect any ADRs in the area you're touching.
+1. **Fetch any passed reference.** If invoked with a reference (a spec path, an issue number or URL, or a `wayfinder:map` issue), fetch it and read its full body and comments. For a map, the map is an index, not a store — read its body **and** the resolution comment of every closed child ticket its **Decisions so far** section links before synthesizing (the decisions live in those tickets, not the map); children listed under the map's **Out of scope** section feed only the spec's Out of Scope section. This is fetching, not interviewing — it does not relax the no-interview rule.
 
-2. Sketch out the seams at which you're going to test the feature. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can. The fewer seams across the codebase, the better - the ideal number is one.
+2. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout the spec, and respect any ADRs in the area you're touching.
+
+3. Sketch out the seams at which you're going to test the feature. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can. The fewer seams across the codebase, the better - the ideal number is one.
 
 Check with the user that these seams match their expectations.
 
-3. Write the spec using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label - no need for additional triage.
+4. Write the spec using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label only when the build fits a single session — a multi-session spec gets no state role here (ws-to-tickets stamps its slices `ready-for-agent`); either way, no need for additional triage.
 
 If an ADR-worthy decision crystallises while synthesizing the spec (hard to reverse, surprising without context, a real trade-off), record it via the `/ws-domain-modeling` skill — it chooses the hub, repo-root, or bounded-context `dev-docs/decisions/` by scope. The spec cites the ADR rather than being its only record.
 
@@ -80,11 +82,12 @@ Any further notes about the feature.
 ## Graph node
 
 - **Tier:** user-invoked (entry)
-- **Reads:** the current conversation (the already-grilled idea — no interviewing), codebase state, the domain glossary in `CONTEXT.md`, ADRs, the tracker config in `dev-docs/agents/issue-tracker.md`
-- **Emits:** a spec (Problem / Solution / User Stories / Implementation Decisions / Testing Decisions / Out of Scope) published to the issue tracker with the `ready-for-agent` label; test seams confirmed with the user before publishing
+- **Reads:** the current conversation (the already-grilled idea — no interviewing) or a passed reference (spec path / issue / `wayfinder:map` issue, read with its body and the resolution comments of the closed children its **Decisions so far** links — out-of-scope children feed only the spec's Out of Scope), codebase state, the domain glossary in `CONTEXT.md`, ADRs, the tracker config in `dev-docs/agents/issue-tracker.md`
+- **Emits:** a spec (Problem / Solution / User Stories / Implementation Decisions / Testing Decisions / Out of Scope) published to the issue tracker — with the `ready-for-agent` label only when the build fits a single session (a multi-session spec gets no state role — ws-to-tickets stamps its slices `ready-for-agent` and strips the parent); test seams confirmed with the user before publishing
 - **Edges:**
   - when an ADR-worthy decision crystallises during synthesis → ws-domain-modeling (ADR routed to hub, repo root, or bounded context by scope)
-  - when done, recommend → ws-to-tickets (user-mediated: the published spec is its input; keep the same context window through the split)
+  - multi-session spec (no state role) → ws-to-tickets (user-mediated: the published spec is its input; keep the same context window through the split)
+  - single-session spec (labelled `ready-for-agent`) → ws-implement (user-mediated: the spec is ready to build in this context window)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** the spec lives on the tracker; reference it by issue, don't re-paste its body into later sessions (DONE|{spec issue link}).
-- **Exit report:** spec published → ws-to-tickets (user-mediated: split into tracer-bullet tickets in the same context window); an ADR-worthy decision surfaced mid-synthesis → ws-domain-modeling (record the ADR the spec cites). (Format: `ws-graph-engineering`.)
+- **Exit report:** spec published — multi-session spec (no state role) → ws-to-tickets (user-mediated: split into tracer-bullet tickets in the same context window); single-session spec (labelled `ready-for-agent`) → ws-implement (user-mediated: build it in this context window); an ADR-worthy decision surfaced mid-synthesis → ws-domain-modeling (record the ADR the spec cites). (Format: `ws-graph-engineering`.)

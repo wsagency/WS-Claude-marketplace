@@ -111,7 +111,7 @@ Scripts the plugin's commands shell out to for deterministic work.
 
 ### The ws-matt skill graph (inside the ws plugin)
 
-The ws plugin vendors [Matt Pocock's engineering skills](https://github.com/mattpocock/skills) (MIT, with attribution) as a graph-engineered skill set: 19 interlinked `ws-*` skill nodes in two tiers (user-invoked entry orchestrators, model-invoked worker disciplines), a single `/ws-matt` entry command, and worker agents (`reviewer`, `researcher`, `tdd-runner` — canonical `ws:<agent>`). Beyond the standard directories the plugin adds `rules/` (the omp edge-discipline rule installed by `/ws-matt setup`) and `docs/` (`graph.md`, the mermaid graph map; `UPSTREAM.md` at the plugin root tracks upstream sync).
+The ws plugin vendors [Matt Pocock's engineering skills](https://github.com/mattpocock/skills) (MIT, with attribution) as a graph-engineered skill set: 19 interlinked `ws-*` skill nodes in two tiers (user-invoked entry orchestrators, model-invoked worker disciplines), a single `/ws-matt` entry command, and worker agents (`ws-reviewer`, `researcher`, `tdd-runner` — canonical `ws:<agent>`). Beyond the standard directories the plugin adds `rules/` (the omp edge-discipline rule installed by `/ws-matt setup`) and `docs/` (`graph.md`, the mermaid graph map; `UPSTREAM.md` at the plugin root tracks upstream sync).
 
 ## Registration Mechanics
 

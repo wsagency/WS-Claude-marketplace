@@ -314,13 +314,18 @@ Hubs used with omp carry a project `.omp/` preset written by `/ws-hub init`:
   the same purpose).
   Caveat: never park loose `.ts`/`.sh` files in `.claude/hooks/pre|post/`
   directories — omp's Claude-compat provider scans them.
-- `.omp/rules/` — the WS rules pack, TTSR stream-interrupting rules:
+- `.omp/rules/` — the per-hub WS rules pack, TTSR stream-interrupting rules:
   `ws-guard-git` (destructive git ops), `ws-commit-format` (Conventional
   Commits + ticket key + WS trailer, reminded per commit attempt),
   `ws-generated-files` (never hand-edit openwiki pages / changelog mirror /
-  explained artefacts — fix the source), plus `openwiki-freshness` and
-  ws-matt's `omp-edge-discipline`. These turn WS conventions from prose into
-  enforcement in the model's output stream.
+  explained artefacts — fix the source), and `openwiki-freshness` (the
+  per-hub freshness rule — installed by `/ws-hub init` step 5b alongside the
+  omp freshness hook above, whether or not OpenWiki is initialized, so every omp
+  hub carries it). ws-matt's `omp-edge-discipline` is NOT part of this per-hub
+  pack: it ships GLOBALLY with the `@wsagency/omp-ws` native extension's own
+  `rules/` (alwaysApply, applies project-wide), so init never copies it into
+  `.omp/rules/`. These rules turn WS conventions from prose into enforcement in
+  the model's output stream.
 
 ## Artifact language
 

@@ -14,6 +14,11 @@ describe("slugify", () => {
 	test("collapses repeats and trims dashes", () => {
 		expect(slugify("  --weird   title--  ")).toBe("weird-title");
 	});
+	test("neutralizes path-traversal segments to a safe (possibly empty) slug", () => {
+		expect(slugify("..")).toBe("");
+		expect(slugify("../..")).toBe("");
+		expect(slugify("../escape")).toBe("escape");
+	});
 });
 
 describe("renderTicket", () => {

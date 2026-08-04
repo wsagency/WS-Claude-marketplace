@@ -107,7 +107,7 @@ graph TD
   and are **not drawn as Mermaid nodes** — the graph above models skills only.
   The three named worker agents, fanned out via the Task tool (omp: its task
   agent):
-  - **`reviewer`** — code-review worker. `ws-code-review` spawns one `reviewer`
+  - **`ws-reviewer`** — code-review worker. `ws-code-review` spawns one `ws-reviewer`
     per axis in parallel (Standards, Spec), each returning compact findings and
     an `approve` / `request-changes` verdict per the `ws-code-review` discipline.
   - **`researcher`** — research worker. `ws-research` spawns `researcher`
@@ -123,6 +123,13 @@ graph TD
     mechanism behind that edge, not a separate skill node.
   - `ws-improve-codebase-architecture` / `ws-codebase-design` also spawn
     exploration and design-it-twice sub-agents (not graph nodes).
+- **Edges into WS commands** are declared in a node's `## Graph node` section
+  but are **not drawn** — this map models skills only, and a WS command is not
+  a skill node. The one such edge is `ws-implement` → `/ws-commit pr` at branch
+  completion (a user-mediated handoff: `ws-implement` recommends the command in
+  its exit report; the user invokes it). Were it drawn it would be a dotted
+  edge like every other user-mediated handoff above; it is listed here rather
+  than drawn only because this map has no command nodes.
 - **ADR placement (per ADR 0006).** Where a decision the spec didn't cover gets
   filed depends on scope, not on which node minted it: a **product-level ADR**
   (cross-repo, synthesized at the hub) lands in the parent hub's

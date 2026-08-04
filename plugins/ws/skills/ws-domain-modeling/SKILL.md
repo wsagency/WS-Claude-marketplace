@@ -43,7 +43,7 @@ Create files lazily — only when you have something to write. If no `CONTEXT.md
 
 Choose the narrowest durable decision scope:
 
-1. **Product-level** — concerns more than one repo, or the client. If a parent hub `project.yaml` registers this repo as a sub-repo (see `project-hub-conventions`), write to the hub's `dev-docs/decisions/`; otherwise use this repo's root `dev-docs/decisions/`.
+1. **Product-level** — concerns more than one repo, or the client. Run project shape detection (see `project-hub-conventions`): hub root or hub sub-repo → the hub's `dev-docs/decisions/`; standalone → this repo's root `dev-docs/decisions/`.
 2. **Repo-wide/system-wide** — concerns this repo as a whole, or multiple bounded contexts inside it → this repo's root `dev-docs/decisions/`.
 3. **Bounded-context-specific** — when `CONTEXT-MAP.md` maps the context to its own subtree → that context's `dev-docs/decisions/`.
 
@@ -91,6 +91,6 @@ If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](
 - **Reads:** `CONTEXT.md` (or `CONTEXT-MAP.md` plus per-context files), the applicable hub-, repo-, and bounded-context `dev-docs/decisions/` directories, the terms used live in the conversation, the code (to cross-reference claims against reality)
 - **Emits:** inline `CONTEXT.md` glossary updates the moment a term resolves (glossary only — never implementation details); an ADR only when the decision is hard to reverse, surprising without context, and a real trade-off — routed to the hub, repo root, or bounded context by scope
 - **Edges:**
-  - then → return to the driving node — this skill runs beneath ws-grill-with-docs, ws-triage, ws-improve-codebase-architecture and ws-wayfinder rather than continuing anywhere itself
+  - then → return to whichever node invoked it (ws-grilling, ws-grill-with-docs, ws-triage, ws-improve-codebase-architecture, ws-codebase-design, ws-wayfinder, ws-implement, ws-to-spec) — this skill never continues anywhere itself
 - **Handoff protocol:** updates are written directly to `CONTEXT.md` and the chosen `dev-docs/decisions/` (hub, repo root, or bounded context) as they crystallise and referenced by path — never batched up in conversation (DONE|{CONTEXT.md, <chosen-dev-docs>/decisions/NNNN-*.md}).
 - **Exit report:** nested under a driver, return the `CONTEXT.md`/ADR updates as state delta and emit no route; invoked directly, report the landed glossary/ADR updates and stop — no invented driver. (Format: `ws-graph-engineering`.)

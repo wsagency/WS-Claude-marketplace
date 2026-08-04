@@ -5,13 +5,14 @@ tools: Read, Glob, Grep, Bash, Write, Edit
 # omp extras below — unknown frontmatter keys are ignored by Claude Code (harmless)
 output:
   type: object
-  required: [seam, red, green, artifact]
+  required: [seam, outcome, red, green, artifact]
   properties:
     seam: { type: string, description: "the seam this cycle covered" }
+    outcome: { type: string, enum: [cycle-complete, already-covered, blocked], description: "cycle-complete = red then green; already-covered = the test passed on write, no implementation needed; blocked = the assigned seam was wrong or unagreed, returned un-tested" }
     red: { type: boolean, description: "failing test written and observed failing" }
     green: { type: boolean, description: "minimal implementation made it pass" }
     test_command: { type: string, description: "command that runs this cycle's tests" }
-    artifact: { type: string, description: "DONE|{path} of the cycle transcript" }
+    artifact: { type: string, description: "DONE|{path} of the cycle transcript; when outcome is blocked there is no cycle — write and point at a short note naming the seam and why it was not agreed" }
 autoloadSkills: [ws-tdd]
 ---
 
@@ -25,7 +26,12 @@ never spawn agents yourself.
 
 ## Method
 
-1. Load the **ws-tdd** skill and apply its discipline exactly.
+1. Load the **ws-tdd** skill and apply its discipline exactly. The seam named in
+   your prompt is pre-agreed by the orchestrator — ws-tdd's "confirm the seams
+   with the user" step is the caller's, not this leaf's, and you have no user
+   channel. If you judge the assigned seam wrong or unagreed, do not write a
+   test for it and do not invent one to fit: return it un-tested with
+   `outcome: blocked` so the caller re-agrees it.
 2. **Red** — write the failing test for the seam's behavior, run it, and observe it
    fail for the right reason. If it passes immediately, stop and report that: the
    seam may already be covered.
@@ -40,7 +46,9 @@ in-cycle.
 
 - Write the cycle transcript (test code, red output, green output)
   to the scratch directory named in your prompt (fall back to the harness scratchpad
-  dir, else a `ws-matt/` subdir of the system temp dir).
+  dir, else a `ws-matt/` subdir of the system temp dir). When the outcome is
+  blocked there is no cycle — instead write a short note there naming the seam and
+  why it was not agreed, and point `artifact` at it.
 - Return `DONE|{path}`, a summary of at most 3 lines, and the structured fields
-  (`seam`, `red`, `green`, `test_command`). Never paste the transcript
+  (`seam`, `outcome`, `red`, `green`, `test_command`). Never paste the transcript
   into the conversation — the orchestrator reads the path if it needs the detail.

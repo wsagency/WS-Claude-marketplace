@@ -65,7 +65,11 @@ export function registerAdrTool(pi: ExtensionAPI): void {
 			try {
 				fileNames = await fs.readdir(decisionsDir);
 			} catch {
-				await fs.mkdir(decisionsDir, { recursive: true });
+				try {
+					await fs.mkdir(decisionsDir, { recursive: true });
+				} catch (error) {
+					return textResult(`ws_adr: cannot use ${decisionsDir}: ${String(error instanceof Error ? error.message : error)}`, true);
+				}
 			}
 
 			const slug = slugify(params.title);

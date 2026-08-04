@@ -60,7 +60,10 @@ export function hasCodeChanges(files: string[]): boolean {
 }
 
 export function touchesChangelog(files: string[]): boolean {
-	return files.includes("CHANGELOG.md");
+	// git prints paths relative to the GIT ROOT, so a package dir below the
+	// root yields e.g. "extensions/pkg/CHANGELOG.md". Match the suffix so the
+	// gate/nudge can be satisfied in nested repos, not just at the git root.
+	return files.some(file => file === "CHANGELOG.md" || file.endsWith("/CHANGELOG.md"));
 }
 
 async function readIfExists(filePath: string): Promise<string | undefined> {

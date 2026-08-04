@@ -65,7 +65,7 @@ Publish the approved tickets — they land in the tracker configured by `dev-doc
 
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
 
-Do NOT close or modify any parent issue.
+Do NOT close the parent issue. Once the children exist, remove any `ready-for-agent` label from the parent — it's a plan now, not a grabbable ticket, and leaving it labelled would put the whole multi-session build and each of its slices in the same agent queue.
 
 <local-ticket-template>
 
@@ -109,7 +109,7 @@ In either form, avoid specific file paths or code snippets — they go stale fas
 
 ## After the tickets land
 
-Building a ticket is **entry-tier** work. Recommend `/ws-matt implement` on a ready frontier ticket — never auto-invoke it, and never hand a whole ticket to a worker agent. A ticket is **ready** when it is open and its `Blocked by:` list has no open entries; it becomes eligible when its blockers reach `done/`. Clear context between tickets.
+Building a ticket is **entry-tier** work. Recommend `/ws-matt implement` on a ready frontier ticket — never auto-invoke it, and never hand a whole ticket to a worker agent. A ticket is **ready** when it is open and its `Blocked by:` list has no open entries; it becomes eligible when every blocker is closed — on the local tracker, when every blocking slug has moved to `done/`. Clear context between tickets.
 
 Two or more ready tickets are outer lanes only when they are independent,
 substantial, and isolated in separate sessions/worktrees. Starting that batch

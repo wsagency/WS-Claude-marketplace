@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { collectStale, readWorkingRepos } from "../src/wiki-freshness";
+import { collectStale, consumeMalformedReposWarning, readWorkingRepos } from "../src/wiki-freshness";
 
 let dirs: string[] = [];
 
@@ -130,6 +130,16 @@ tmux:
 		expect(await readWorkingRepos(cwd)).toEqual([{ name: "acme-app", path: "./acme-app" }]);
 	});
 
+	test("a column-0 sequence under a foreign key does not create phantom repos", async () => {
+		// After `repos:` ends at `tmux:`, a later column-0 `- name:` (valid YAML
+		// under tmux:) must NOT reopen the repos block. The relaxed column-0 rule
+		// (sequence items don't terminate) depends on the terminating key clearing
+		// inRepos first — an impl treating any `- name:` as an entry re-admits it.
+		const yaml = `repos:\n  - name: acme-app\n    type: working\ntmux:\n- name: phantom\n  path: ./phantom\n`;
+		const { cwd } = await makeHub(yaml, {});
+		expect(await readWorkingRepos(cwd)).toEqual([{ name: "acme-app", path: "./acme-app" }]);
+	});
+
 	test("drops an entry with an empty name: without absorbing its keys", async () => {
 		const yaml = `repos:
   - name: acme-app
@@ -244,6 +254,86 @@ tmux:
 		const yaml = "repos:\r\n  - name: \"acme-app\" \r\n    path: './acme-app' \r\n    type: working\r\n";
 		const { cwd } = await makeHub(yaml, {});
 		expect(await readWorkingRepos(cwd)).toEqual([{ name: "acme-app", path: "./acme-app" }]);
+	});
+	test("column-0 block sequences are valid YAML: entries at the parent indentation parse", async () => {
+		// `- name:` at column 0 is a valid block-sequence item under `repos:`. The
+		// old column-0-key rule terminated the block on it, dropping every entry and
+		// silently disabling the freshness reminder for the whole hub.
+		const yaml = `project:
+  name: acme
+repos:
+- name: acme-app
+  path: ./acme-app
+  type: working
+- name: acme-lib
+  type: working
+deploy:
+  type: none
+`;
+		const { cwd } = await makeHub(yaml, {});
+		expect(await readWorkingRepos(cwd)).toEqual([
+			{ name: "acme-app", path: "./acme-app" },
+			{ name: "acme-lib", path: "./acme-lib" },
+		]);
+	});
+
+	test("column-0 sequence followed by a real top-level key still flushes the last entry", async () => {
+		// The block-end flush must still run when a genuine column-0 key follows the
+		// sequence, so the final `- name:` entry is captured.
+		const yaml = `repos:\n- name: only\n  type: working\nother:\n  x: 1\n`;
+		const { cwd } = await makeHub(yaml, {});
+		expect(await readWorkingRepos(cwd)).toEqual([{ name: "only", path: "./only" }]);
+	});
+
+	test("a repos: block with no recognisable entries arms the malformed flag (clearable)", async () => {
+		consumeMalformedReposWarning(); // reset any state from earlier tests
+		const yaml = `repos:\n  not-a-list-entry: true\n`;
+		const { cwd } = await makeHub(yaml, {});
+		expect(await readWorkingRepos(cwd)).toEqual([]);
+		expect(consumeMalformedReposWarning()).toBe(true);
+		// Re-parsing a still-malformed file re-arms the flag (reflects current state).
+		await readWorkingRepos(cwd);
+		expect(consumeMalformedReposWarning()).toBe(true);
+		// A well-formed file does not arm it.
+		const ok = await fs.mkdtemp(path.join(os.tmpdir(), "ws-fresh-"));
+		dirs.push(ok);
+		await fs.writeFile(path.join(ok, "project.yaml"), `repos:\n  - name: app\n    type: working\n`);
+		expect(await readWorkingRepos(ok)).toEqual([{ name: "app", path: "./app" }]);
+		expect(consumeMalformedReposWarning()).toBe(false);
+	});
+
+	test("legitimately empty results do NOT arm the malformed-repos flag", async () => {
+		// Three shapes return [] / undefined without a malformed repos: block. An
+		// impl that arms the flag on any zero-entry result would emit a permanent
+		// "malformed project.yaml" warning for every input-only or output-only hub.
+		consumeMalformedReposWarning(); // reset state from earlier tests
+		const inputOnly = await makeHub(`repos:\n  - name: c\n    type: input\n`, {});
+		expect(await readWorkingRepos(inputOnly.cwd)).toEqual([]);
+		expect(consumeMalformedReposWarning()).toBe(false);
+		const noReposKey = await makeHub(`project:\n  name: x\n`, {});
+		expect(await readWorkingRepos(noReposKey.cwd)).toEqual([]);
+		expect(consumeMalformedReposWarning()).toBe(false);
+		const standalone = await makeHub(undefined, {});
+		expect(await readWorkingRepos(standalone.cwd)).toBeUndefined();
+		expect(consumeMalformedReposWarning()).toBe(false);
+	});
+
+	test("the malformed flag is one-shot: a well-formed re-parse does not clear it", async () => {
+		// The flag is set when a parse sees a malformed repos: block and cleared
+		// only by consumeMalformedReposWarning(); a successful parse does not
+		// retroactively clear an arming from a prior malformed parse. The caller
+		// consumes once per session, so this pins the one-shot contract.
+		consumeMalformedReposWarning(); // reset
+		const bad = await makeHub(`repos:\n  not-a-list-entry: true\n`, {});
+		await readWorkingRepos(bad.cwd);
+		expect(consumeMalformedReposWarning()).toBe(true); // armed by the malformed parse
+		// Re-arm, then parse a fixed file WITHOUT consuming in between.
+		await readWorkingRepos(bad.cwd);
+		const fixed = await fs.mkdtemp(path.join(os.tmpdir(), "ws-fresh-"));
+		dirs.push(fixed);
+		await fs.writeFile(path.join(fixed, "project.yaml"), `repos:\n  - name: app\n    type: working\n`);
+		await readWorkingRepos(fixed);
+		expect(consumeMalformedReposWarning()).toBe(true); // still armed (one-shot latch)
 	});
 });
 
@@ -364,6 +454,14 @@ describe("collectStale", () => {
 		// `link` is a symlink to a dir: Dirent.isDirectory() is false, so its
 		// dev-docs is never reached (no link/dev-docs/t.md in the result).
 		expect(stale.sort()).toEqual(["dev-docs/own.md", "real/dev-docs/r.md"]);
+	});
+	test("hub mode: a column-0 repo sequence is walked, not dropped", async () => {
+		// A `repos:` block whose `- name:` items sit at column 0 (valid YAML) must
+		// still drive the walk — the parser fix keeps these entries in the list.
+		const yaml = `repos:\n- name: acme-app\n  type: working\n`;
+		const { cwd, markerMtimeMs } = await makeHub(yaml, { "acme-app": ["a.md"] });
+		const stale = await collectStale(cwd, markerMtimeMs, await readWorkingRepos(cwd));
+		expect(stale).toEqual(["acme-app/dev-docs/a.md"]);
 	});
 });
 
@@ -498,6 +596,18 @@ describe("shell vs TypeScript parity", () => {
 		// resolve ./app and walk its dev-docs. The TS literal is pinned BEFORE the
 		// parity check so a shared regression still fails the suite.
 		const yaml = "repos:\n  - name: app\n    path:  # defaults to ./app\n    type: # working\n";
+		const { cwd, markerMs } = await parityHub(yaml, MARKER, [["app", "a.md", true]]);
+		const ts = (await collectStale(cwd, markerMs, await readWorkingRepos(cwd))).sort();
+		const sh = hookFiles(await runHook(cwd)).sort();
+		expect(ts).toEqual(["app/dev-docs/a.md"]);
+		expect(sh).toEqual(ts);
+	});
+
+	test.skipIf(!bash)("column-0 repos sequence: both twins walk it (not dropped)", async () => {
+		// `- name:` at column 0 is valid YAML under `repos:`. The TS parser fix
+		// keeps these entries; the awk twin must too, or non-omp Claude users on a
+		// column-0 hub get no freshness reminder while omp users do.
+		const yaml = "repos:\n- name: app\n  type: working\n";
 		const { cwd, markerMs } = await parityHub(yaml, MARKER, [["app", "a.md", true]]);
 		const ts = (await collectStale(cwd, markerMs, await readWorkingRepos(cwd))).sort();
 		const sh = hookFiles(await runHook(cwd)).sort();

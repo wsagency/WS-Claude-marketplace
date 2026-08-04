@@ -86,14 +86,28 @@ the doctor flow (step 0).
 Run project shape detection (see the **project-hub-conventions** skill,
 "Project shape detection") to decide where you are:
 
-- **Hub root** (`./project.yaml` present, or `AGENTS.md` carries the
-  `ws-hub:repos` markers) → this hub is already initialized — do NOT
-  re-scaffold. Ask (AskUserQuestion, or a plain chat question when that tool
-  is unavailable): "This hub is already set up. What do you want?"
+- **Hub root** (`./project.yaml` present) → this hub is already initialized —
+  do NOT re-scaffold. (The marker-pair region in `AGENTS.md` is NOT a separate
+  trigger: a hub is identified by `project.yaml` alone — see the
+  project-hub-conventions skill's "Project shape detection".) Ask
+  (AskUserQuestion, or a plain chat question when that tool is unavailable):
+  "This hub is already set up. What do you want?"
   - **Doctor — diagnose + repair** (recommended) → run **Doctor mode** (section below) in fix posture.
   - **Diagnose only** → Doctor mode in report posture: print findings, change nothing.
-  - **New hub elsewhere** → the invocation was intentional but for a different location; ask for the parent path and continue from step 1 there.
+  - **New hub elsewhere** → the invocation was intentional but for a different location; ask for the parent path, then RE-RUN project shape detection from that path before continuing: if it resolves to hub root or hub sub-repo, abort with that ancestor hub path and stop (NEVER scaffold a second hub beneath an existing one). Only a standalone result continues at step 1 there.
   - **Nothing** → wrongly invoked; exit without changes.
+- **Broken hub** (`AGENTS.md` carries the `ws-hub:repos` markers but there is
+  NO `project.yaml`) → the registry was lost or never committed. Repair it IN
+  PLACE here — do NOT delegate to `doctor` (which requires `./project.yaml`,
+  classifies a no-`project.yaml` dir as standalone, and points back at `init`,
+  looping forever): regenerate `project.yaml` from
+  `${CLAUDE_PLUGIN_ROOT}/templates/project.yaml.tmpl` (substitute
+  `__CONVENTIONS_VERSION__` with the current conventions version — the
+  "Latest conventions version" line in the `update` verb's migration table),
+  then reconstruct the `repos:` entries from the marker region in `AGENTS.md`
+  (one entry per rendered block, inferring `path`, `type`, `purpose`, `tech`,
+  and `url` from the block's fields). Confirm the reconstructed registry with
+  the user before writing, then offer the Doctor flow.
 - **Hub sub-repo** (`project.yaml` found in an ancestor directory) → the hub
   already exists at that ancestor. Report its path in one line and stop (do not
   scaffold here); suggest re-running `/ws-hub` from the hub root.
@@ -107,14 +121,14 @@ First detect candidate repos by running (Bash) a scan for git directories among 
 
 ```bash
 for d in */; do [ -d "$d/.git" ] && echo "./$d"; done
-for d in ../*/; do [ -d "$d/.git" ] && echo "../$d"; done
+for d in ../*/; do [ -d "$d/.git" ] && echo "$d"; done
 ```
 
 Then ask:
 
 - Project name (kebab-case, e.g. `acme`) — hub folder will be `<name>-main`
 - One-line description
-- Location: current dir or a custom parent path
+- Location — detect FIRST whether the CWD is itself a git worktree (`git rev-parse --is-inside-work-tree` succeeds). When it is, this is the standalone repo being adopted, and the hub must NOT be created inside it (a hub nested inside a sub-repo is the exact inversion this flow exists to prevent and is unrecoverable by any other verb): drop "current dir" as an option, default the location to the CWD's PARENT (`<cwd>/../<name>-main`), and list the CWD repo as a step-3 registration candidate. Because that CWD repo can then only register as a sibling (`path: ../<name>`) — which omp cannot reach (it has no `--add-dir`) — prefer offering it **move into the hub** first (`path: ./<name>`, reachable by every harness); leaving it as a sibling is a Claude-Code-only fallback that must be called out to the user (see docs/how-to/use-with-omp.md). When the CWD is NOT a git repo, "current dir" remains the default. A custom parent path is always offered.
 - Show detected git repos (both subdirs of CWD and siblings); ask the user which to register initially (multi-select)
 
 #### 2. Create hub skeleton
@@ -124,7 +138,7 @@ Inside `<name>-main/`:
 - `.claude/skills/project-hub-conventions/SKILL.md` — copy from `${CLAUDE_PLUGIN_ROOT}/skills/project-hub-conventions/SKILL.md` (vendored so the hub works without the marketplace plugin)
 - `project.yaml` — from `${CLAUDE_PLUGIN_ROOT}/templates/project.yaml.tmpl` with substitutions; substitute the template's `__CONVENTIONS_VERSION__` placeholder with the current conventions version (the "Latest conventions version" in the `update` verb's migration table)
 - `invoke-ai.sh` — copy from template, `chmod +x`
-- `AGENTS.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/AGENTS.md.tmpl` with placeholder substitutions (`__PROJECT_NAME__`, `__PROJECT_DESCRIPTION__`; `__REPO_SECTIONS__` is filled in step 7) — the canonical, agent-neutral project map
+- `AGENTS.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/AGENTS.md.tmpl` with placeholder substitutions (`__PROJECT_NAME__`, `__PROJECT_DESCRIPTION__`; `__REPO_SECTIONS__` is filled in step 6) — the canonical, agent-neutral project map
 - `CLAUDE.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/CLAUDE.md.tmpl` (thin `@AGENTS.md` import — never put content here)
 - `README.md` — from `${CLAUDE_PLUGIN_ROOT}/templates/README.md.tmpl` with placeholder substitutions (`__PROJECT_NAME__`)
 - `dev-docs/` — create the directory (the product knowledge root; see the skill's "Hub dev-docs" section). Do NOT pre-create the canonical scaffold here: `architecture.md`, `decisions/index.md`, `runbooks/index.md`, and `scoping/index.md` are filled in step 3c, AFTER any step-3b adoption lift, so an opted-in lift lands authored product content at its canonical path instead of colliding with a stub. (Step 3c runs unconditionally — even a greenfield hub with no selected repos gets the scaffold.)
@@ -134,11 +148,26 @@ Do NOT create a `docs/` subdirectory — user docs live in the `purpose: docs` o
 
 #### 3. Handle each selected sub-repo (ask per-repo)
 
-For every repo the user selected, ask via AskUserQuestion what to do:
+For every repo the user selected, ask via AskUserQuestion what to do. Every
+detected path is CWD-relative, but the hub's depth relative to the CWD is NOT
+fixed: step 1's Location rule puts it at `<cwd>/<name>-main/` when the CWD is a
+plain directory, but at `<cwd>/../<name>-main/` (the CWD's parent) when the CWD
+is itself the git repo being adopted. So do NOT assume a single CWD→hub offset
+— resolve the hub directory from the step-1 Location answer first, then compute
+each selected repo's path **relative to that resolved hub directory** before
+registering it. A repo that resolves to `./<name>` (nested inside the hub) is
+always fine. A repo that resolves to `../<name>` (a direct sibling of the hub)
+is registerable in place, but note it is reachable only by harnesses that can
+mount a sibling directory (Claude Code's `--add-dir`); omp cannot, so for an
+adopted CWD repo prefer the step-1 "move into hub" option unless the user
+explicitly accepts the sibling fallback. A repo that needs two or more `../`
+segments to reach from the hub is out of the defined path schema (omp cannot
+reach `../../`, and invoke-ai.sh's `--add-dir` resolution does not cover it), so
+it may only be **moved in** or **cloned**, never registered in place.
 
-- **Move into hub**: `mv <source-path> ./<name>` then register with `path: ./<name>`. Use for sibling repos the user wants under the hub now.
-- **Register in place** (as sibling): keep at original path, register with `path: ../<name>` (or whatever the relative path is). Use when the repo can't be moved (in use, etc.).
-- **Clone fresh into hub**: ask for git URL, `git clone <url> ./<name>`, register with `path: ./<name>`. Use for repos not yet on disk.
+- **Move into hub**: `mv <cwd-relative-source> <hub-dir>/<name>` (run from the original CWD), then register with `path: ./<name>`. Use for CWD-nested or CWD-sibling repos the user wants under the hub now.
+- **Register in place** (as sibling): keep at original path — valid ONLY when the repo's resolved hub-relative path is exactly `../<name>` (a direct sibling of the hub). Register with `path: ../<name>`. Use when the repo can't be moved (in use, etc.); remember omp cannot reach sibling paths. A path needing `../../` or deeper is NOT registerable in place — move or clone instead.
+- **Clone fresh into hub**: ask for git URL, `git clone <url> <hub-dir>/<name>`, register with `path: ./<name>`. Use for repos not yet on disk.
 - **Skip**: don't register now.
 
 Register each chosen repo in `project.yaml` following the skill's "project.yaml schema" section (fields, path rules) and its "Tech inference" table. Prompt the user for `description` (default `"TODO: describe this repo"`). Also ask for the repo's **type** (see the skill's "Repo types" table): `working` (development repo — default), `input` (external deliveries that feed development: client materials, design assets, data dumps), or `output` (derived artifact — then also ask the `purpose`: `docs` or `explained`; the vocabulary is open but only those two have a consumer today, so do not offer "custom" in the prompt). Before writing a known purpose, enforce the skill's known-purpose uniqueness rule (Output repos section) — check `project.yaml` and refuse with a message naming the existing entry if taken. If the user plans to create fresh input/output repos in step 4, they should answer `working` here. For an ADOPTED repo (already on disk, not cloned fresh), propose an inferred type from its signals — name suffix (`-client`/`-design` → `input`, `-docs` → `output, purpose: docs`, `-explained` → `output, purpose: explained`) and contents — and confirm; default to `working` when unclear. Add nested (`./`) repos to the `.gitignore` managed block per the skill; sibling (`../`) repos are not added.
@@ -181,9 +210,13 @@ Run this step for EVERY init, including a greenfield hub with zero selected or q
 
 #### 4. Input & output repos
 
-Skip an offer below if a repo registered in step 3 already covers it (a
-`purpose: docs` output, a client input repo, a `purpose: explained` output)
-— just point at it in the report. The two offers below (4a, 4b) are
+Skip an offer below if a repo registered in step 3 already covers it — but
+only an EXACT match: **4a** is covered only by a registered `type: input` repo
+named `<project>-client` (or a user-confirmed client-materials role); a
+`-design` or other input repo does NOT cover it, so 4a still runs. **4b** is
+covered by a `purpose: docs` output; **4c** by a `purpose: explained` output.
+When an offer is covered, just point at the covering repo in the report. The
+two offers below (4a, 4b) are
 independent AskUserQuestion prompts; each "Yes" creates + registers the repo,
 each "No" is noted with the remedy (`/ws-hub add` can register or mark one
 later). 4c is on request only — it has no Yes/No branch.
@@ -222,7 +255,7 @@ on first run.
 
 - **Yes** → verify `command -v openwiki` (missing → print `npm install -g openwiki` and let the user install first). Run `openwiki --init` at the hub root — it is interactive (provider/model onboarding); let the user drive it. It generates `openwiki/` and maintains its own `<!-- OPENWIKI:START/END -->` block in the hub's `AGENTS.md` AND `CLAUDE.md` — the CLAUDE.md block is a permitted tool-managed exception to the thin-import rule (see the skill's "Context-file cascade"). Then, immediately after init:
   1. **Write the coverage scope into `openwiki/INSTRUCTIONS.md`** (append a "Coverage scope" section): the wiki documents the product across ALL registered **`type: working`** sub-repos — enumerate them from `project.yaml` (`type: input` repos are raw external deliveries and `type: output` repos are derived artifacts — both are excluded) — each a SEPARATE git repository nested in this hub and invisible to the hub's git; always scan them all; the hub root itself is a thin meta repo (its `dev-docs/` is authored truth, not wiki input). Without this, OpenWiki tends to document only the largest repo it finds.
-  2. **Delete the generated CI workflow** (`.github/workflows/openwiki-update.yml`) if openwiki created one — the WS convention is AI-DRIVEN refresh (agents run a prompted refresh occasionally, before and/or after major work), not scheduled CI. Freshness is enforced softly: the plugin's Stop hook reminds when dev-docs changed since the last refresh (Claude Code), and when `.omp/` exists (or the user uses omp) copy `${CLAUDE_PLUGIN_ROOT}/rules/openwiki-freshness.md` into the hub's `.omp/rules/` (same fallback rule for the plugin root as above; the full omp preset itself is step 5b).
+  2. **Delete the generated CI workflow** (`.github/workflows/openwiki-update.yml`) if openwiki created one — the WS convention is AI-DRIVEN refresh (agents run a prompted refresh occasionally, before and/or after major work), not scheduled CI. Freshness is enforced softly: the plugin's Stop hook reminds when dev-docs changed since the last refresh (Claude Code); the omp freshness hook + rule are written by step 5b when the omp preset is chosen.
   3. For EVERY registered sub-repo, append this pointer to the sub-repo's `AGENTS.md` (creating it, plus a thin `CLAUDE.md`, if missing; adjust the relative path for sibling repos):
 
   ```markdown
@@ -237,26 +270,14 @@ on first run.
   Keep the template's "Knowledge wiki (OpenWiki)" section in the hub AGENTS.md (it documents the prompted-refresh pattern — sub-repo commits are invisible to hub git, so refresh is always `openwiki --update "Refresh; re-scan sub-repos: <list>"`).
 - **No** → prune the template's "Knowledge wiki (OpenWiki)" section from the hub AGENTS.md; the flow can be re-run later (documented in the skill — detection is simply the presence of `<hub>/openwiki/`).
 
-**5b — omp preset (when the user uses omp).** Write `.omp/config.yml` from `${CLAUDE_PLUGIN_ROOT}/templates/omp/config.yml.tmpl` (skip if one exists — never overwrite user config), copy `${CLAUDE_PLUGIN_ROOT}/templates/omp/hooks/openwiki-freshness.ts` into `.omp/hooks/post/` (native TS freshness hook — banner + exact update command on session settle), and copy the WS rules pack `${CLAUDE_PLUGIN_ROOT}/templates/omp/rules/*.md` into `.omp/rules/` (ws-guard-git, ws-commit-format, ws-generated-files — TTSR rules that interrupt the model's stream on dangerous git ops, non-conventional commits, and hand-edits of generated files). ASK the user (AskUserQuestion, defaults first): (1) approval posture — **yolo** (default, omp's own default) or `write` for cautious client repos; (2) bash guard patterns — **off** (default) or on; (3) whether to fill the per-project `modelRoles` block now (the template documents the WS class mapping and thinking-level suffixes — each project can run different providers). Uncomment/adjust the template blocks per their answers. Note: the TTSR `condition`/`scope` patterns may need tuning against their omp version — they are conventions-as-enforcement, verify once live.
+**5b — omp preset.** Ask FIRST (AskUserQuestion; default **Yes** when `command -v omp` succeeds, else **No**): "Write the omp preset — `.omp/` config, freshness hook, and WS rules pack?" **No** → skip the whole preset (`.omp/` is never created; the global `omp-edge-discipline` rule from the `@wsagency/omp-ws` native extension still applies). **Yes** → write `.omp/config.yml` from `${CLAUDE_PLUGIN_ROOT}/templates/omp/config.yml.tmpl` (skip if one exists — never overwrite user config), copy `${CLAUDE_PLUGIN_ROOT}/templates/omp/hooks/openwiki-freshness.ts` into `.omp/hooks/post/` (native TS freshness hook — banner + exact update command on session settle), and copy the WS rules pack into `.omp/rules/`: `${CLAUDE_PLUGIN_ROOT}/templates/omp/rules/*.md` (ws-guard-git, ws-commit-format, ws-generated-files — TTSR rules that interrupt the model's stream on dangerous git ops, non-conventional commits, and hand-edits of generated files) PLUS the freshness rule `${CLAUDE_PLUGIN_ROOT}/templates/omp/hub-rules/openwiki-freshness.md` — falling back to `${CLAUDE_PLUGIN_ROOT}/rules/openwiki-freshness.md` under the Claude Code plugin layout, where `templates/omp/hub-rules/` does not exist — installed per-hub here so every omp hub carries it whether or not OpenWiki is initialized (it is NOT part of the 5a-Yes branch; the global `omp-edge-discipline` rule is NOT copied here, it ships with the native extension). Then ASK the user (AskUserQuestion, defaults first): (1) approval posture — **yolo** (default, omp's own default) or `write` for cautious client repos; (2) bash guard patterns — **off** (default) or on; (3) whether to fill the per-project `modelRoles` block now (the template documents the WS class mapping and thinking-level suffixes — each project can run different providers). Uncomment/adjust the template blocks per their answers. Note: the TTSR `condition`/`scope` patterns may need tuning against their omp version — they are conventions-as-enforcement, verify once live.
 
 **5c — herdr (agent fleet multiplexer).** Ask: "Set up herdr for this hub?"
 
 - **Yes** → the ws plugin SHIPS the vendored `herdr` skill (`plugins/ws/skills/herdr`, self-guarded by `HERDR_ENV=1`), so no per-repo or global skill install is needed where the plugin is installed. Verify `command -v herdr`; if the binary is missing print the install options (`curl -fsSL https://herdr.dev/install.sh | sh`, or `brew install herdr`). On machines WITHOUT the ws plugin, install the skill globally instead: `npx skills add ogulcancelik/herdr --skill herdr -g` (covers every repo and every agent that reads `~/.claude/skills/` — Claude Code and omp). Keep the template's "Herdr" section in the hub AGENTS.md (workspace-per-sub-repo pattern). Tell the user the resulting layer split: once `HERDR_ENV=1` and two or more working sub-repos are genuinely in play, Herdr panes are the outer backend without them naming Herdr again; parallel edits need `herdr worktree` (shared-cwd panes are coordination-only); a per-repo agent may still fan out inner `task` workers over its own repo's disjoint slices, and no sub-repo is scheduled at both layers.
 - **No** → prune the template's "Herdr" section from the hub AGENTS.md. Without herdr, multi-repo work stays inner: one batched same-session `task` call.
 
-#### 6. Initialize hub git
-
-```bash
-cd <hub-dir>
-git init -q
-git add .gitignore .claude README.md AGENTS.md CLAUDE.md project.yaml invoke-ai.sh dev-docs
-git add openwiki .github 2>/dev/null || true   # present only if step 5a ran
-git commit -q -m "chore: initialize <project> hub"
-```
-
-Verify with `git status` that no sub-repo content shows up as untracked (the .gitignore should be filtering them out).
-
-#### 7. Generate `AGENTS.md` repo sections
+#### 6. Generate `AGENTS.md` repo sections, then initialize hub git
 
 Fill the region between the `ws-hub:repos` markers (replacing the template's placeholder — see "Regenerated region (marker pair)" in the skill) with one block per registered repo:
 
@@ -271,11 +292,25 @@ Fill the region between the `ws-hub:repos` markers (replacing the template's pla
 - url: <url if present>
 ```
 
-#### 8. Report back
+Then initialize the hub's own git — the region generation MUST precede the commit, so the initial commit captures the finished `AGENTS.md` rather than the literal `__REPO_SECTIONS__` placeholder:
+
+```bash
+cd <hub-dir>
+git init -q
+git add .gitignore .claude README.md AGENTS.md CLAUDE.md project.yaml invoke-ai.sh dev-docs
+git add openwiki .github 2>/dev/null || true   # present only if step 5a ran
+git add .omp 2>/dev/null || true   # present only if step 5b ran
+git commit -q -m "chore: initialize <project> hub"
+```
+
+Verify with `git status` that no sub-repo content shows up as untracked (the .gitignore should be filtering them out).
+
+#### 7. Report back
 
 - Path to created hub
 - Each registered repo: name, where it ended up (nested/sibling/cloned)
 - OpenWiki / herdr status (initialized / skipped)
+- Suggested commits — the hub and each touched sub-repo commit separately (each is its own git): the hub's initial commit is already made (step 6); for every repo a step-3b lift dirtied (its product `dev-docs/` moved out), name the repo and the suggested commit message (`docs: lift product dev-docs into <project>-main hub`). init never commits on the user's behalf.
 - Next steps:
   - `cd <hub> && ./invoke-ai.sh` to launch
   - `/ws-hub repos clone` if any registered repos aren't on disk
@@ -313,9 +348,12 @@ then stop. Only a standalone repo gets the `/ws-hub init` hint.
 re-running on an already-migrated hub is safe).
 
 **Migration table** (the single authoritative list — every convention change
-MUST add a row here, add a matching `**Migration N→M steps:**` block, bump the
-"Latest conventions version" line below, and bump the `conventions:` value in
-`templates/project.yaml.tmpl` via its `__CONVENTIONS_VERSION__` placeholder):
+MUST add a row here, add a matching `**Migration N→M steps:**` block, and bump
+the "Latest conventions version" line below ONLY — `templates/project.yaml.tmpl`
+keeps its `__CONVENTIONS_VERSION__` placeholder, which init substitutes at
+runtime from that "Latest conventions version" line, so NEVER replace the
+placeholder with a literal number or every newly created hub is pinned to that
+version forever):
 
 | from→to | name | what it does |
 |---|---|---|
@@ -633,7 +671,7 @@ duplicate beside an already-registered client repo).
    scaffold over it (its `history.md` is canonical). Offer to register it when
    it is an unregistered git repo, mark its existing registry entry
    `type: input`, choose another name, or stop.
-2. **Find unprocessed deliveries** — in each input repo, list root directories.
+2. **Find unprocessed deliveries** — for each input repo, FIRST check its registered path exists; an input repo registered but absent from disk (a hub cloned on a new machine, a delivery never fetched) is reported as `⊘ no local checkout — run /ws-hub repos clone` and is EXCLUDED from the "all deliveries processed" verdict (it is unprocessed, not done). For each input repo that IS on disk, list root directories.
    Name-matching ones sort into `YYYY-MM-DD/` order; ALSO list any root
    directory that is NOT a `YYYY-MM-DD/` date folder as
    **"unrecognized — rename to `YYYY-MM-DD`"** (a delivery in `2026-1-5/`,
@@ -723,11 +761,17 @@ Read-only status sweep across all sub-repos registered in the current hub.
 
 2. Parse the list of repos.
 
-3. For each accessible repo, gather:
-   - Current branch (`git -C <path> branch --show-current`)
-   - Ahead/behind upstream (`git -C <path> rev-list --left-right --count HEAD...@{u}` — handle no upstream gracefully)
-   - Uncommitted changes (`git -C <path> status --porcelain` — count the lines yourself)
-   - Last 5 commits (`git -C <path> log --oneline -5`)
+3. For each repo, model three states (the same three the `repos` verb uses):
+   - Path missing → `skipped (no local checkout)` (counted in `K skipped`).
+   - Path exists but no `.git` → `skipped (not a git repo)` — a directory left
+     by a failed clone, a repo whose `.git` was removed, or an output repo
+     created by `mkdir` before `git init`. Counted in `K skipped`; treat it as a
+     problem for the `/ws-hub doctor` pointer in step 6.
+   - Otherwise (accessible) → gather:
+     - Current branch (`git -C <path> branch --show-current`)
+     - Ahead/behind upstream (`git -C <path> rev-list --left-right --count HEAD...@{u}` — handle no upstream gracefully)
+     - Uncommitted changes (`git -C <path> status --porcelain` — count the lines yourself)
+     - Last 5 commits (`git -C <path> log --oneline -5`)
 
 4. Render a per-repo report:
 
@@ -741,6 +785,9 @@ Read-only status sweep across all sub-repos registered in the current hub.
 
    ── acme-marketing ────────────────────────
    skipped (no local checkout)
+
+   ── acme-explained ─────────────────────────
+   skipped (not a git repo)
    ```
 
 5. End with a one-line summary: `N repos checked · M with changes · K skipped`.
@@ -751,7 +798,7 @@ Read-only status sweep across all sub-repos registered in the current hub.
    To launch an agent across all sub-repos:  cd <hub> && ./invoke-ai.sh
    ```
 
-   If the sweep surfaced problems (behind upstream, missing checkouts, dirty repos), add one more line: `For diagnosis + repair, run /ws-hub doctor.`
+   If the sweep surfaced problems (behind upstream, missing checkouts, non-git directories, dirty repos), add one more line: `For diagnosis + repair, run /ws-hub doctor.`
 
 Read-only verb. Do not run any pulls, fetches, or modifications.
 
@@ -810,8 +857,9 @@ First detect candidate repos by running (Bash):
 
 ```bash
 for d in */; do [ -d "$d/.git" ] && echo "./$d"; done     # nested
-for d in ../*/; do [ -d "$d/.git" ] && echo "../$d"; done  # siblings
+for d in ../*/; do [ "$(cd "$d" && pwd)" = "$PWD" ] && continue; [ -d "$d/.git" ] && echo "$d"; done  # siblings — exclude the hub dir itself
 ```
+The hub root (`$PWD`) is NEVER a registration candidate: the sibling glob expands to every child of the hub's parent, which includes the hub directory (it has had its own `.git` since init), so the `$PWD` filter above is mandatory — never list, scan, or offer to move/register the hub into itself.
 
 **OpenWiki pointer (when the hub has one):** if `<hub>/openwiki/` exists,
 every newly registered sub-repo's `AGENTS.md` gets the "Hub knowledge wiki"
@@ -842,7 +890,7 @@ registration flow.
 #### Mark-as-output mode: give an already-registered repo an output purpose
 
 1. List the repos already registered in `project.yaml` and let the user pick one.
-2. Ask the purpose: **docs** (product user-docs repo) or **explained** (generated visual explainer). For known purposes, enforce the skill's known-purpose uniqueness rule (Output repos section) — refuse with a message naming the existing entry if taken.
+2. Ask the purpose: **docs** (product user-docs repo) or **explained** (generated visual explainer). For known purposes, enforce the skill's known-purpose uniqueness rule (Output repos section) against every entry OTHER than the one selected — refuse with a message naming the other entry that already holds it. When the selected entry already carries the chosen purpose, report "already marked `purpose: <chosen>` — nothing to change" and stop (the idempotent re-run is a no-op, not a self-referential refusal).
 3. Set `type: output` + `purpose: <chosen>` on the chosen entry via `Edit`
    (preserve formatting). If `<hub>/openwiki/` exists and the repo counted as
    working (`type: working`, or a legacy entry with neither `type` nor `role`),
@@ -908,10 +956,15 @@ For each repo to register:
    after dispatch, abort without suggesting another hub.
 
 2. Inspect each registered repo with an accessible local path. At two or more
-   repos, fan this read-only work out by default — one worker per repo in a
-   single batched `task` call (Claude Code: one Task call per repo in one
-   message), using `effort: lo` when the active schema exposes it. With one
-   repo, inspect inline. Each inspection:
+   repos, fan this read-only work out by default, routing through the chooser
+   in `ws-graph-engineering` (Backend precedence): a Herdr director uses one
+   stamped repo lane per repo; otherwise omp uses one batched `task` call with
+   one `researcher` item per repo (Claude Code: the equivalent Task calls in
+   one message), each with `effort: lo` when the active schema exposes it and a
+   per-item `outputSchema` returning `{ description, tech, artifact }` (the
+   proposed one-line description, the inferred tech keywords, and a scratch
+   artifact path). With one repo, inspect inline. Never schedule the same repo
+   through both Herdr and Task/task. Each inspection:
    - reads its `README.md` (or `README` / first `.md` file at root);
    - checks the repo-root manifests from the project-hub-conventions skill's
      "Tech inference" table — the single source for manifest → tech mapping;
@@ -944,25 +997,42 @@ wave followed by one `hub-architect` synthesis.
    `ws-graph-engineering`: a Herdr director uses one stamped repo lane per
    substantial long-lived repo; otherwise omp uses one batched `task` call with
    one `researcher` item per repo (`effort: med` when exposed), and Claude Code
-   issues the equivalent Task calls in one message. Every gatherer returns a
-   scratch artifact path. One small repo is cheaper to leave to
-   `hub-architect`. Never gather the same repo through both Herdr and Task/task.
+   issues the equivalent Task calls in one message. Word each item as ONE scoped
+   question — "inventory `<repo>` for the cross-repo map" — and attach a
+   per-item `outputSchema` declaring the seven inventory dimensions plus an
+   `artifact` path
+   (`{ purpose, primaryTech, entryPoints, publicInterfaces, sharedContracts,
+   deploymentSignals, notableAdrs, artifact }`): the `researcher` agent's own
+   `output` schema carries only `answer`/`confidence`/`sources`, so the
+   per-item schema is what lets the inventory fields flow back to fan-in
+   deterministically rather than as prose. One small repo is cheaper to leave
+   to `hub-architect`. Never gather the same repo through both Herdr and
+   Task/task.
 
 4. Spawn one `hub-architect` agent via Task (omp: unprefixed
    `agent: hub-architect`, with `effort: hi` when exposed) from the hub
    directory. Pass the repo inventory artifact paths and any focus the user
-   asked for (for example, "just refresh deployment"). It synthesizes
-   `dev-docs/architecture.md`, plus `contracts.md` only when shared contracts
-   exist and `deployment.md` only when deployment files are found. It reads
-   covered repos again only to resolve a concrete gap.
+   asked for (for example, "just refresh deployment"). **Hand it a scratch
+   output directory** (e.g. `<hub>/.cache/ws-hub-docs/`) and instruct it to
+   write its synthesis THERE and return the written file paths — NOT straight
+   into `dev-docs/` (see hub-architect's "Output location" contract: with a
+   caller-named output dir it writes there and returns the paths; without one
+   it writes to `dev-docs/` directly). It synthesizes `architecture.md`, plus
+   `contracts.md` only when shared contracts exist and `deployment.md` only
+   when deployment files are found. It reads covered repos again only to
+   resolve a concrete gap.
 
 5. **Confirm before overwriting `architecture.md`.**
    `dev-docs/architecture.md` is curated authored truth (see the skill's "Hub
-   dev-docs"). Before hub-architect's writes land, show a diff vs the current
-   file (if it exists) and AskUserQuestion: **proceed | cancel** — the same gate
-   `/ws-docs architecture` applies. On proceed, write; on cancel, leave it
-   untouched and say so. (`contracts.md` / `deployment.md` are regenerated in
-   full when their trigger exists.)
+   dev-docs"). Because step 4 wrote to the scratch directory, this gate is now
+   REACHABLE before anything in `dev-docs/` changes: show a diff of
+   `<scratch>/architecture.md` vs the current `dev-docs/architecture.md` (if it
+   exists) and AskUserQuestion: **proceed | cancel** — the same gate
+   `/ws-docs architecture` applies. On **proceed**, copy the scratch files into
+   `dev-docs/` (overwriting the prior `architecture.md`); on **cancel**, discard
+   the scratch files and leave `dev-docs/` untouched, and say so.
+   (`contracts.md` / `deployment.md` are regenerated in full when their trigger
+   exists — they copy on proceed too.)
 
 6. Relay the agent's report to the user: files written, key cross-repo findings,
    and anything flagged for human attention.
@@ -981,7 +1051,7 @@ doc-generation runs.
 
 Docs placement note: outputs ALWAYS go to the hub's own `dev-docs/` — the product knowledge root beside `openwiki/` (ADR 0006). Never into a sub-repo (the `purpose: docs` repo is an output, not a destination for internal docs), and never a hub `docs/` (hubs must not have one).
 
-Scope note: this verb owns the cross-repo SYNTHESIS layer in the hub's `dev-docs/architecture.md` (and the optional `contracts.md` / `deployment.md`). Per-repo docs maintenance across the whole hub (status, catchup, repair — one subagent per sub-repo) is `/ws-docs` invoked at the hub root (hub sweep); `/ws-docs architecture` at the hub root edits the same `architecture.md` through the same diff+confirm gate (step 3), so the two commands no longer overlap ungated.
+Scope note: this verb owns the cross-repo SYNTHESIS layer in the hub's `dev-docs/architecture.md` (and the optional `contracts.md` / `deployment.md`). Per-repo docs maintenance across the whole hub (status, catchup, repair — one subagent per sub-repo) is `/ws-docs` invoked at the hub root (hub sweep); `/ws-docs architecture` at the hub root edits the same `architecture.md` through the same diff+confirm gate (step 5), so the two commands no longer overlap ungated.
 
 ### verb = explained
 
@@ -1081,19 +1151,22 @@ Gather sources, by shape:
   Synthesize from: `project.yaml`, `openwiki/` (primary derived map), the
   hub's own `dev-docs/` (architecture, product ADRs), per-`type: working` repo
   (legacy hubs: entries with neither `type` nor `role`) `dev-docs/` and READMEs,
-  and `CONTEXT.md` for the glossary. At two or more accessible working repos,
   fan out one read-only inventory per repo by default through the
   `ws-graph-engineering` chooser: Herdr repo lanes for substantial long-lived
-  work, otherwise one batched omp `task` call (one `researcher` item per repo)
-  or equivalent Claude Code Task calls in one message. Each returns purpose,
-  tech, key flows, notable decisions, and a scratch artifact path; never scan
-  the same repo at both layers.
+  work, otherwise one batched omp `task` call (one `researcher` item per repo,
+  worded as ONE scoped question and carrying a per-item `outputSchema`
+  returning `{ purpose, tech, keyFlows, notableDecisions, artifact }`) or
+  equivalent Claude Code Task calls in one message. Never scan the same repo at
+  both layers.
 - **Standalone** — if `./openwiki/` exists and looks stale, offer the same
   prompted refresh. Synthesize from the current repo only: its README, `docs/`,
   `dev-docs/` (architecture, decisions), `CONTEXT.md`, and any other
   glossary/context files. No sub-repo fan-out (single repo).
 
 Write into the output location:
+
+**Before writing, classify in BOTH shapes** (hub root and standalone) — not standalone-only. Step 1 may register an arbitrary pre-existing repo as the explained output, so a hub-root write can land on authored content exactly like a standalone one. For the target output location, inspect BOTH candidate target files as step 1S does: a valid ws-artefacts `meta.json` is a generated, mergeable manifest (preserve every unrelated entry; HTML it names is known generated output and may be regenerated); an HTML target that exists but is NOT named by a valid manifest, or an invalid `meta.json`, is authored/unknown — a named hard collision, never overwritten silently. For every authored/unknown collision, use step 1S's explicit subdirectory / replace / cancel loop. A file is never treated as generated merely because its name matches.
+
 
 - The artefact HTML — hub root writes into the explained repo; standalone
   writes into the output location resolved and validated in step 1S (the repo
@@ -1102,20 +1175,28 @@ Write into the output location:
   (standalone) covering the whole product; when the user asked for a specific
   topic (`$2`), write a kebab-case `<topic>.html` instead. Regenerate known
   generated files in full rather than patching them — explained output is never
-  hand-edited. In standalone mode, first complete step 1S's manifest/HTML
-  classification; a file is never treated as generated merely because its name
-  matches.
-- `meta.json` — create or update the entry for each file written
-  (`file`, `title`, `date`, `description`). Never write `token` fields;
-  tokens are minted on the ws-artefacts side.
+  hand-edited. The pre-write classification (above) runs for both shapes, so a
+  hub-root write onto an adopted pre-existing repo is gated the same way a
+  standalone write is.
+- `meta.json` — the manifest has the same shape as a ws-artefacts
+  `clients/<slug>/meta.json`: top-level `name` and `slug` alongside `artefacts[]`.
+  On FIRST creation, write `name` (from the hub project name, or the standalone
+  repo basename) and `slug` (same, kebab-case) plus `artefacts[]`; on update,
+  PRESERVE the existing `name`/`slug` and merge/refresh the per-file entry
+  (`file`, `title`, `date`, `description`). Never write `token` fields; tokens
+  are minted on the ws-artefacts side.
 
 #### 3. Verify the artefact(s)
 
 Grep each generated HTML file for external references: any `src=` or
 `href=` pointing at `http(s)` other than plain outbound `<a href>` links is
 a contract violation, as are `<link rel="stylesheet">`, external
-`<script src>`, mermaid markup, or robots/favicon meta in the head. Fix and
-re-check until clean, then report what was verified.
+`<script src>`, mermaid markup, or robots/favicon meta in the head. ALSO catch
+remote assets embedded inside the inline `<style>` block (the ws-artefacts
+contract forbids web fonts and remote images too): `@import url("https://…")`,
+`@font-face { src: url(https://…) }`, and `background-image: url(http…)`, none
+of which carry a `src=`/`href=` attribute. Fix and re-check until clean, then
+report what was verified.
 
 #### 4. Report and print the registration next step
 
@@ -1150,8 +1231,9 @@ before it can pull the explained repo.
   registering a new repo in step 1 (hub root only, which touches
   `project.yaml`, `.gitignore`, and `AGENTS.md` via the `add` verb's flow).
   Standalone never touches a `project.yaml`.
-- In standalone mode, classify the selected location's `meta.json` and target
-  HTML before writing. A valid ws-artefacts manifest is mergeable (preserve
+- In BOTH shapes (hub root and standalone), classify the target output
+  location's `meta.json` and target HTML before writing — see the pre-write
+  classification in step 2. A valid ws-artefacts manifest is mergeable (preserve
   unrelated entries); only HTML it names is known generated output. For every
   authored/unknown collision, use step 1S's explicit subdirectory / replace /
   cancel loop; never silently overwrite a file in any output location.
@@ -1174,7 +1256,7 @@ Run the checks in order:
 5. **Generated files up to date** — compare the hub's `invoke-ai.sh` against `${CLAUDE_PLUGIN_ROOT}/templates/invoke-ai.sh.tmpl` and the vendored `.claude/skills/project-hub-conventions/SKILL.md` against the plugin's copy (plugin-root fallback rule as in Context). Differences → summarize the diff and offer a refresh, warning explicitly that both files are generated and hand edits will be lost.
 6. **Harness assets** — one bullet per harness; extend this list when a new harness joins:
    - Claude Code — the vendored skill (compared in the vendored-skill check) is the only hub-side asset; nothing else to verify.
-   - omp — when `.omp/` exists: the rules pack (`.omp/rules/ws-*.md`, `openwiki-freshness.md`) and `.omp/hooks/post/openwiki-freshness.ts` are present and match the plugin templates (offer refresh); `.omp/config.yml` present (report-only — user config is never overwritten). When `.omp/` is absent and the user works with omp, offer the init verb's step-5b omp preset flow. Also check for the `@wsagency/omp-ws` native extension (`omp plugin list`); when absent, mention it (guard + enforcement parity — see docs/how-to/omp-setup.md) without treating it as a failure.
+   - omp — when `.omp/` exists: the rules pack (`.omp/rules/ws-*.md`, `openwiki-freshness.md` — the latter is now installed per-hub by init step 5b from `${CLAUDE_PLUGIN_ROOT}/templates/omp/hub-rules/openwiki-freshness.md`, falling back to `${CLAUDE_PLUGIN_ROOT}/rules/openwiki-freshness.md` under the Claude Code plugin layout, so every omp hub carries it) and `.omp/hooks/post/openwiki-freshness.ts` are present and match the plugin templates (offer refresh, copying from the same resolved source path as step 5b); `.omp/config.yml` present (report-only — user config is never overwritten). When `.omp/` is absent, ASK the user the same trigger question init step 5b does ("Write the omp preset?", default Yes when `command -v omp` succeeds) rather than assuming they use omp — if Yes, offer the init verb's step-5b omp preset flow. Also check for the `@wsagency/omp-ws` native extension (`omp plugin list`); when absent, mention it (guard + enforcement parity — see docs/how-to/omp-setup.md) without treating it as a failure.
 7. **Knowledge freshness** — when `openwiki/` exists: compare `type: working` (legacy hubs: entries with neither `type` nor `role`) sub-repo `dev-docs/` mtimes (excluding `dev-docs/tickets/`; input/output repos and the hub's own `dev-docs/` are never compared — the wiki does not index them) against `openwiki/.last-update.json`. Stale → print the exact prompted refresh command (`openwiki --update "Refresh; re-scan sub-repos: <working-repo list from project.yaml>"`) and ask before running it — a refresh costs tokens.
 8. **Verdict** — render one line per check (`✓` ok / `~` fixed / `✗` needs the user), then: what was fixed, what was deliberately left alone and why, and a closing line — either `Ready for development — cd <hub> && ./invoke-ai.sh` or `Not ready: <blocking items>`.
 

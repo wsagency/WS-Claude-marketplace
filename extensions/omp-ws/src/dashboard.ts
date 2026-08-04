@@ -87,8 +87,10 @@ export function registerDashboard(pi: ExtensionAPI): void {
 			if (globalConfig === undefined) return;
 
 			// Per-project toggle, falling back to the global one (default on).
-			const toggle =
-				sectionValue(projectConfig, "hooks", "session_start_dashboard") ?? sectionValue(globalConfig, "ui", "session_start_dashboard");
+			// An empty project value (e.g. a bare `session_start_dashboard:` key) is
+			// treated as absent — mirrors the shell hook's `if [[ -z "$toggle" ]]`.
+			const projectToggle = sectionValue(projectConfig, "hooks", "session_start_dashboard");
+			const toggle = projectToggle || sectionValue(globalConfig, "ui", "session_start_dashboard");
 			if (toggle === "false") return;
 
 			// Plugin setting (or JIRA_PROJECT env) overrides the ws-project.yaml binding.

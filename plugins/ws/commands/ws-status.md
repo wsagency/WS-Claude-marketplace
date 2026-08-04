@@ -27,18 +27,26 @@ Read the project binding (if present) from `./.claude/ws-project.yaml`.
 
 ### 2. Fetch assignments
 
-Run jira-cli:
+Run jira-cli. Build the JQL as a filter clause, **then** append `ORDER BY` —
+the project clause goes inside the filter, before `ORDER BY` (appending it
+after `ORDER BY ...` is a Jira parse error):
+
+- Base filter: `assignee = currentUser() AND statusCategory != Done`
+- If a project binding exists, add `AND project = <KEY>` to the filter, before `ORDER BY`.
+- Final JQL: `<filter> ORDER BY priority DESC, updated DESC`
 
 ```bash
 jira issue list -q 'assignee = currentUser() AND statusCategory != Done ORDER BY priority DESC, updated DESC' \
   --plain --no-headers --columns KEY,TYPE,STATUS,PRIORITY,SUMMARY --paginate 0:50
+# scoped to the bound project WSC, the JQL becomes:
+#   assignee = currentUser() AND statusCategory != Done AND project = WSC ORDER BY priority DESC, updated DESC
 ```
 
-If a project binding exists, scope the JQL: `AND project = <KEY>`. If the plain columns prove insufficient (e.g. sprint info needed), use `--raw` and parse the JSON instead.
+If the plain columns prove insufficient (e.g. sprint info needed), use `--raw` and parse the JSON instead.
 
 ### 3. Render compact dashboard
 
-Group by status category:
+Group by status:
 
 ```
 ━━━ Your Jira Workload — WSC ━━━
@@ -68,7 +76,7 @@ Markers:
 - ⏸  Blocked / pause icon
 - ▲ High / Highest, ◆ Medium, ▽ Low / Lowest
 
-If current branch matches a `WSC-\d+` pattern, mark that ticket with `(you're here)`.
+If current branch matches a `^[A-Z]+-\d+` pattern, mark that ticket with `(you're here)`.
 
 ### 4. Suggestion logic
 
@@ -80,14 +88,14 @@ For "Suggested next":
 
 ### 5. Cache
 
-After rendering, cache the result to `~/.cache/ws-hub/status.txt` with a timestamp header so the SessionStart hook can show a stale snapshot quickly without a Jira roundtrip.
+After rendering, cache the result to `~/.cache/ws-hub/status.txt` (`mkdir -p ~/.cache/ws-hub/` first — the directory is only auto-created inside a hub) with a timestamp header so the SessionStart hook can show a stale snapshot quickly without a Jira roundtrip.
 
 Read-only — no Jira writes.
 
 ## When you finish
 
 In two or three sentences, summarize the user's headline workload (counts per
-status category) and name the single suggested next ticket with its
+status) and name the single suggested next ticket with its
 `git checkout -b` command, then point at the move: pick the ticket up via
 `/ws-matt implement` (or `/ws-matt ask` to re-rank); if a branch is already
 in flight, run `/ws-commit pr` to land it first.

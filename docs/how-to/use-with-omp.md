@@ -76,7 +76,7 @@ the ws plugin to the current repo version.
 ## ws-matt in omp
 
 The skill graph runs well in omp: plugin skills load through omp's
-Claude-compatible providers, and worker agents (`reviewer`, `researcher`,
+Claude-compatible providers, and worker agents (`ws-reviewer`, `researcher`,
 `tdd-runner` — native omp names are the unprefixed stems) carry `output` JSON
 schemas and `autoloadSkills` for omp's task system. `/ws-matt setup` installs
 the WS **session policy** rule (`omp-edge-discipline.md`, `alwaysApply`) into
@@ -90,7 +90,7 @@ subsystem, not sharing a working tree — Herdr partitions the outer lanes
 workers over disjoint slices it alone owns; no layer resubmits the same unit.
 
 Picking a worker: prefer the specialized agent type. Its **role** ships as a
-package default (`reviewer` on `@slow`, `hub-architect` and
+package default (`ws-reviewer` on `@slow`, `hub-architect` and
 `architecture-documenter` on `@plan`, writing and research on `@task`,
 mechanical scans on `@smol`, pure classification on `@tiny`) and is
 overridable with `task.agentModelOverrides`. **Effort** (`lo|med|hi`) is a

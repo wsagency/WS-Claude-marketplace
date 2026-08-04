@@ -14,7 +14,7 @@ argument-hint: "[pr | clean]"
 - Recent commits: !`git log --oneline -10`
 - Global config: !`cat ~/.claude/ws/config.yaml 2>/dev/null || echo "(none)"`
 - Project config: !`cat ./.claude/ws-project.yaml 2>/dev/null || echo "(none)"`
-- Time since branch diverged from main: !`base=$(git merge-base HEAD main 2>/dev/null || git merge-base HEAD master 2>/dev/null); if [ -n "$base" ]; then first=$(git log --format=%ct --reverse "$base..HEAD" 2>/dev/null | head -1); if [ -z "$first" ]; then first=$(date +%s); fi; secs=$(( $(date +%s) - first )); printf '%dh %dm\n' $((secs/3600)) $(((secs%3600)/60)); else echo "(no merge-base)"; fi`
+- Time since branch diverged from main: !`base=$(git merge-base HEAD main 2>/dev/null || git merge-base HEAD master 2>/dev/null); if [ -n "$base" ]; then first=$(git log --format=%ct --reverse "$base..HEAD" 2>/dev/null | head -1); if [ -z "$first" ]; then first=$(git log -1 --format=%ct "$base" 2>/dev/null); fi; secs=$(( $(date +%s) - first )); printf '%dh %dm\n' $((secs/3600)) $(((secs%3600)/60)); else echo "(no merge-base)"; fi`
 - Time since last commit on this branch: !`last=$(git log -1 --format=%ct HEAD 2>/dev/null); if [ -n "$last" ]; then secs=$(( $(date +%s) - last )); printf '%dh %dm\n' $((secs/3600)) $(((secs%3600)/60)); else echo "(no commits)"; fi`
 
 If any Context value above still shows an unexpanded shell command (an exclamation mark followed by a backtick-quoted command), your runtime does not pre-execute context commands — run each one via bash now, before proceeding.
@@ -36,6 +36,12 @@ or a hub sub-repo.
 
 Create a single git commit with a Jira-aware message. Steps below.
 
+**Before step 1 — clean-tree guard.** If the staged + unstaged diff (the
+"Diff (staged + unstaged)" Context value) is empty — working tree clean, nothing
+staged and no unstaged changes — print "Nothing to commit — working tree clean."
+and end the flow. Run this guard first so no ticket is prompted for and no Jira
+fetch is issued against a clean tree.
+
 ### 1. Detect Jira ticket
 
 Parse current branch name. If it starts with a Jira key pattern `^([A-Z]+-\d+)`, extract that key as `TICKET`.
@@ -53,7 +59,7 @@ Fetch the ticket via `jira issue view TICKET --raw` (JSON; fall back to `--plain
 
 ### 3. Compose Conventional Commits message
 
-Analyze the staged + unstaged diff. Build a CC message. This is the **single definitive layout** — every other step (in both flows) refers back to it:
+Analyze the staged + unstaged diff and build a CC message. This is the **single definitive layout** — every other step (in both flows) refers back to it:
 
 ```
 <type>(<scope>): <imperative description> (TICKET)
@@ -82,12 +88,16 @@ If no ticket, drop the ` (TICKET)` suffix, the Smart Commit line, and the `Refs:
 
 Read `defaults.jira_actions` from `~/.claude/ws/config.yaml`:
 - `never` → skip this step
-- `always` → add worklog with elapsed time (no prompt)
+- `always` → add a worklog with the measured time below (no prompt)
 - `ask` (default) → ask the user
 
-If asking, present (AskUserQuestion) the user with the **measured elapsed time** as the default:
+**Measured worklog time** — Jira worklogs accumulate, so intervals must not overlap. Use:
+- "Time since branch diverged from main" (Context, first timing line) for the **first** worklog on a branch (no commits since the merge-base with main/master).
+- "Time since last commit on this branch" (Context, second timing line) for **every later** commit-flow run — the increment since the previous commit, not the whole branch duration.
 
-> Time spent on this branch (since first commit): `Xh Ym`. Add as Jira worklog?
+If asking, present (AskUserQuestion) the user with that **measured time** as the default:
+
+> Time since last commit (or branch divergence, if first): `Xh Ym`. Add as Jira worklog?
 > - **Log this time** (default, editable)
 > - **Edit time** (prompt for adjusted value)
 > - **Skip worklog**
@@ -160,13 +170,25 @@ End-to-end Jira-aware flow: commit → push → open PR → optionally transitio
 
 If on `main` / `master`, ask the user for a branch name. If they have a Jira ticket in mind, suggest `<TICKET-KEY>-<slugified-title>` (e.g. `WSC-150-dark-mode-toggle`). Create the branch (`git checkout -b ...`).
 
-### 2. Compose commit
+### 2. Compose commit, draft PR, resolve base branch
 
-Run the same compose logic as the **commit flow** above (steps 1-4):
-- Detect ticket from branch name (now guaranteed if step 1 created one)
-- Compose Conventional Commits message with `(TICKET)` suffix
-- Optionally add Smart Commit `#time` worklog (ask user, default = elapsed time since branch diverged from main)
-- Skip transition here — that happens at PR creation instead (typical workflow: PR open = In Review)
+First resolve the base branch, reused in step 3a and step 7: `BASE_BRANCH` = `main` if `git merge-base HEAD main` succeeds, otherwise `master`.
+
+**Clean-tree + no-commits guard.** If the working tree is clean AND
+`git log <BASE_BRANCH>..HEAD` is empty (no commits on this branch yet), stop:
+print "Nothing to commit and no commits on this branch — nothing to open a PR
+for." and end the flow. Don't push an empty branch or open a PR with no title.
+
+Commit-message composition depends on the working tree:
+
+- **Working tree dirty** (pending changes in this run): run the same compose logic as the **commit flow** above (steps 1-4) — detect the ticket from the branch name, analyze the staged + unstaged diff, and compose the Conventional Commits message with ` (TICKET)` suffix. The composed subject is the PR title.
+- **Working tree clean** (branch already has commits from prior commit-flow runs): **skip CC composition** (the diff is empty). Derive the PR title from the branch's highest-impact commit in `git log <BASE_BRANCH>..HEAD --format='%s'` — rank by CC type (`feat` > `fix` > `perf`/`refactor`/`revert` > others), take the top commit's subject, and append ` (TICKET)` if a ticket is present and the subject doesn't already carry it.
+
+Either way, **draft the full PR description now** — sent verbatim in step 4's preview and step 7's `tea pr create`: Summary bullets of the branch's work, a Jira link section built from `site` in `~/.claude/ws/config.yaml` (omitted when there's no ticket), and a Test plan, ending with the `🤖 Generated with WS Agency AI suite` footer. Do not repeat the `Co-Authored-By` trailer in the PR body — the commit already carries it.
+
+**Worklog default** (applied in step 5a): the same measurement rule as commit-flow step 4 — branch-divergence time for the first worklog on the branch (no commits since the merge-base), otherwise the "Time since last commit on this branch" increment; worklogs accumulate, so intervals must not overlap.
+
+Skip the ticket transition here — it happens in step 8, after the PR is opened (typical workflow: PR open = In Review).
 
 Do NOT commit yet — the changelog update (step 3) goes into the same commit.
 
@@ -190,7 +212,7 @@ The `keep-a-changelog` skill auto-loads on the word "CHANGELOG" — follow its f
 **3a. Determine entries to add.** Two cases:
 
 - **Working tree dirty** (pending changes in this run): one entry for the commit you're about to make. Classify from the CC `type`.
-- **Working tree clean** (branch already has commits from prior commit-flow runs): analyze `git log <base>..HEAD --format='%s'` (base = merge-base with main/master). One entry per functional commit. De-duplicate.
+- **Working tree clean** (branch already has commits from prior commit-flow runs): analyze `git log <BASE_BRANCH>..HEAD --format='%s'` (`BASE_BRANCH` resolved in step 2). One entry per functional commit. De-duplicate.
 
 **3b. Skip non-functional types.** For each commit/change, map the CC `type`:
 
@@ -224,33 +246,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add OTP screen for login (WSC-142)
 ```
 
-### 4. Commit (code + changelog together)
+### 4. Preview and confirm
 
-Stage the relevant code files AND `CHANGELOG.md`, then commit with the message composed in step 2. Single commit — the changelog update rides along.
+Show the user, in one block:
+- the composed commit message from step 2 (or, on a clean tree, note that step 5 will either make the changelog-only commit or skip the commit),
+- the drafted PR title and full PR description from step 2,
+- the worklog value and the target transition that will be applied.
 
-If the working tree was clean in step 3 (changelog-only change), commit just `CHANGELOG.md` with message `docs(changelog): summarize <TICKET> for release`.
+Ask: **confirm / edit / cancel**. This is the authorization boundary — steps 5-7 send exactly the pre-approved text verbatim; nothing may be edited after confirmation.
 
-### 4a. Apply Jira actions (after the commit succeeds)
+### 5. Commit
 
-Mirrors the commit flow's step 6a. If the user opted into a worklog in step 2, apply it now via jira-cli:
+Gate on what there is to commit:
+
+- **Working tree was dirty in step 3a**: stage the relevant code files AND `CHANGELOG.md`, then commit with the message composed in step 2. Single commit — the changelog update rides along.
+- **Working tree was clean but step 3 modified `CHANGELOG.md`** (changelog-only change): stage just `CHANGELOG.md` and commit with message `docs(changelog): summarize <TICKET> for release`.
+- **Working tree clean and `CHANGELOG.md` untouched** (`auto_update: false`, or every change in `skip_types`): **skip the commit** — the branch's existing commits are pushed as-is. Do not run `git commit` (it would fail "nothing to commit"); fall through directly to step 6.
+
+### 5a. Apply Jira actions (after the commit succeeds)
+
+Mirrors the commit flow's step 6a. If the user opted into a worklog in step 2, apply it now via jira-cli using the value measured in step 2:
 
 - worklog → `jira issue worklog add <TICKET> "<Xh Ym>" --no-input`
 
-The transition is NOT applied here — it happens in step 7, after the PR is opened. If the jira-cli call fails, report it and continue — the commit stands; the user can retry the worklog separately.
+The transition is NOT applied here — it happens in step 8, after the PR is opened. If the jira-cli call fails, report it and continue — the commit stands; the user can retry the worklog separately.
 
-### 5. Push
+### 6. Push
 
 `git push -u origin <branch>` (set upstream on first push).
 
-### 6. Open PR via `tea`
+### 7. Open PR via `tea`
 
-Build PR title: `<commit-subject>` (which already includes ` (TICKET)`), e.g.:
-
-```
-feat(auth): add OTP screen (WSC-142)
-```
-
-PR description includes Jira link section:
+PR title: the title drafted in step 2 (composed commit subject on a dirty tree; highest-impact commit subject with ` (TICKET)` on a clean tree). PR description: the body drafted in step 2, sent verbatim. Example:
 
 ```bash
 tea pr create --title "feat(auth): add OTP screen (WSC-142)" --description "$(cat <<'EOF'
@@ -268,38 +295,44 @@ tea pr create --title "feat(auth): add OTP screen (WSC-142)" --description "$(ca
 
 🤖 Generated with WS Agency AI suite
 EOF
-)" --base main
+)" --base <BASE_BRANCH>
 ```
 
-The PR body always ends with the `🤖 Generated with WS Agency AI suite` footer. The commit itself already carries the `Co-Authored-By: WS Agency AI suite <ai@ws.agency>` trailer per the commit flow's layout — do not repeat it in the PR body.
+The PR body always ends with the `🤖 Generated with WS Agency AI suite` footer. The commit itself already carries the `Co-Authored-By: WS Agency AI suite <ai@ws.agency>` trailer per the commit flow's layout — do not repeat it in the PR body. Construct the Jira link from `site` in `~/.claude/ws/config.yaml`; if there's no ticket, omit the Jira section.
 
-Construct the Jira link from `site` in `~/.claude/ws/config.yaml`. If no ticket, omit the Jira section.
+If `tea` is not installed, or `tea pr create` fails (not logged in, unknown base branch, remote is not a Gitea repo), **do not proceed to step 8**: print the drafted title and description plus `--base <BASE_BRANCH>` as manual instructions, record that no PR URL was produced, and go straight to step 9's fallback report. The transition is skipped because there is no PR to review.
 
-### 7. Transition the ticket (if applicable)
+### 8. Transition the ticket (only if step 7 produced a PR URL)
+
+Runs only when step 7 returned a PR URL. If `tea` was missing or PR creation failed, skip this step entirely — there is nothing to review yet; tell the user to transition the ticket after opening the PR by hand.
 
 If a ticket exists and `defaults.pr_transition` is set in global config (default: `in-review`):
+- **Map the configured slug to the Jira state name first**: de-hyphenate and title-case it (`in-review` → `In Review`, `in-progress` → `In Progress`, `done` → `Done`). The hyphenated slug is only for the Smart Commit trailer; `jira issue move` needs the human-readable state name.
 - Ask the user (AskUserQuestion (or a plain chat question when that tool is unavailable)):
-  - **Transition to <target>** (e.g. In Review) — recommended
+  - **Transition to <state name>** (e.g. In Review) — recommended
   - **Skip transition**
-- If confirmed, run `jira issue move <TICKET> "<target state>"` (jira-cli lists valid states if the name doesn't match). If the call fails, report it — the PR stands; the user can transition manually.
+- If confirmed, run `jira issue move <TICKET> "<state name>"` (jira-cli lists valid states if the name doesn't match). If the call fails, report it — the PR stands; the user can transition manually.
 
-### 8. Report
+### 9. Report
 
+Success path:
 ```
-✓ Committed abc1234: feat(auth): add OTP screen (WSC-142)
+✓ Committed abc1234: feat(auth): add OTP screen (WSC-142)   (or "No new commit — branch pushed as-is" when step 5 skipped)
   worklog: 2h 30m logged (skipped if the user declined in step 2)
-✓ CHANGELOG.md: +1 entry under Added
+✓ CHANGELOG.md: +1 entry under Added   (omitted when step 5 skipped)
 ✓ Pushed to origin/WSC-142-otp-screen
 ✓ PR opened: https://gitea.ws.agency/wsagency/acme-app/pulls/231
-✓ WSC-142 → In Review
+✓ WSC-142 → In Review   (omitted when step 8 was skipped)
 ```
+
+Manual-fallback path (step 7 produced no PR URL): replace the "PR opened" and transition lines with the manual instructions printed in step 7, and tell the user to open the PR by hand and then transition the ticket.
 
 ### PR-flow constraints
 
-- Do all bash steps in a single response after the user confirms the commit message and PR description
+- Step 4 (Preview and confirm) is the authorization boundary — all bash steps through the PR (commit, push, PR) run in a single response after that confirmation, sending exactly the pre-approved text; step 8's transition takes its own confirmation once a PR URL exists
 - Don't push to main directly; if user is on main and refuses to branch, abort
-- If `tea` isn't installed, fall back to printing instructions for opening the PR manually
-- Don't transition without explicit user confirmation
+- If `tea` isn't installed, or `tea pr create` fails, fall back to printing manual PR instructions and skip the ticket transition (step 8)
+- Don't transition without explicit user confirmation, and only after a PR URL exists
 
 ## Clean flow (verb = clean)
 

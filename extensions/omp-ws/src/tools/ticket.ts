@@ -107,9 +107,12 @@ export function registerTicketTool(pi: ExtensionAPI): void {
 				}
 				const slug = params.slug ? slugify(params.slug) : slugify(params.title);
 				if (slug === "") return textResult("ws_ticket: title produced an empty slug.", true);
-				const { open } = ticketPaths(ticketsDir, slug);
+				const { open, done } = ticketPaths(ticketsDir, slug);
 				if (await exists(open)) {
 					return textResult(`Ticket already exists: ${open}. Use a different slug or edit the file directly.`, true);
+				}
+				if (await exists(done)) {
+					return textResult(`Slug already archived: ${done}. Reopen it with op=move to=open, or pick a different slug.`, true);
 				}
 				await fs.mkdir(path.dirname(open), { recursive: true });
 				await fs.writeFile(
@@ -130,7 +133,15 @@ export function registerTicketTool(pi: ExtensionAPI): void {
 			if (!params.slug) {
 				return textResult(`ws_ticket ${params.op} requires slug.`, true);
 			}
+			// Tickets may be hand-authored under any file name (the prose convention
+			// is authoritative), so do NOT slugify the caller's slug — that would make
+			// a hand-written WSC-123.md unreachable as wsc-123.md on a case-sensitive
+			// filesystem. Strip a trailing .md and contain to a bare name (no path
+			// separators, not "." / "..") so it can never escape ticketsDir via ../.
 			const slug = params.slug.replace(/\.md$/, "");
+			if (slug === "" || slug === "." || slug === ".." || /[\\/]/.test(slug)) {
+				return textResult(`ws_ticket ${params.op} requires a bare slug (no path separators).`, true);
+			}
 			const { open, done } = ticketPaths(ticketsDir, slug);
 			const target = params.op === "close" ? "done" : (params.to ?? "done");
 			const [from, to] = target === "done" ? [open, done] : [done, open];
@@ -138,6 +149,10 @@ export function registerTicketTool(pi: ExtensionAPI): void {
 			if (!(await exists(from))) {
 				const where = target === "done" ? "open/" : "done/";
 				return textResult(`Ticket not found in ${where}: ${from}`, true);
+			}
+			await fs.mkdir(path.dirname(to), { recursive: true });
+			if (await exists(to)) {
+				return textResult(`Destination already exists: ${to}. Resolve the slug collision first (rename one of the tickets).`, true);
 			}
 			if (params.share) {
 				// Record session evidence before archiving: share line under the title.
@@ -147,10 +162,6 @@ export function registerTicketTool(pi: ExtensionAPI): void {
 					lines.splice(1, 0, "", `share: ${params.share}`);
 					await fs.writeFile(from, lines.join("\n"), "utf8");
 				}
-			}
-			await fs.mkdir(path.dirname(to), { recursive: true });
-			if (await exists(to)) {
-				return textResult(`Destination already exists: ${to}. Resolve the slug collision first (rename one of the tickets).`, true);
 			}
 			await fs.rename(from, to);
 			return textResult(`Moved ${from} -> ${to}`);

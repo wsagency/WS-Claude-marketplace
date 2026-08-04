@@ -36,7 +36,7 @@ Dual-track documentation suite. All documentation operations route through the s
 
 Unified documentation command. Run with no verb for discovery (artifact status table, no writes).
 
-Position-aware in WS project hubs (repo types per ADR 0006): invoked **inside a sub-repo** it runs repo-level with product routing (user docs go to the `purpose: docs` output repo; product ADRs and architecture go to the hub's `dev-docs/`; local ADRs resolve to the repo root or a bounded context mapped by `CONTEXT-MAP.md`); invoked **at the hub root** it runs a **hub sweep** — `discovery`/`audit`/`catchup`/`repair` fan out one subagent per `type: working` sub-repo in parallel and aggregate (catchup commits per repo), `write`/`adr`/`architecture` default to product scope, `init` never scaffolds docs in the hub itself (offers per-repo init instead). Input and output repos are never swept.
+Position-aware in WS project hubs (repo types per ADR 0006): invoked **inside a sub-repo** it runs repo-level with product routing (user docs go to the `purpose: docs` output repo; product ADRs and architecture go to the hub's `dev-docs/`; local ADRs resolve to the repo root or a bounded context mapped by `CONTEXT-MAP.md`); invoked **at the hub root** it runs a **hub sweep** — `discovery`/`audit`/`catchup`/`repair` fan out per `type: working` sub-repo in parallel (`audit` dispatches three watchers — `docs-doctor`, `public-api-watcher`, `arch-watcher` — per repo) and aggregate (catchup commits per repo), `write`/`adr`/`architecture` default to product scope, `init` never scaffolds docs in the hub itself (offers per-repo init instead). Input and output repos are never swept.
 
 **Arguments:**
 | Name | Required | Description |
@@ -208,7 +208,7 @@ Generate cross-repo documentation (architecture, contracts, deployment topology)
 
 ### /ws-hub explained
 
-Generate/refresh the product explainer artefact — a self-contained HTML page (ws-artefacts contract: all inline, WS chrome palette, inline-SVG diagrams) + tokenless `meta.json`, audience product owner + dev team. Routes by project shape: at the **hub root** it writes into the `type: output, purpose: explained` repo (offering to create + register `<project>-explained` first); run from a **sub-repo** it names the ancestor hub and asks to rerun there (never scaffolds a second hub); with **no hub anywhere** (standalone) it defaults to `<repo-name>-explained.html` (or `<topic>.html`) plus `meta.json` at the current repo root, with no `project.yaml` or hub registration. Standalone validates every selected output location before writing: a valid ws-artefacts manifest is merged while preserving unrelated entries; only HTML it names is known generated output; authored/unknown collisions require an explicit validated dedicated subdirectory (reported as registration `path`), replace, or cancel choice. Hub-root sources: OpenWiki, hub `dev-docs/`, and working repos; standalone sources: current repo only.
+Generate/refresh the product explainer artefact — a self-contained HTML page (ws-artefacts contract: all inline, WS chrome palette, inline-SVG diagrams) + tokenless `meta.json`, audience product owner + dev team. Routes by project shape: at the **hub root** it writes into the `type: output, purpose: explained` repo (offering to create + register `<project>-explained` first); run from a **sub-repo** it names the ancestor hub and asks to rerun there (never scaffolds a second hub); with **no hub anywhere** (standalone) it defaults to `<repo-name>-explained.html` (or `<topic>.html`) plus `meta.json` at the current repo root, with no `project.yaml` or hub registration. Both shapes validate the output location before writing: a valid ws-artefacts manifest is merged while preserving unrelated entries; only HTML it names is known generated output; authored/unknown collisions require an explicit validated dedicated subdirectory (reported as registration `path`), replace, or cancel choice. Hub-root sources: OpenWiki, hub `dev-docs/`, and working repos; standalone sources: current repo only.
 
 **Arguments:**
 | Name | Required | Description |
@@ -331,7 +331,7 @@ Verify jira-cli setup and configure the marketplace for this user. If run inside
 **Behavior:**
 1. Checks the `jira` binary and `jira me`; if missing, prints install/token/`jira init` steps and aborts
 2. Writes `~/.claude/ws/config.yaml` (site host + defaults; auth stays in jira-cli)
-3. If in a git repo, asks which Jira project to bind (`jira project list`); writes `./.claude/ws-project.yaml`
+3. If in a git repo, asks which Jira project to bind (`jira project list`); writes `./.claude/ws-project.yaml`, preserving existing `changelog:`/`hooks:` settings (with a diff) on re-run
 4. Reports summary and suggests next commands
 
 **Example:**
@@ -359,7 +359,7 @@ tool and addresses plugin agents as `ws:<agent>`; native omp uses one batched
 | `contributing-generator` | Generates the 3-file CONTRIBUTING set |
 | `arch-watcher` | Detects commits that warrant an ADR |
 | `public-api-watcher` | Detects public API surface changes |
-| `reviewer` | Reviews one diff slice per ws-code-review; orchestrator fans out N reviewers |
+| `ws-reviewer` | Reviews one diff slice per ws-code-review; orchestrator fans out N reviewers |
 | `researcher` | Investigates one question per ws-research, sourced summary |
 | `tdd-runner` | Executes one red-green cycle per ws-tdd |
 | `hub-architect` | Analyzes all sub-repos and generates cross-repo architecture/contracts/deployment docs |
@@ -394,7 +394,7 @@ task tool with:
 ```
 
 Prefer the specialized agent type over a general worker. Its **role** ships as
-a package default — `reviewer` on `@slow`, `hub-architect` and
+a package default — `ws-reviewer` on `@slow`, `hub-architect` and
 `architecture-documenter` on `@plan`, writing and research on `@task`,
 mechanical scans on `@smol`, pure classification on `@tiny` — overridable per
 project with `task.agentModelOverrides`. **Effort** is chosen per item when
