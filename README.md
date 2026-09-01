@@ -20,7 +20,7 @@ One plugin ([ws](./plugins/ws)), one workflow:
 
 | Plugin | Description | Commands |
 |--------|-------------|----------|
-| [ws](./plugins/ws) | The WS Agency engineering suite in one plugin: ws-matt graph-engineered skills, Jira-aware git flows via jira-cli, dual-track docs, and multi-repo project hubs | `/ws-help`, `/ws-matt <entry>`, `/ws-docs <verb>`, `/ws-hub <verb>` (init, doctor, update, intake, status, repos, add, describe, docs, explained), `/ws-commit [pr \| clean]`, `/ws-status`, `/ws-init` |
+| [ws](./plugins/ws) | The WS Agency engineering suite in one plugin: ws-matt graph-engineered skills, Jira-aware git flows via jira-cli, dual-track docs, and multi-repo project hubs | `/ws-help`, `/ws-matt <entry>`, `/ws-setup`, `/ws-docs <verb>`, `/ws-hub <verb>` (init, doctor, update, intake, status, repos, add, describe, docs, explained), `/ws-commit [pr \| clean]`, `/ws-status`, `/ws-init` |
 
 ## Prerequisites
 
@@ -154,6 +154,10 @@ For **hard enforcement**, add hooks to `.claude/settings.json`:
   }
 }
 ```
+
+### Project setup (`/ws-setup`)
+
+`/ws-setup` reconciles an existing standalone Git repository through one visible, confirmed, and verified manifest transaction. Its recommended Local Markdown profile writes strict `.wsagency/config.yaml` policy plus tracker, triage, domain, context, and runtime-policy artifacts; an aligned rerun is prompt-free and reports `No changes required`.
 
 ### Git flows (`/ws-commit`, `/ws-status`, `/ws-init`)
 

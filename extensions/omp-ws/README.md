@@ -5,7 +5,7 @@ WS Agency **full-native suite** for [omp](https://omp.sh) (oh-my-pi). Since
 install, zero marketplace coupling:
 
 - **Generated at build time** from `plugins/ws/` in the ws-claude-marketplace
-  repo (single source of truth): `commands/` (7), `skills/` (30), `agents/`
+  repo (single source of truth): `commands/` (8), `skills/` (31), `agents/`
   (14, with omp `@role` model aliases and Claude tool names remapped to
   omp-resolvable ids), `rules/` (4 TTSR/always-apply rules), `templates/`
   (including the hub-only `openwiki-freshness` rule under

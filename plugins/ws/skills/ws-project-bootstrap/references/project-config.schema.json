@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ws.agency/schemas/project-config-v1.json",
+  "title": "WS project configuration v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "tracker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["primary", "pull_requests"],
+      "properties": {
+        "primary": { "enum": ["local", "github", "gitlab", "jira"] },
+        "pull_requests": { "enum": ["ignore", "triage"] }
+      }
+    },
+    "triage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["labels"],
+      "properties": {
+        "labels": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["needs_triage", "needs_info", "ready_for_agent", "ready_for_human", "wontfix"],
+          "properties": {
+            "needs_triage": { "$ref": "#/$defs/non_empty" },
+            "needs_info": { "$ref": "#/$defs/non_empty" },
+            "ready_for_agent": { "$ref": "#/$defs/non_empty" },
+            "ready_for_human": { "$ref": "#/$defs/non_empty" },
+            "wontfix": { "$ref": "#/$defs/non_empty" }
+          }
+        }
+      }
+    },
+    "domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout"],
+      "properties": {
+        "layout": { "enum": ["single_context", "multi_context"] }
+      }
+    },
+    "commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["jira"],
+      "properties": {
+        "jira": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["actions", "smart_commit_trailer", "post_commit_comment", "pr_transition"],
+          "properties": {
+            "actions": { "enum": ["disabled", "ask", "always"] },
+            "smart_commit_trailer": { "type": "boolean" },
+            "post_commit_comment": { "type": "boolean" },
+            "pr_transition": { "type": ["string", "null"], "minLength": 1 }
+          }
+        }
+      }
+    },
+    "changelog": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["update_mode", "path", "skip_types"],
+      "properties": {
+        "update_mode": { "enum": ["pull_request", "commit", "disabled"] },
+        "path": { "$ref": "#/$defs/relative_path" },
+        "skip_types": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/non_empty" }
+        }
+      }
+    },
+    "ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_start_dashboard"],
+      "properties": {
+        "session_start_dashboard": { "enum": ["disabled", "jira_assignments"] }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_discipline", "dangerous_git_guard"],
+      "properties": {
+        "session_discipline": { "const": "required" },
+        "dangerous_git_guard": { "enum": ["enabled", "disabled"] }
+      }
+    },
+    "jira": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project", "default_issue_type", "sync"],
+      "properties": {
+        "project": { "$ref": "#/$defs/non_empty" },
+        "board": { "type": "integer", "minimum": 1 },
+        "default_issue_type": { "$ref": "#/$defs/non_empty" },
+        "sync": { "enum": ["disabled", "all_local_tickets"] }
+      }
+    },
+    "docs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["user_track", "dev_track", "default_audience", "default_scope", "adr_for_arch_changes"],
+      "properties": {
+        "user_track": { "$ref": "#/$defs/relative_path" },
+        "dev_track": { "$ref": "#/$defs/relative_path" },
+        "default_audience": { "enum": ["user", "dev", "ask"] },
+        "default_scope": { "enum": ["repo", "product", "ask"] },
+        "adr_for_arch_changes": { "type": "boolean" }
+      }
+    }
+  },
+  "$defs": {
+    "non_empty": { "type": "string", "minLength": 1 },
+    "relative_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*//).+$"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["tracker"],
+        "properties": { "tracker": { "properties": { "primary": { "const": "jira" } } } }
+      },
+      "then": {
+        "required": ["jira"],
+        "properties": { "jira": { "properties": { "sync": { "const": "disabled" } } } }
+      }
+    },
+    {
+      "if": {
+        "required": ["jira"],
+        "properties": { "jira": { "properties": { "sync": { "const": "all_local_tickets" } } } }
+      },
+      "then": {
+        "required": ["tracker"],
+        "properties": { "tracker": { "properties": { "primary": { "const": "local" } } } }
+      }
+    },
+    {
+      "if": {
+        "required": ["commit"],
+        "properties": {
+          "commit": {
+            "properties": { "jira": { "properties": { "actions": { "enum": ["ask", "always"] } } } }
+          }
+        }
+      },
+      "then": { "required": ["jira"] }
+    },
+    {
+      "if": {
+        "required": ["ui"],
+        "properties": { "ui": { "properties": { "session_start_dashboard": { "const": "jira_assignments" } } } }
+      },
+      "then": { "required": ["jira"] }
+    }
+  ]
+}
