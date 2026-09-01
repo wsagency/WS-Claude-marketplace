@@ -121,3 +121,69 @@ test("recommended Local setup is one confirmed transaction and its rerun is a pr
 		await fs.rm(root, { recursive: true, force: true });
 	}
 });
+
+test("parent-path collisions remain read-only blocking effects", async () => {
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "ws-setup-parent-collision-"));
+	try {
+		await runGit(root, "init", "--quiet");
+		await fs.writeFile(path.join(root, ".wsagency"), "occupied by a file\n");
+		const initialFiles = await repositoryFiles(root);
+
+		const discovery = await discoverStandaloneRepository(root, READY_RUNTIME);
+		const result = await runSetupTransaction({ root, discovery, choices: RECOMMENDED_LOCAL_CHOICES });
+
+		expect(result.requiresConfirmation).toBe(false);
+		expect(result.plan?.effects.find(effect => effect.target === ".wsagency/config.yaml")).toMatchObject({
+			classification: "BLOCKING_CONFLICT",
+		});
+		expect(result.report).toContain("Setup blocked before writes");
+		expect(await repositoryFiles(root)).toEqual(initialFiles);
+	} finally {
+		await fs.rm(root, { recursive: true, force: true });
+	}
+});
+
+test("malformed managed markers block instead of appending another range", async () => {
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "ws-setup-marker-conflict-"));
+	try {
+		await runGit(root, "init", "--quiet");
+		await fs.writeFile(
+			path.join(root, "AGENTS.md"),
+			"# Existing guidance\n\n<!-- WS-AGENT-SKILLS:START -->\nunterminated managed content\n",
+		);
+
+		const discovery = await discoverStandaloneRepository(root, READY_RUNTIME);
+		const result = await runSetupTransaction({ root, discovery, choices: RECOMMENDED_LOCAL_CHOICES });
+
+		expect(result.requiresConfirmation).toBe(false);
+		expect(result.plan?.effects.find(effect => effect.target === "AGENTS.md")).toMatchObject({
+			classification: "BLOCKING_CONFLICT",
+		});
+		expect(result.operations).toEqual([]);
+	} finally {
+		await fs.rm(root, { recursive: true, force: true });
+	}
+});
+
+test("managed-range updates preserve exact authored prefix and suffix bytes", async () => {
+	const root = await fs.mkdtemp(path.join(os.tmpdir(), "ws-setup-managed-range-"));
+	const prefix = "# Existing guidance\n\n";
+	const suffix = "\nAuthored suffix without terminal newline";
+	try {
+		await runGit(root, "init", "--quiet");
+		await fs.writeFile(
+			path.join(root, "AGENTS.md"),
+			`${prefix}<!-- WS-AGENT-SKILLS:START -->\nold managed content\n<!-- WS-AGENT-SKILLS:END -->${suffix}`,
+		);
+
+		const discovery = await discoverStandaloneRepository(root, READY_RUNTIME);
+		const result = await runSetupTransaction({ root, discovery, choices: RECOMMENDED_LOCAL_CHOICES });
+		const effect = result.plan?.effects.find(candidate => candidate.target === "AGENTS.md");
+
+		expect(effect).toMatchObject({ classification: "UPDATE" });
+		expect(effect?.after?.slice(0, prefix.length)).toBe(prefix);
+		expect(effect?.after?.slice(-suffix.length)).toBe(suffix);
+	} finally {
+		await fs.rm(root, { recursive: true, force: true });
+	}
+});

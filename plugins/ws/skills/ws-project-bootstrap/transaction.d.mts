@@ -10,7 +10,7 @@ export interface RuntimeSnapshot {
 }
 
 export interface SnapshotEntry {
-	kind: "missing" | "file" | "directory";
+	kind: "missing" | "file" | "directory" | "blocked";
 	content?: string;
 	fingerprint: string | null;
 }

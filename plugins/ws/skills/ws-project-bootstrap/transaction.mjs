@@ -145,8 +145,9 @@ async function readSnapshotEntry(root, target, expectedKind) {
 		}
 		return { kind: details.isDirectory() ? "directory" : "file", fingerprint: `unexpected:${details.mode}` };
 	} catch (error) {
-		if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-			return { kind: "missing", fingerprint: MISSING_FINGERPRINT };
+		if (error && typeof error === "object" && "code" in error) {
+			if (error.code === "ENOENT") return { kind: "missing", fingerprint: MISSING_FINGERPRINT };
+			if (error.code === "ENOTDIR") return { kind: "blocked", fingerprint: "blocked:ENOTDIR" };
 		}
 		throw error;
 	}
@@ -272,11 +273,12 @@ function managedFileEffect(order, target, desired, discovery, allowAppend) {
 	const markers = MANAGED_MARKERS[target];
 	const replaced = replaceManagedRegion(entry.content ?? "", desired, markers[0], markers[1]);
 	if (replaced !== null) {
-		const normalized = replaced.endsWith("\n") ? replaced : `${replaced}\n`;
-		if (normalized === entry.content) return baseEffect(order, target, "file", "NO-OP", "Managed range is already aligned.", entry, normalized);
-		return baseEffect(order, target, "file", "UPDATE", "Replace only the known managed range and preserve surrounding authored bytes.", entry, normalized);
+		if (replaced === entry.content) return baseEffect(order, target, "file", "NO-OP", "Managed range is already aligned.", entry, replaced);
+		return baseEffect(order, target, "file", "UPDATE", "Replace only the known managed range and preserve surrounding authored bytes.", entry, replaced);
 	}
-	if (allowAppend) {
+	const startCount = countOccurrences(entry.content ?? "", markers[0]);
+	const endCount = countOccurrences(entry.content ?? "", markers[1]);
+	if (allowAppend && startCount === 0 && endCount === 0) {
 		const separator = entry.content === "" ? "" : entry.content.endsWith("\n\n") ? "" : entry.content.endsWith("\n") ? "\n" : "\n\n";
 		const after = `${entry.content}${separator}${desired.trimEnd()}\n`;
 		return baseEffect(order, target, "file", "UPDATE", "Append the canonical managed range while preserving existing authored guidance.", entry, after);
@@ -396,8 +398,12 @@ function deriveReadiness(discovery) {
 	};
 }
 
+function isWriteEffect(effect) {
+	return effect.classification === "CREATE" || effect.classification === "UPDATE";
+}
+
 function hasWrites(plan) {
-	return plan.effects.some(effect => effect.classification === "CREATE" || effect.classification === "UPDATE");
+	return plan.effects.some(isWriteEffect);
 }
 
 function blockingEffects(plan) {
@@ -414,7 +420,7 @@ function noChangeReport(readiness) {
 
 function verifiedReport(plan, readiness) {
 	const completed = plan.effects
-		.filter(effect => effect.classification === "CREATE" || effect.classification === "UPDATE")
+		.filter(isWriteEffect)
 		.map(effect => `  ${effect.classification} ${effect.target}`);
 	return [
 		"WS setup verified",
@@ -424,15 +430,23 @@ function verifiedReport(plan, readiness) {
 	].join("\n");
 }
 
+function readinessComplete(readiness) {
+	return readiness.configValid && readiness.engineeringReady && readiness.trackerReady && readiness.runtimeReady;
+}
+
+function failedVerificationReport(plan, readiness) {
+	return verifiedReport(plan, readiness).replace("WS setup verified", "WS setup verification failed");
+}
+
 async function applyPlan(root, plan) {
 	const operations = [];
 	for (const effect of plan.effects) {
-		if (effect.classification !== "CREATE" && effect.classification !== "UPDATE") continue;
+		if (!isWriteEffect(effect)) continue;
 		const current = await readSnapshotEntry(root, effect.target, effect.kind);
 		if (current.fingerprint !== effect.fingerprint) throw new Error(`Authorization is stale: ${effect.target} changed before apply.`);
 	}
 	for (const effect of plan.effects) {
-		if (effect.classification !== "CREATE" && effect.classification !== "UPDATE") continue;
+		if (!isWriteEffect(effect)) continue;
 		const absolute = path.join(root, effect.target);
 		operations.push({ action: "write", target: effect.target });
 		if (effect.kind === "directory") {
@@ -520,7 +534,7 @@ export async function runSetupTransaction(request) {
 		requiresConfirmation: false,
 		operations,
 		readiness,
-		report: verifiedReport(freshPlan, readiness),
+		report: readinessComplete(readiness) ? verifiedReport(freshPlan, readiness) : failedVerificationReport(freshPlan, readiness),
 	};
 }
 
