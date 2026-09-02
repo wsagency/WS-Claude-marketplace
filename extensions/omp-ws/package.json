@@ -1,7 +1,7 @@
 {
   "name": "@wsagency/omp-ws",
-  "version": "0.6.0",
-  "description": "WS Agency full-native omp suite: all WS commands/skills/agents/rules/templates/runtime helpers (generated from the marketplace source) plus dangerous-git guard, changelog gate, Jira session dashboard, docs-drift stop nudge, OpenWiki freshness, compaction preservation, and ws_ticket/ws_changelog/ws_adr tools.",
+  "version": "0.7.0",
+  "description": "WS Agency full-native omp suite: seven commands, 30 generated skills, 14 agents, and four rules from the marketplace source, plus canonical .wsagency/config.yaml runtime policy, dangerous-git guard, changelog gate, Jira session dashboard, docs-drift stop nudge, OpenWiki freshness, compaction preservation, and ws_ticket/ws_changelog/ws_adr tools.",
   "type": "module",
   "main": "dist/index.js",
   "files": [
@@ -25,7 +25,7 @@
     "generate": "bun run scripts/generate.ts",
     "build": "bun run generate && bun build ./src/index.ts --outdir ./dist --target=bun",
     "prepack": "bun run build",
-    "test": "bun test",
+    "test": "bun test ./test",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

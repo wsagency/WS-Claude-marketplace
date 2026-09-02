@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0] - 2026-09-02
+
 ### Added
 
 - Add standalone Local setup transaction with deterministic planning, ordered writes, verification, and no-op reruns (WCM-1)
@@ -22,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING:** Replace `/ws-init`, `/ws-matt setup`, the legacy setup skill and configuration readers, and native package settings with the sole `/ws-setup` entry point and committed `.wsagency/config.yaml` policy. Upgrade native omp installations to `@wsagency/omp-ws` 0.7.0, then run `/ws-setup` to migrate and verify existing repositories before using other WS capabilities (WCM-1)
 - **BREAKING:** Hub repo types (ADR 0006) — every `project.yaml` entry now carries `type: working | input | output` (outputs add `purpose: docs | explained | <custom>`, max one per known purpose). Product-level internal docs (cross-repo architecture, product ADRs, runbooks, scoping docs) now ALWAYS live in the hub's own `dev-docs/` beside `openwiki/`; the docs repo shrinks to the user track (`docs/` → Outline). Client deliveries live in dedicated `type: input` repos (`<project>-client`, `<project>-design`, …) with the dated-folder + `history.md` convention. Legacy `role: docs|explained` entries map to `type: output` + matching `purpose:`; unmarked entries are `type: working`. Existing hubs migrate with `/ws-hub update`
 - All OpenWiki staleness detection is type-aware (walks `type: working` repos, plus legacy entries carrying neither `type` nor `role`, parsed from `project.yaml`): the Claude Stop hook (`openwiki-freshness.sh`), the omp per-project hook template, the omp extension's `wiki-freshness.ts`, `/ws-hub doctor`'s knowledge-freshness check, and the `openwiki-freshness` TTSR rule — output/input repos and the hub's own `dev-docs/` no longer false-positive the stale-wiki banner (`@wsagency/omp-ws` 0.4.0)
 - `hub-architect` writes cross-repo synthesis into the hub's `dev-docs/` unconditionally (no more docs-repo fallback inversion) and analyzes `type: working` repos only; `/ws-hub explained` synthesizes from the hub's `dev-docs/` instead of the docs repo's
