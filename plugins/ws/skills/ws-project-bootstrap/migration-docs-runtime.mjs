@@ -174,7 +174,9 @@ export function planDocsRuntimeMigration(discovery, currentCanonical = {}, resol
 		else if (projectSkip !== undefined && docsSkip !== undefined && JSON.stringify(projectSkip) !== JSON.stringify(docsSkip)) conflicts.push({ field: "changelog.skip_types", classification: "ambiguous", sources: [PROJECT_CONFIG, DOCS_CONFIG] });
 		else setIfAbsent(patch, "changelog.skip_types", projectSkip ?? docsSkip ?? ["docs", "chore", "test", "style", "build", "ci"], changes, projectSkip !== undefined ? PROJECT_CONFIG : DOCS_CONFIG);
 	}
-	setIfAbsent(patch, "changelog.update_mode", changelogMode(project, docs, resolutions, conflicts) ?? "pull_request", changes, "legacy changelog truth table");
+	if (patch.changelog?.update_mode === undefined) {
+		setIfAbsent(patch, "changelog.update_mode", changelogMode(project, docs, resolutions, conflicts) ?? "pull_request", changes, "legacy changelog truth table");
+	}
 	setIfAbsent(patch, "runtime.session_discipline", "required", changes, "active harness contract");
 	setIfAbsent(patch, "runtime.dangerous_git_guard", discovery.runtime.dangerousGitGuard ? "enabled" : "disabled", changes, "active harness contract");
 

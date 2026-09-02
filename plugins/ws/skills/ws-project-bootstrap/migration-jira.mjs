@@ -74,6 +74,16 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 
 	// Local mappings
 	const { projectValues = {}, docsValues = {}, globalValues = {} } = discovery;
+	const unrecognizedLocal = (discovery.unrecognized ?? []).filter(item => item.source === ".claude/ws-project.yaml");
+	for (const item of unrecognizedLocal) {
+		blockers.push(`Unrecognized legacy field ${item.source}:${item.key}`);
+		effects.push({
+			classification: "BLOCKING_CONFLICT",
+			target: item.source,
+			fields: [item.key],
+			reason: "Unknown repository-local legacy policy must be resolved before cleanup"
+		});
+	}
 	const trackedFields = new Set();
 	
 	// Helper for local values

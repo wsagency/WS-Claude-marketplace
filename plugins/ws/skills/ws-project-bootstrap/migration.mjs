@@ -135,31 +135,37 @@ export function planLegacyMigration(discovery, options = {}) {
 		const plan = { config: null, effects: [effect(1, ".wsagency/config.yaml", "file", "BLOCKING_CONFLICT", blocker, discovery.entries[".wsagency/config.yaml"])], blockers: [blocker], conflicts: [], requiresConfirmation: false, report: blocker };
 		return { ...plan, hash: sha256(JSON.stringify(planHashPayload(plan))) };
 	}
-	if (canonical?.status === "valid") {
-		const effects = LOCAL_LEGACY_SOURCES
-			.filter(target => discovery.entries[target]?.kind !== "missing")
-			.map((target, index) => effect(100 + index, target, "file", "PRESERVE", "Valid canonical policy wins; leave legacy source inert unless separately reviewed for cleanup.", discovery.entries[target]));
-		const plan = { config: canonical.config, effects, blockers: [], conflicts: [], requiresConfirmation: false, report: "Valid canonical configuration wins. No migration changes required." };
-		return { ...plan, hash: sha256(JSON.stringify(planHashPayload(plan))) };
-	}
 	if (canonical?.status === "invalid") {
 		const blocker = "Malformed canonical configuration must be repaired explicitly before legacy migration.";
 		const plan = { config: null, effects: [effect(1, ".wsagency/config.yaml", "file", "BLOCKING_CONFLICT", blocker, discovery.entries[".wsagency/config.yaml"])], blockers: [blocker], conflicts: [], requiresConfirmation: false, report: blocker };
 		return { ...plan, hash: sha256(JSON.stringify(planHashPayload(plan))) };
 	}
 
+	const settingsEntry = discovery.entries[".claude/settings.json"];
+	const hasRuntimeLegacy = settingsEntry?.kind === "file" && /ws[^\n]*(session|guard|dashboard)|dangerous[-_ ]git/i.test(settingsEntry.content);
+	const hasRepositoryLegacy = LOCAL_LEGACY_SOURCES.slice(0, 2).some(target => discovery.entries[target]?.kind !== "missing") || hasRuntimeLegacy;
+	if (canonical?.status === "valid" && !hasRepositoryLegacy) {
+		const plan = { config: canonical.config, effects: [], blockers: [], conflicts: [], requiresConfirmation: false, report: "Valid canonical configuration wins. No migration changes required." };
+		return { ...plan, hash: sha256(JSON.stringify(planHashPayload(plan))) };
+	}
+
 	const snapshots = Object.fromEntries(Object.entries(discovery.entries).map(([target, entry]) => [target, entry]));
 	snapshots.activeLocalWork = discovery.activeLocalWork;
-	const engineeringDiscovery = discoverEngineeringState(snapshots);
-	const engineering = planEngineeringMigration(engineeringDiscovery, { schema_version: 1 }, resolutions);
-	const docsDiscovery = discoverDocsRuntimeState(snapshots, discovery.machine);
-	const docs = planDocsRuntimeMigration(docsDiscovery, { schema_version: 1 }, resolutions);
+	const baseline = canonical?.status === "valid" ? canonical.config : { schema_version: 1 };
+	const engineering = canonical?.status === "valid"
+		? { patch: structuredClone(baseline), effects: [], conflicts: [], suggestions: [], blockers: [] }
+		: planEngineeringMigration(discoverEngineeringState(snapshots), baseline, resolutions);
+	const docsSnapshots = canonical?.status === "valid"
+		? Object.fromEntries(LOCAL_LEGACY_SOURCES.map(target => [target, snapshots[target]]))
+		: snapshots;
+	const docsDiscovery = discoverDocsRuntimeState(docsSnapshots, discovery.machine);
+	const docs = planDocsRuntimeMigration(docsDiscovery, baseline, resolutions);
 	const jiraDiscovery = discoverJiraState({
 		".claude/ws-project.yaml": docsDiscovery.project,
 		".claude/docs-config.yaml": docsDiscovery.docs,
 		"~/.claude/ws/config.yaml": options.confirmedMachineHints ?? {},
 	});
-	const jira = planJiraMigration(jiraDiscovery, { schema_version: 1 }, resolutions);
+	const jira = planJiraMigration(jiraDiscovery, baseline, resolutions);
 	const claims = [
 		{ source: "legacy engineering adapters", config: engineering.patch },
 		{ source: "legacy docs/runtime policy", config: docs.patch },
@@ -167,9 +173,9 @@ export function planLegacyMigration(discovery, options = {}) {
 	];
 	const merged = mergeClaims(claims, resolutions, selections);
 	if (getPath(merged.config, "tracker.primary") === undefined && getPath(merged.config, "jira.project") !== undefined) setPath(merged.config, "tracker.primary", "jira");
-	const includeDocs = docsDiscovery.entries[".claude/docs-config.yaml"]?.kind !== "missing" || Object.keys(merged.config.docs ?? {}).length > 0;
+	const includeDocs = baseline.docs !== undefined || docsDiscovery.entries[".claude/docs-config.yaml"]?.kind !== "missing" || Object.keys(merged.config.docs ?? {}).length > 0;
 	const config = applyDefaults(merged.config, includeDocs);
-	const blockers = [...engineering.blockers, ...docs.blockers];
+	const blockers = [...engineering.blockers, ...docs.blockers, ...jira.blockers];
 	const conflicts = [...engineering.conflicts, ...docs.conflicts, ...jira.conflicts, ...merged.conflicts];
 	for (const conflict of merged.conflicts) blockers.push(`Explicit resolution required for conflicting ${conflict.field}.`);
 	for (const suggestion of jira.suggestions) {
@@ -181,7 +187,14 @@ export function planLegacyMigration(discovery, options = {}) {
 	const effects = [];
 	const configEntry = discovery.entries[".wsagency/config.yaml"];
 	const serialized = validation.status === "valid" ? serializeCanonicalConfig(config) : null;
-	effects.push(effect(20, ".wsagency/config.yaml", "file", blockers.length > 0 ? "BLOCKING_CONFLICT" : configEntry.kind === "missing" ? "CREATE" : "UPDATE", blockers.length > 0 ? "Migration is blocked before every write." : "Write the single canonical policy after lossless conversion.", configEntry, serialized));
+	const configClassification = blockers.length > 0
+		? "BLOCKING_CONFLICT"
+		: configEntry.kind === "missing"
+			? "CREATE"
+			: configEntry.content === serialized
+				? "NO-OP"
+				: "UPDATE";
+	effects.push(effect(20, ".wsagency/config.yaml", "file", configClassification, blockers.length > 0 ? "Migration is blocked before every write." : configClassification === "NO-OP" ? "Canonical policy already contains the complete migrated state." : "Write the single canonical policy after lossless conversion.", configEntry, serialized));
 	for (const sourceEffect of [...engineering.effects, ...docs.effects]) {
 		if (sourceEffect.target.startsWith("config:") || LOCAL_LEGACY_SOURCES.includes(sourceEffect.target)) continue;
 		effects.push({ ...sourceEffect, classification: sourceEffect.classification === "BLOCKING_CONFLICT" ? "BLOCKING_CONFLICT" : "PRESERVE", reason: sourceEffect.classification === "BLOCKING_CONFLICT" ? sourceEffect.reason : `Preserve through core cutover: ${sourceEffect.reason}` });

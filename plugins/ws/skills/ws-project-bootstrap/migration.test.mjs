@@ -85,15 +85,38 @@ test("unsupported custom tracker blocks and remains preserved", async () => {
 	});
 });
 
-test("valid canonical policy wins and leaves legacy sources inert", async () => {
+test("canonical-first rerun resumes verified legacy cleanup after an interrupted migration", async () => {
+	await withRepository({ ".claude/ws-project.yaml": "jira:\n  project: WCM\n  default_issue_type: Task\n" }, async root => {
+		const initial = planLegacyMigration(await discoverLegacySetup(root, machine));
+		await mkdir(path.join(root, ".wsagency"), { recursive: true });
+		await writeFile(path.join(root, ".wsagency/config.yaml"), serializeCanonicalConfig(initial.config), "utf8");
+		await writeFile(path.join(root, ".claude/ws-project.yaml"), "jira:\n  project: IGNORED\n  default_issue_type: Bug\n", "utf8");
+
+		const resumed = planLegacyMigration(await discoverLegacySetup(root, machine));
+		assert.equal(resumed.blockers.length, 0);
+		assert.equal(resumed.config.jira.project, "WCM");
+		assert.equal(resumed.config.jira.default_issue_type, "Task");
+		assert.equal(resumed.effects.find(item => item.target === ".wsagency/config.yaml").classification, "NO-OP");
+		assert.equal(resumed.effects.find(item => item.target === ".claude/ws-project.yaml").classification, "UPDATE");
+		assert.equal(resumed.requiresConfirmation, true);
+
+		assert.deepEqual(await applyLegacyCleanup(root, resumed, resumed.hash, fullReadiness), [{ action: "delete", target: ".claude/ws-project.yaml" }]);
+		const aligned = planLegacyMigration(await discoverLegacySetup(root, machine));
+		assert.equal(aligned.requiresConfirmation, false);
+		assert.equal(aligned.report, "Valid canonical configuration wins. No migration changes required.");
+	});
+});
+
+test("unknown repository-local policy blocks cleanup even when canonical policy is valid", async () => {
 	await withRepository({
 		".wsagency/config.yaml": serializeCanonicalConfig({ schema_version: 1, runtime: { session_discipline: "required", dangerous_git_guard: "enabled" } }),
-		".claude/ws-project.yaml": "jira:\n  project: IGNORED\n",
+		".claude/ws-project.yaml": "jira:\n  project: WCM\nunknown_policy: keep-me\n",
 	}, async root => {
-		const plan = planLegacyMigration(await discoverLegacySetup(root, machine), { resolutions: { "jira.project": "ALSO_IGNORED" } });
-		assert.equal(plan.requiresConfirmation, false);
-		assert.equal(plan.config.jira, undefined);
-		assert.equal(plan.effects[0].classification, "PRESERVE");
+		const plan = planLegacyMigration(await discoverLegacySetup(root, machine));
+		assert.ok(plan.blockers.some(blocker => blocker.includes("unknown_policy")));
+		assert.equal(plan.effects.find(item => item.target === ".wsagency/config.yaml").classification, "BLOCKING_CONFLICT");
+		assert.equal(plan.effects.find(item => item.target === ".claude/ws-project.yaml").classification, "PRESERVE");
+		assert.ok(!plan.effects.some(item => ["CREATE", "UPDATE"].includes(item.classification)));
 	});
 });
 
