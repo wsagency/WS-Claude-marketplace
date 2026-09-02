@@ -109,6 +109,12 @@ Scripts the plugin's commands shell out to for deterministic work.
 
 **Example:** `plugins/ws/scripts/` holds `outline-sync.py` (one-way Outline publish: lint + push), `test_outline_sync.py` (its test suite), `parse-git-log.sh`, and `validate-changelog.sh`.
 
+### Deterministic project setup
+
+`/ws-setup` owns one discover → choose → plan → confirm → apply → verify transaction. Its internal `ws-project-bootstrap` worker applies only the confirmed core manifest, while `transaction.mjs` is the shared behavioral seam: a plan hash binds target paths, payloads, and discovery fingerprints; preflight invalidates stale authorization; each ordered write is read back before readiness is derived from repository and active-runtime state.
+
+Marketplace files under `plugins/ws/` remain authoritative. The native omp generator copies the command, worker skill, canonical JSON Schema, templates, and transaction helper as one skill tree, so Claude Code and omp expose the same setup contract rather than separate implementations.
+
 ### The ws-matt skill graph (inside the ws plugin)
 
 The ws plugin vendors [Matt Pocock's engineering skills](https://github.com/mattpocock/skills) (MIT, with attribution) as a graph-engineered skill set: 19 interlinked `ws-*` skill nodes in two tiers (user-invoked entry orchestrators, model-invoked worker disciplines), a single `/ws-matt` entry command, and worker agents (`ws-reviewer`, `researcher`, `tdd-runner` — canonical `ws:<agent>`). Beyond the standard directories the plugin adds `rules/` (the omp edge-discipline rule installed by `/ws-matt setup`) and `docs/` (`graph.md`, the mermaid graph map; `UPSTREAM.md` at the plugin root tracks upstream sync).

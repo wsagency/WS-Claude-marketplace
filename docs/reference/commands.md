@@ -1,6 +1,6 @@
 # Command Reference
 
-All available commands in the WS Claude Marketplace. Everything ships in the single **ws** plugin; all operations route through seven commands: `/ws-help`, `/ws-matt`, `/ws-docs`, `/ws-hub`, `/ws-commit`, `/ws-status`, `/ws-init`.
+All available commands in the WS Claude Marketplace. Everything ships in the single **ws** plugin; all operations route through eight commands: `/ws-help`, `/ws-matt`, `/ws-setup`, `/ws-docs`, `/ws-hub`, `/ws-commit`, `/ws-status`, `/ws-init`.
 
 Every artifact these commands generate — specs, tickets, ADRs, changelog entries, commit and PR bodies, review findings, research notes, generated docs and HTML — is written in English regardless of the conversation language. Translations are derived copies, never the original.
 
@@ -322,6 +322,29 @@ Show the user's Jira workload (assigned tickets grouped by status) and suggest t
 
 ---
 
+## /ws-setup
+
+Safely reconciles an existing standalone Git repository through one deterministic manifest transaction. The currently supported complete profile is the recommended Local Markdown engineering setup.
+
+**Arguments:** None
+
+**Behavior:**
+1. Discovers repository, setup, and active-runtime state without writing
+2. Asks only whether to use the unresolved recommended Local profile; an existing valid canonical configuration answers that choice
+3. Renders one ordered plan classifying every effect as `CREATE`, `UPDATE`, `PRESERVE`, `SKIP`, `NO-OP`, or `BLOCKING_CONFLICT`, including exact managed-content changes
+4. Obtains one confirmation for the complete plan hash, applies writes in order, and reads each result back before reporting derived readiness
+5. On an aligned rerun, asks no questions, writes nothing, and reports `No changes required`
+
+The transaction creates `.wsagency/config.yaml`, Local tracker directories, tracker/triage/domain adapters, root context guidance, and managed runtime-policy context. It does not write secrets or machine identity. Repository creation, hub scope, external trackers, documentation bootstrap, migration, and reconfiguration remain blocking or skipped states until their dedicated transaction slices land.
+
+**Example:**
+```
+/ws-setup
+```
+
+---
+
+
 ## /ws-init
 
 Verify jira-cli setup and configure the marketplace for this user. If run inside a git repo, also binds that project to a specific Jira project key.
@@ -432,6 +455,8 @@ Skills provide knowledge and templates, loaded on demand. All ship in the ws plu
 | `ws-graph-engineering` | Node/edge/state contract, fan-out/synthesize, file-handoff protocol |
 | `ws-ask-matt` + 8 entry nodes | User-invoked orchestrators (implement, to-spec, to-tickets, triage, grill-with-docs, improve-codebase-architecture, wayfinder, setup) |
 | `ws-tdd` + 8 worker nodes | Model-invoked disciplines (code-review, research, prototype, diagnosing-bugs, domain-modeling, codebase-design, resolving-merge-conflicts, grilling) |
+| `ws-project-bootstrap` | Internal `/ws-setup` worker that applies the confirmed core manifest and returns verified readiness |
+
 
 ### Project Hub Skills
 
