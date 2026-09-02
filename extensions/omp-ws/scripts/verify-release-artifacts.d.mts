@@ -63,6 +63,13 @@ export interface OmpRuntimeEvidence {
 	rules: string[];
 }
 
+export interface InstalledMigrationEvidence {
+	label: string;
+	plannedItems: number;
+	operations: number;
+	aligned: true;
+}
+
 export interface VerificationDependencies {
 	runCommand?: (step: VerificationStep) => CommandResult | Promise<CommandResult>;
 	resolveClaudePluginInstallation?: (claudeConfig: string) => ClaudePluginInstallation | Promise<ClaudePluginInstallation>;
@@ -74,6 +81,13 @@ export interface VerificationDependencies {
 	) => SharedSurfaceEvidence | Promise<SharedSurfaceEvidence>;
 	probeClaudeRuntime?: (root: string) => ClaudeRuntimeEvidence | Promise<ClaudeRuntimeEvidence>;
 	probeOmpRuntime?: (root: string) => OmpRuntimeEvidence | Promise<OmpRuntimeEvidence>;
+	exerciseTransaction?: (
+		pluginRoot: string,
+		workspaceRoot: string,
+		label: string,
+		runCommand: (step: VerificationStep) => CommandResult | Promise<CommandResult>,
+		env: VerificationEnvironment,
+	) => InstalledMigrationEvidence | Promise<InstalledMigrationEvidence>;
 }
 
 export interface ReleaseIdentities {
@@ -89,13 +103,14 @@ export interface ReleaseVerificationResult {
 	identities: ReleaseIdentities;
 	commands: string[];
 	parity: SharedSurfaceEvidence;
-	claude: { root: string; runtime: ClaudeRuntimeEvidence };
+	claude: { root: string; runtime: ClaudeRuntimeEvidence; migration: InstalledMigrationEvidence };
 	omp: {
 		root: string;
 		runtime: OmpRuntimeEvidence & {
 			linkedPlugin: Record<string, unknown>;
 			doctor: Array<Record<string, unknown>>;
 		};
+		migration: InstalledMigrationEvidence;
 	};
 }
 
@@ -125,6 +140,13 @@ export function verifySharedGeneratedSurface(
 ): Promise<SharedSurfaceEvidence>;
 export function probeClaudeRuntime(pluginRoot: string): Promise<ClaudeRuntimeEvidence>;
 export function probeOmpRuntime(pluginRoot: string): Promise<OmpRuntimeEvidence>;
+export function exerciseInstalledTransaction(
+	pluginRoot: string,
+	workspaceRoot: string,
+	label: string,
+	runCommand: (step: VerificationStep) => CommandResult | Promise<CommandResult>,
+	env: VerificationEnvironment,
+): Promise<InstalledMigrationEvidence>;
 export function verifyReleaseArtifacts(
 	options: VerifyReleaseArtifactsOptions,
 	dependencies?: VerificationDependencies,

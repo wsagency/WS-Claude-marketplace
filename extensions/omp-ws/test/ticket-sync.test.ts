@@ -162,7 +162,7 @@ function issue(overrides: Partial<JiraIssueState["fields"]> = {}): JiraIssueStat
 }
 
 function policy(root: string): RepositoryPolicyState {
-	return { status: "valid", root, config: CONFIG, errors: [], legacySources: [] };
+	return { status: "valid", root, config: CONFIG, errors: [], legacySources: [], reconfiguringDomains: [] };
 }
 
 function operation(
