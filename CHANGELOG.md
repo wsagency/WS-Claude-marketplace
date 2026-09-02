@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add standalone Local setup transaction with deterministic planning, ordered writes, verification, and no-op reruns (WCM-1)
+
 - Progressive hub adoption (ADR 0007) — a hub is now optional and adoptable later. A single repo, or several loose repos with no `project.yaml`, is a first-class permanent-until-chosen state: no command, skill, agent, hook or rule errors, warns or nags about a missing hub. Project shape detection (hub root / hub sub-repo / standalone) is defined once in `project-hub-conventions` and referenced everywhere; standalone routing is repo-local with the identical `dev-docs/` layout, so a later lift into a hub is a move rather than a rewrite. `/ws-hub init` gains an adopt path — it detects sibling repos already on disk, proposes each with an inferred `type`, and offers a per-file, collision-safe lift of their product-level `dev-docs/` into the new hub knowledge root
 - Node exit report (ADR 0008) — exits are invocation-aware: a directly invoked node renders a two-or-three-sentence report (what landed, then the single most likely next entry point plus at most one alternative, each taken from that node's own declared edges); a nested worker returns a state delta only; a terminal or return-only node reports the outcome and stops. The format is stated in exactly two places (the `omp-edge-discipline` rule and `ws-graph-engineering`); each of the 18 graph-node skills declares only its own routing as an `**Exit report:**` bullet, and the six flow commands close the same way. Entry → entry stays user-mediated: the node recommends, never auto-invokes
 - `/ws-hub update` — interactive conventions migration for existing hubs: `project.conventions` version marker, authoritative migration table, per-migration apply/skip/abort, idempotent re-runs; ships the v1→v2 migration (role→type rename, hub `dev-docs/` scaffold, product dev-docs move out of the docs repo, client materials → input repo)
@@ -33,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING:** In `@wsagency/omp-ws` 0.6.0, the WS code-review leaf is now `ws-reviewer` (`ws:ws-reviewer` in Claude Code) instead of `reviewer`, so the native package no longer shadows omp's bundled general-purpose reviewer. Graph contracts, dispatch call sites, role overrides, generated-agent tests, public references, and the packaged `@slow` model mapping all use the new name
 
 ### Fixed
+
+- Fail closed on setup manifest path and managed-range conflicts (WCM-1)
 
 Seven-axis review sweep of the hub-repo-types change — 88 findings across Standards, Spec, freshness code, `/ws-hub` flows, skill surfaces, published docs and a repo-wide legacy sweep, all remediated.
 
