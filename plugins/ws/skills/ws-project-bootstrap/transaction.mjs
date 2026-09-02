@@ -4,6 +4,8 @@ import { access, mkdir, readFile, realpath, stat, writeFile } from "node:fs/prom
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parseCanonicalConfigYaml, validateCanonicalConfig } from "./config.mjs";
+import { checkTrackerReadiness, getAdapterContent, planTrackerEffects } from "./trackers.mjs";
 
 const SKILL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MISSING_FINGERPRINT = null;
@@ -171,25 +173,41 @@ function managedRegionAligned(content, desired, start, end) {
 	const endIndex = content.indexOf(end, startIndex) + end.length;
 	return content.slice(startIndex, endIndex) === desired.trimEnd();
 }
-export function discoveryIsAligned(discovery, targetConfig = CANONICAL_CONFIG_YAML) {
+function parseTargetConfig(source) {
+	const validation = validateCanonicalConfig(source);
+	return validation.status === "valid" ? validation.config : null;
+}
+
+function runtimeCapabilitiesAligned(config, machine) {
+	if (config?.runtime?.session_discipline === "required" && !machine.sessionDiscipline) return false;
+	if (config?.runtime?.dangerous_git_guard === "enabled" && !machine.dangerousGitGuard) return false;
+	return true;
+}
+
+export function discoveryIsAligned(discovery, targetConfig = CANONICAL_CONFIG_YAML, choices = {}) {
 	if (discovery.projectShape !== "standalone" && discovery.projectShape !== "hub_root" && discovery.projectShape !== "hub_subrepository") return false;
-	if (!discovery.machine.sessionDiscipline || !discovery.machine.dangerousGitGuard) return false;
+	const config = parseTargetConfig(targetConfig);
+	if (!config || !runtimeCapabilitiesAligned(config, discovery.machine)) return false;
 	if (discovery.entries[".wsagency/config.yaml"]?.content !== targetConfig) return false;
-	for (const target of DIRECTORY_TARGETS) {
-		if (discovery.entries[target]?.kind !== "directory") return false;
+	if (config.tracker?.primary === "local") {
+		for (const target of DIRECTORY_TARGETS) {
+			if (discovery.entries[target]?.kind !== "directory") return false;
+		}
 	}
-	for (const target of Object.keys(TEMPLATE_CONTENT).filter(target => target !== "CONTEXT.md")) {
+	const trackerEntry = discovery.entries["dev-docs/agents/issue-tracker.md"];
+	const trackerDesired = getAdapterContent(config.tracker?.primary ?? "local");
+	const trackerMarkers = MANAGED_MARKERS["dev-docs/agents/issue-tracker.md"];
+	if (!trackerEntry || trackerEntry.kind !== "file" || !managedRegionAligned(trackerEntry.content ?? "", trackerDesired, trackerMarkers[0], trackerMarkers[1])) return false;
+	for (const target of ["dev-docs/agents/triage-labels.md", "dev-docs/agents/domain.md"]) {
 		const entry = discovery.entries[target];
 		const markers = MANAGED_MARKERS[target];
-		if (!entry || entry.kind !== "file" || !markers) return false;
-		if (!managedRegionAligned(entry.content ?? "", TEMPLATE_CONTENT[target], markers[0], markers[1])) return false;
+		if (!entry || entry.kind !== "file" || !managedRegionAligned(entry.content ?? "", TEMPLATE_CONTENT[target], markers[0], markers[1])) return false;
 	}
 	if (discovery.entries["CONTEXT.md"]?.kind !== "file") return false;
 	const agents = discovery.entries["AGENTS.md"];
-	if (!agents || agents.kind !== "file" || !managedRegionAligned(agents.content ?? "", AGENT_SKILLS_BLOCK, AGENT_BLOCK_START, AGENT_BLOCK_END)) {
-		return false;
-	}
-	return discovery.entries["CLAUDE.md"]?.content?.trim() === "@AGENTS.md";
+	if (!agents || agents.kind !== "file" || !managedRegionAligned(agents.content ?? "", AGENT_SKILLS_BLOCK, AGENT_BLOCK_START, AGENT_BLOCK_END)) return false;
+	if (discovery.entries["CLAUDE.md"]?.content?.trim() !== "@AGENTS.md") return false;
+	return checkTrackerReadiness(config, discovery, choices.jiraValidation, choices.capabilities).trackerReady;
 }
 
 /** Read-only discovery for the standalone Local transaction. */
@@ -228,13 +246,20 @@ export async function discoverStandaloneRepository(root, machine) {
 			activeHarness: machine.activeHarness,
 			sessionDiscipline: machine.sessionDiscipline === true,
 			dangerousGitGuard: machine.dangerousGitGuard === true,
+			ghCli: machine.ghCli === true,
+			glabCli: machine.glabCli === true,
+			jiraCli: machine.jiraCli === true,
 		},
 		entries,
 	};
 	const config = entries[".wsagency/config.yaml"];
 	if (config.kind === "missing") discovery.setupState = "unconfigured";
-	else if (config.content !== CANONICAL_CONFIG_YAML) discovery.setupState = "conflicting";
-	else discovery.setupState = discoveryIsAligned(discovery) ? "aligned" : "drifted";
+	else if (config.kind !== "file") discovery.setupState = "conflicting";
+	else {
+		const validation = validateCanonicalConfig(config.content);
+		discovery.setupState = validation.status === "valid" && discoveryIsAligned(discovery, config.content, { capabilities: discovery.machine }) ? "aligned" : validation.status;
+		if (validation.status === "valid" && discovery.setupState !== "aligned") discovery.setupState = "drifted";
+	}
 	return discovery;
 }
 
@@ -383,44 +408,47 @@ export function buildPlan(discovery, choices, validationInjection) {
 
 	const configEntry = discovery.entries[".wsagency/config.yaml"] || { kind: "missing", fingerprint: null };
 	const targetConfig = choices?.targetConfig || CANONICAL_CONFIG_YAML;
-	if (configEntry.kind === "missing") {
+	const configValidation = validateCanonicalConfig(targetConfig);
+	const config = configValidation.status === "valid" ? configValidation.config : null;
+	if (!config) {
+		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "BLOCKING_CONFLICT", "Target configuration is not a strict valid installed-schema policy.", configEntry));
+	} else if (configEntry.kind === "missing") {
 		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "CREATE", "Write the strict versioned policy.", configEntry, targetConfig));
 	} else if (configEntry.kind === "file" && configEntry.content === targetConfig) {
 		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "NO-OP", "Configuration is already aligned.", configEntry, targetConfig));
 	} else {
-		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", choices?.targetConfig ? "UPDATE" : "BLOCKING_CONFLICT", choices?.targetConfig ? "Apply materialized configuration." : "Existing configuration is not the verified recommended Local v1 payload.", configEntry, choices?.targetConfig ? targetConfig : undefined));
+		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", choices?.targetConfig ? "UPDATE" : "BLOCKING_CONFLICT", choices?.targetConfig ? "Apply the explicitly materialized configuration." : "Existing configuration is not the verified recommended Local v1 payload.", configEntry, choices?.targetConfig ? targetConfig : undefined));
 	}
 
-	effects.push(directoryEffect(20, "dev-docs/tickets/open", discovery));
-	effects.push(directoryEffect(21, "dev-docs/tickets/done", discovery));
-	effects.push(managedFileEffect(30, "dev-docs/agents/issue-tracker.md", TEMPLATE_CONTENT["dev-docs/agents/issue-tracker.md"], discovery, false));
-	effects.push(managedFileEffect(31, "dev-docs/agents/triage-labels.md", TEMPLATE_CONTENT["dev-docs/agents/triage-labels.md"], discovery, false));
-	effects.push(managedFileEffect(32, "dev-docs/agents/domain.md", TEMPLATE_CONTENT["dev-docs/agents/domain.md"], discovery, false));
-	effects.push(contextEffect(40, discovery));
-	effects.push(managedFileEffect(50, "AGENTS.md", AGENT_SKILLS_BLOCK, discovery, true));
-	effects.push(claudeEffect(60, discovery));
-	effects.push(
-		baseEffect(
-			70,
-			"runtime:session_discipline",
-			"state",
-			discovery.machine.sessionDiscipline ? "NO-OP" : "BLOCKING_CONFLICT",
-			discovery.machine.sessionDiscipline ? "Active harness delivers the required session discipline." : "Active harness does not deliver required session discipline.",
-			null,
-		),
-	);
-	effects.push(
-		baseEffect(
-			71,
-			"runtime:dangerous_git_guard",
-			"state",
-			discovery.machine.dangerousGitGuard ? "NO-OP" : "BLOCKING_CONFLICT",
-			discovery.machine.dangerousGitGuard ? "Active harness delivers the required dangerous-git guard." : "Active harness does not deliver the required dangerous-git guard.",
-			null,
-		),
-	);
-	effects.push(baseEffect(80, "integration:jira", "state", "SKIP", "Recommended Local setup does not bind Jira.", null));
-	effects.push(baseEffect(81, "documentation:bootstrap", "state", "SKIP", "Documentation bootstrap is outside this core setup transaction.", null));
+	const engineeringEnabled = Boolean(config?.tracker && config?.triage && config?.domain && config?.commit && config?.runtime);
+	if (engineeringEnabled) {
+		if (config.tracker.primary === "local") {
+			effects.push(directoryEffect(20, "dev-docs/tickets/open", discovery));
+			effects.push(directoryEffect(21, "dev-docs/tickets/done", discovery));
+		} else {
+			effects.push(baseEffect(20, "dev-docs/tickets/open", "directory", "SKIP", `${config.tracker.primary} owns tickets; do not create a Local store.`, discovery.entries["dev-docs/tickets/open"]));
+			effects.push(baseEffect(21, "dev-docs/tickets/done", "directory", "SKIP", `${config.tracker.primary} owns tickets; do not create a Local store.`, discovery.entries["dev-docs/tickets/done"]));
+		}
+		const trackerEffects = planTrackerEffects(config, discovery, choices?.jiraValidation, choices?.capabilities);
+		effects.push(...trackerEffects.filter(item => item.target !== "dev-docs/agents/issue-tracker.md"));
+		effects.push(managedFileEffect(30, "dev-docs/agents/issue-tracker.md", getAdapterContent(config.tracker.primary), discovery, false));
+		effects.push(managedFileEffect(31, "dev-docs/agents/triage-labels.md", TEMPLATE_CONTENT["dev-docs/agents/triage-labels.md"], discovery, false));
+		effects.push(managedFileEffect(32, "dev-docs/agents/domain.md", TEMPLATE_CONTENT["dev-docs/agents/domain.md"], discovery, false));
+		effects.push(contextEffect(40, discovery));
+		effects.push(managedFileEffect(50, "AGENTS.md", AGENT_SKILLS_BLOCK, discovery, true));
+		effects.push(claudeEffect(60, discovery));
+		const disciplineReady = discovery.machine.sessionDiscipline || config.runtime.session_discipline !== "required";
+		effects.push(baseEffect(70, "runtime:session_discipline", "state", disciplineReady ? "NO-OP" : "BLOCKING_CONFLICT", disciplineReady ? "Active harness satisfies repository session policy." : "Active harness does not deliver required session discipline.", null));
+		const guardReady = discovery.machine.dangerousGitGuard || config.runtime.dangerous_git_guard !== "enabled";
+		effects.push(baseEffect(71, "runtime:dangerous_git_guard", "state", guardReady ? "NO-OP" : "BLOCKING_CONFLICT", guardReady ? "Active harness satisfies repository dangerous-git policy." : "Active harness does not deliver the required dangerous-git guard.", null));
+	} else {
+		for (const [order, target, kind] of [[20, "dev-docs/tickets/open", "directory"], [21, "dev-docs/tickets/done", "directory"], [30, "dev-docs/agents/issue-tracker.md", "file"], [31, "dev-docs/agents/triage-labels.md", "file"], [32, "dev-docs/agents/domain.md", "file"], [40, "CONTEXT.md", "file"], [50, "AGENTS.md", "file"], [60, "CLAUDE.md", "file"]]) {
+			effects.push(baseEffect(order, target, kind, "SKIP", "Engineering setup is not selected by this partial canonical policy.", discovery.entries[target]));
+		}
+		effects.push(baseEffect(70, "runtime:session_discipline", "state", "SKIP", "Engineering runtime policy is not selected.", null));
+		effects.push(baseEffect(71, "runtime:dangerous_git_guard", "state", "SKIP", "Engineering runtime policy is not selected.", null));
+	}
+	effects.push(baseEffect(81, "documentation:bootstrap", "state", config?.docs ? "PRESERVE" : "SKIP", config?.docs ? "Documentation effects are owned by the confirmed docs-bootstrap worker manifest." : "Documentation bootstrap was not selected.", null));
 
 	const plannedTargets = new Set(effects.map(e => e.target));
 	const dirtyFiles = discovery.git.dirty;
@@ -459,19 +487,25 @@ export function buildPlan(discovery, choices, validationInjection) {
 	return { hash: sha256(JSON.stringify(hashPayload)), scope, effects };
 }
 
-export function deriveReadiness(discovery, choices) {
-	const targetConfig = choices?.targetConfig || CANONICAL_CONFIG_YAML;
-	const configValid = discovery.entries[".wsagency/config.yaml"]?.content === targetConfig;
-	const trackerReady =
-		configValid &&
-		discovery.entries["dev-docs/tickets/open"]?.kind === "directory" &&
-		discovery.entries["dev-docs/tickets/done"]?.kind === "directory";
-	const runtimeReady = discovery.machine.sessionDiscipline && discovery.machine.dangerousGitGuard;
+export function deriveReadiness(discovery, choices = {}) {
+	const targetConfig = choices.targetConfig || CANONICAL_CONFIG_YAML;
+	const validation = validateCanonicalConfig(targetConfig);
+	const config = validation.status === "valid" ? validation.config : null;
+	const configValid = Boolean(config) && discovery.entries[".wsagency/config.yaml"]?.content === targetConfig;
+	const engineeringSelected = Boolean(config?.tracker && config?.triage && config?.domain && config?.commit && config?.runtime);
+	const tracker = config?.tracker ? checkTrackerReadiness(config, discovery, choices.jiraValidation, choices.capabilities) : { trackerReady: false, blockers: ["Tracker policy is not configured."] };
+	const runtimeReady = Boolean(config?.runtime) && runtimeCapabilitiesAligned(config, discovery.machine);
 	return {
 		configValid,
-		engineeringReady: discoveryIsAligned(discovery, targetConfig),
-		trackerReady,
-		runtimeReady,
+		engineeringReady: configValid && engineeringSelected && discoveryIsAligned(discovery, targetConfig, choices),
+		trackerReady: configValid && tracker.trackerReady,
+		docsReady: configValid && Boolean(config?.docs) && choices.docsReadiness?.ready === true,
+		docsConfigured: Boolean(config?.docs),
+		runtimeReady: configValid && runtimeReady,
+		blockers: {
+			tracker: tracker.blockers,
+			docs: config?.docs && choices.docsReadiness?.ready !== true ? [choices.docsReadiness?.reason || "Documentation artifacts have not been verified by docs-bootstrap."] : [],
+		},
 	};
 }
 
@@ -487,11 +521,15 @@ function blockingEffects(plan) {
 	return plan.effects.filter(effect => effect.classification === "BLOCKING_CONFLICT");
 }
 
+function readinessSummary(readiness) {
+	return `Readiness: config=${readiness.configValid ? "ready" : "blocked"}, engineering=${readiness.engineeringReady ? "ready" : "blocked"}, tracker=${readiness.trackerReady ? "ready" : "blocked"}, documentation=${readiness.docsConfigured ? readiness.docsReady ? "ready" : "blocked" : "not configured"}, runtime=${readiness.runtimeReady ? "ready" : "blocked"}.`;
+}
+
 function noChangeReport(readiness) {
 	return [
-		"Detected standalone repository with aligned WS setup.",
+		"Detected repository with aligned WS setup.",
 		"No changes required",
-		`Readiness: config=${readiness.configValid ? "ready" : "blocked"}, engineering=${readiness.engineeringReady ? "ready" : "blocked"}, tracker=${readiness.trackerReady ? "ready" : "blocked"}, runtime=${readiness.runtimeReady ? "ready" : "blocked"}.`,
+		readinessSummary(readiness),
 	].join("\n");
 }
 
@@ -503,12 +541,12 @@ function verifiedReport(plan, readiness) {
 		"WS setup verified",
 		"Completed:",
 		...completed,
-		`Readiness: config=${readiness.configValid ? "ready" : "blocked"}, engineering=${readiness.engineeringReady ? "ready" : "blocked"}, tracker=${readiness.trackerReady ? "ready" : "blocked"}, runtime=${readiness.runtimeReady ? "ready" : "blocked"}.`,
+		readinessSummary(readiness),
 	].join("\n");
 }
 
 function readinessComplete(readiness) {
-	return readiness.configValid && readiness.engineeringReady && readiness.trackerReady && readiness.runtimeReady;
+	return readiness.configValid && readiness.engineeringReady && readiness.trackerReady && readiness.runtimeReady && (!readiness.docsConfigured || readiness.docsReady);
 }
 
 function failedVerificationReport(plan, readiness) {
@@ -570,10 +608,10 @@ export async function runSetupTransaction(request) {
 	const isNotGit = request.discovery.projectShape === "not_git";
 	let choices = request.choices;
 	if (!choices) {
-		const configPresent = request.discovery.entries[".wsagency/config.yaml"]?.kind !== "missing";
-		if (configPresent && !isNotGit) choices = RECOMMENDED_LOCAL_CHOICES;
+		const configEntry = request.discovery.entries[".wsagency/config.yaml"];
+		const validation = configEntry?.kind === "file" ? validateCanonicalConfig(configEntry.content) : null;
+		if (validation?.status === "valid" && !isNotGit) choices = { profile: "canonical", targetConfig: configEntry.content, capabilities: request.discovery.machine };
 	}
-
 	const needsProfile = !choices?.profile;
 	const needsCreateRepo = isNotGit && choices?.createRepository === undefined;
 	const needsOrigin = isNotGit && choices?.createRepository && typeof choices?.origin !== "string";
@@ -607,7 +645,7 @@ export async function runSetupTransaction(request) {
 			report: "Discovery complete. No files have been changed.",
 		};
 	}
-	if (choices.profile !== "recommended_local") throw new Error(`Unsupported setup profile: ${choices.profile}`);
+	if (!["recommended_local", "canonical", "materialized"].includes(choices.profile)) throw new Error(`Unsupported setup profile: ${choices.profile}`);
 	const plan = buildPlan(request.discovery, choices, request.injectedOriginValidation);
 	const blockers = blockingEffects(plan);
 	if (blockers.length > 0) {

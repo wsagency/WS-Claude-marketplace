@@ -1,12 +1,15 @@
 export type Harness = "claude" | "omp";
 export type ProjectShape = "standalone" | "hub_root" | "hub_subrepository" | "not_git";
-export type SetupState = "unconfigured" | "aligned" | "drifted" | "conflicting";
+export type SetupState = "unconfigured" | "aligned" | "drifted" | "conflicting" | "invalid" | "older" | "future";
 export type EffectClassification = "CREATE" | "UPDATE" | "PRESERVE" | "SKIP" | "NO-OP" | "BLOCKING_CONFLICT";
 
 export interface RuntimeSnapshot {
 	activeHarness: Harness;
 	sessionDiscipline: boolean;
 	dangerousGitGuard: boolean;
+	ghCli?: boolean;
+	glabCli?: boolean;
+	jiraCli?: boolean;
 }
 
 export interface SnapshotEntry {
@@ -19,14 +22,18 @@ export interface SetupDiscovery {
 	root: string;
 	projectShape: ProjectShape;
 	setupState: SetupState;
-	git: { isRepository: boolean; root: string | null; origin: string | null };
+	git: { isRepository: boolean; root: string | null; origin: string | null; head: string | null; dirty: string[] };
 	machine: RuntimeSnapshot;
 	entries: Record<string, SnapshotEntry>;
 }
 export interface SetupChoices {
-	profile: "recommended_local";
+	profile: "recommended_local" | "canonical" | "materialized";
 	createRepository?: boolean;
 	origin?: string;
+	targetConfig?: string;
+	capabilities?: { ghCli?: boolean; glabCli?: boolean };
+	jiraValidation?: { ready: boolean; reason?: string };
+	docsReadiness?: { ready: boolean; reason?: string };
 }
 
 export interface SetupQuestion {
@@ -57,7 +64,10 @@ export interface SetupReadiness {
 	configValid: boolean;
 	engineeringReady: boolean;
 	trackerReady: boolean;
+	docsReady: boolean;
+	docsConfigured: boolean;
 	runtimeReady: boolean;
+	blockers: { tracker: string[]; docs: string[] };
 }
 
 export interface SetupOperation {
@@ -89,3 +99,10 @@ export const CANONICAL_CONFIG_YAML: string;
 export const RECOMMENDED_LOCAL_CHOICES: Readonly<SetupChoices>;
 export function discoverStandaloneRepository(root: string, machine: RuntimeSnapshot): Promise<SetupDiscovery>;
 export function runSetupTransaction(request: SetupTransactionRequest): Promise<SetupTransactionResult>;
+export function discoveryIsAligned(discovery: SetupDiscovery, targetConfig?: string, choices?: Partial<SetupChoices>): boolean;
+export function buildPlan(discovery: SetupDiscovery, choices: SetupChoices, validationInjection?: SetupTransactionRequest["injectedOriginValidation"]): SetupPlan;
+export function deriveReadiness(discovery: SetupDiscovery, choices?: Partial<SetupChoices>): SetupReadiness;
+export function applyPlan(root: string, plan: SetupPlan, injectedFailure?: SetupTransactionRequest["injectedFailure"]): Promise<{
+	operations: SetupOperation[];
+	failure: null | { target: string; error: Error; completed: string[]; pending: string[] };
+}>;

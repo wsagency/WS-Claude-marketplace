@@ -92,7 +92,10 @@ test("recommended Local setup is one confirmed transaction and its rerun is a pr
 			configValid: true,
 			engineeringReady: true,
 			trackerReady: true,
+			docsReady: false,
+			docsConfigured: false,
 			runtimeReady: true,
+			blockers: { tracker: [], docs: [] },
 		});
 		expect(applied.operations).toEqual(
 			plan.effects
@@ -359,12 +362,14 @@ test("discovery distinguishes standalone repositories, hub roots, and working re
 		const innerDiscovery = await discoverStandaloneRepository(inner, READY_RUNTIME);
 		expect(innerDiscovery.projectShape).toBe("hub_subrepository");
 
-		// Hub root and hub subrepository block standalone transactions
+		// The core transaction supports both shapes; hub fan-out remains owned by hub-transaction.
 		const planOuter = await runSetupTransaction({ root: outer, discovery: outerDiscovery, choices: RECOMMENDED_LOCAL_CHOICES });
-		expect(planOuter.report).toContain("supports standalone repositories, not hub_root");
-		
+		expect(planOuter.requiresConfirmation).toBe(true);
+		expect(planOuter.plan?.scope.projectShape).toBe("hub_root");
+
 		const planInner = await runSetupTransaction({ root: inner, discovery: innerDiscovery, choices: RECOMMENDED_LOCAL_CHOICES });
-		expect(planInner.report).toContain("supports standalone repositories, not hub_subrepository");
+		expect(planInner.requiresConfirmation).toBe(true);
+		expect(planInner.plan?.scope.projectShape).toBe("hub_subrepository");
 	} finally {
 		await fs.rm(outer, { recursive: true, force: true });
 	}
