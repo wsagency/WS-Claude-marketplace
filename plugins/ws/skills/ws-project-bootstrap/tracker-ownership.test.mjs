@@ -10,9 +10,14 @@ const BASE_CONFIG = Object.freeze({
 	schema_version: 1,
 	tracker: Object.freeze({ primary: "local", pull_requests: "ignore" }),
 });
+const JIRA_CONFIG = Object.freeze({
+	...BASE_CONFIG,
+	jira: Object.freeze({ project: "NEW", default_issue_type: "Task", sync: "disabled" }),
+});
 
 function choices(disposition = "copy-all", overrides = {}) {
 	return {
+		domains: ["tracker"],
 		fields: ["tracker.primary"],
 		values: { "tracker.primary": "github" },
 		sourceTracker: "jira",
@@ -159,7 +164,7 @@ test("claimed work, unresolved conflicts, and pending sync block only affected c
 
 test("Jira project rebinding preserves old keys as inactive history and creates verified copies instead of moving", () => {
 	const store = { "OLD-1": ticket("OLD-1") };
-	const planned = planTrackerOwnership(BASE_CONFIG, store, {}, choices("copy-all", {
+	const planned = planTrackerOwnership(JIRA_CONFIG, store, {}, choices("copy-all", {
 		targetTracker: "jira",
 		sourceProject: "OLD",
 		targetProject: "NEW",

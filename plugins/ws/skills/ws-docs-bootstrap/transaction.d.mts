@@ -1,4 +1,5 @@
 import type { CanonicalProjectConfig } from "../ws-project-bootstrap/config.d.mts";
+import type { ReconfigureRepositoryTarget } from "../ws-project-bootstrap/reconfigure.d.mts";
 import type { ProjectShape, EffectClassification, SnapshotEntry, SetupOperation } from "../ws-project-bootstrap/transaction.d.mts";
 
 export interface DocsDiscovery {
@@ -6,6 +7,7 @@ export interface DocsDiscovery {
 	projectShape: ProjectShape;
 	policy: Pick<CanonicalProjectConfig, "docs" | "changelog">;
 	entries: Record<string, SnapshotEntry>;
+	repositories?: ReconfigureRepositoryTarget[];
 }
 
 export interface DocsEffect {

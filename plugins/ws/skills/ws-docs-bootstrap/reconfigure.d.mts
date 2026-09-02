@@ -5,6 +5,7 @@ import type {
 	ReconfigureEffect,
 	ReconfigureInjection,
 	ReconfigurePlanResult,
+	ReconfigureDomainSelection,
 } from "../ws-project-bootstrap/reconfigure.d.mts";
 import type { DocsDiscovery } from "./transaction.d.mts";
 
@@ -24,9 +25,10 @@ export interface DocsPathTransition {
 }
 
 export interface ReconfigureChoices {
-	domain?: "docs" | "changelog";
+	domains: ReconfigureDomainSelection[];
 	fields?: string[];
 	values?: Record<string, unknown>;
+	repositories?: string[];
 	enableDocs?: boolean;
 	disableDocs?: boolean;
 	pathTransitions?: DocsPathTransition[];

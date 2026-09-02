@@ -20,6 +20,7 @@ function docsSnapshot(discovery) {
 		shape: discovery.projectShape,
 		repositoryId: discovery.root || "current",
 		entries: discovery.entries || {},
+		repositories: discovery.repositories,
 	};
 }
 
@@ -214,10 +215,6 @@ function buildDocsContribution(config, discovery, choices) {
 
 export function plan(config, discovery, choices) {
 	const normalizedChoices = { ...choices, fields: choices?.fields || [] };
-	if (!normalizedChoices.domain) {
-		const selected = normalizedChoices.fields[0] || "";
-		normalizedChoices.domain = selected.startsWith("changelog.") ? "changelog" : "docs";
-	}
 	const contribution = buildDocsContribution(config, discovery, normalizedChoices);
 	const result = createReconfigurePlan(config, docsSnapshot(discovery), {}, normalizedChoices, contribution);
 	return { ...result, contentManifest: contribution.contentManifest };

@@ -4,6 +4,8 @@ import { planDomain, planTriage } from "./routing.mjs";
 
 const PHASES = Object.freeze(["prepare", "cutover", "cleanup"]);
 const MUTATION_CLASSIFICATIONS = new Set(["CREATE", "UPDATE", "DELETE"]);
+const CANONICAL_DOMAINS = Object.freeze(["tracker", "documentation", "runtime"]);
+const DOMAIN_VALUES = new Set([...CANONICAL_DOMAINS, "all"]);
 const TRACKER_FIELD_PREFIXES = Object.freeze(["tracker.", "jira.", "triage.", "domain.", "commit.jira.", "ui.session_start_dashboard"]);
 
 export class ReconfigureError extends Error {
@@ -33,6 +35,19 @@ function valueAtPath(value, fieldPath) {
 	return fieldPath.split(".").reduce((current, key) => current?.[key], value);
 }
 
+function setValueAtPath(value, fieldPath, proposed) {
+	const keys = fieldPath.split(".");
+	const leaf = keys.pop();
+	const parent = keys.reduce((current, key) => current[key], value);
+	parent[leaf] = structuredClone(proposed);
+}
+
+function materializeProposedConfig(config, selectedFields, values) {
+	const proposed = structuredClone(config);
+	for (const field of selectedFields) setValueAtPath(proposed, field, values[field]);
+	return proposed;
+}
+
 function sameValue(left, right) {
 	return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -51,15 +66,47 @@ function validationError(config) {
 
 function fieldBelongsToDomain(field, domain) {
 	if (domain === "tracker") return TRACKER_FIELD_PREFIXES.some(prefix => field === prefix || field.startsWith(prefix));
-	if (domain === "docs") return field.startsWith("docs.");
-	if (domain === "changelog") return field.startsWith("changelog.");
-	return field.startsWith(`${domain}.`);
+	if (domain === "documentation") return field.startsWith("docs.") || field.startsWith("changelog.");
+	return field.startsWith("runtime.");
+}
+
+function normalizeDomains(choices) {
+	if (!choices || Object.hasOwn(choices, "domain") || !Array.isArray(choices.domains) || choices.domains.length === 0) {
+		throw new ReconfigureError("One or more reconfiguration domains are required through choices.domains.", "ERR_INVALID_DOMAINS");
+	}
+	if (choices.domains.some(domain => !DOMAIN_VALUES.has(domain))) {
+		throw new ReconfigureError("Reconfiguration domains must be tracker, documentation, runtime, or all.", "ERR_INVALID_DOMAINS");
+	}
+	const selected = choices.domains.includes("all") ? new Set(CANONICAL_DOMAINS) : new Set(choices.domains);
+	return CANONICAL_DOMAINS.filter(domain => selected.has(domain));
 }
 
 function selectedRepositories(snapshot, choices) {
 	if (snapshot.shape !== "hub_root") return [snapshot.repositoryId || "current"];
-	const requested = Array.isArray(choices.repositories) && choices.repositories.length > 0 ? choices.repositories : ["hub"];
-	return [...new Set(requested)];
+	if (!Array.isArray(snapshot.repositories)) {
+		throw new ReconfigureError("Hub-root reconfiguration requires a discovered repository eligibility inventory.", "ERR_INVALID_HUB_SCOPE");
+	}
+	const inventory = new Map();
+	for (const repository of snapshot.repositories) {
+		if (!repository || typeof repository.id !== "string" || inventory.has(repository.id)) {
+			throw new ReconfigureError("Hub repository eligibility inventory is malformed or ambiguous.", "ERR_INVALID_HUB_SCOPE");
+		}
+		inventory.set(repository.id, repository);
+	}
+	const hubs = [...inventory.values()].filter(repository => repository.type === "hub" && repository.present === true);
+	if (hubs.length !== 1) {
+		throw new ReconfigureError("The discovered hub target is missing or ambiguous.", "ERR_INVALID_HUB_SCOPE");
+	}
+	const hub = hubs[0];
+	const requested = Array.isArray(choices.repositories) && choices.repositories.length > 0 ? [...new Set(choices.repositories)] : [hub.id];
+	for (const id of requested) {
+		const repository = inventory.get(id);
+		const eligible = repository?.present === true && (repository === hub || repository.type === "working");
+		if (!eligible) {
+			throw new ReconfigureError(`Requested repository ${id} is unknown, excluded, or not locally present.`, "ERR_INELIGIBLE_REPOSITORY_SCOPE");
+		}
+	}
+	return requested;
 }
 
 function phaseOrder(phase) {
@@ -220,18 +267,27 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 	if (!choices || !Array.isArray(choices.fields)) {
 		throw new ReconfigureError("Concrete field selection is required.", "ERR_MISSING_FIELD_SELECTION");
 	}
-	if (!choices.domain || !["runtime", "tracker", "docs", "changelog"].includes(choices.domain)) {
-		throw new ReconfigureError("A selectable reconfiguration domain is required.", "ERR_INVALID_DOMAIN");
-	}
-
+	const domains = normalizeDomains(choices);
 	const scope = selectedRepositories(snapshot, choices);
 	const selectedFields = [...new Set(choices.fields)].sort();
-	if (selectedFields.some(field => !fieldBelongsToDomain(field, choices.domain))) {
-		throw new ReconfigureError("Selected fields must belong to the selected domain.", "ERR_FIELD_OUTSIDE_DOMAIN");
+	if (selectedFields.some(field => !domains.some(domain => fieldBelongsToDomain(field, domain)))) {
+		throw new ReconfigureError("Every selected field must belong to at least one selected domain.", "ERR_FIELD_OUTSIDE_DOMAINS");
 	}
 	const knownFields = new Set(leafPaths(config));
 	if (selectedFields.some(field => !knownFields.has(field))) {
 		throw new ReconfigureError("Selected field is not present in the strict-valid baseline.", "ERR_UNKNOWN_FIELD");
+	}
+	for (const field of selectedFields) {
+		if (!Object.hasOwn(choices.values ?? {}, field)) {
+			throw new ReconfigureError(`A proposed value is required for ${field}.`, "ERR_MISSING_PROPOSED_VALUE");
+		}
+	}
+	const selectedValues = Object.fromEntries(selectedFields.map(field => [field, choices.values[field]]));
+	const proposedConfig = materializeProposedConfig(config, selectedFields, selectedValues);
+	const proposedValidation = validateCanonicalConfigObject(proposedConfig);
+	if (proposedValidation.status !== "valid") {
+		const details = (proposedValidation.errors || []).map(issue => issue.message).filter(Boolean).join(" ");
+		throw new ReconfigureError(`Proposed canonical configuration is invalid.${details ? ` ${details}` : ""}`, "ERR_INVALID_PROPOSED_CONFIG");
 	}
 
 	const effects = [];
@@ -252,10 +308,7 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 			});
 			continue;
 		}
-		if (!Object.hasOwn(choices.values ?? {}, field)) {
-			throw new ReconfigureError(`A proposed value is required for ${field}.`, "ERR_MISSING_PROPOSED_VALUE");
-		}
-		const proposed = choices.values[field];
+		const proposed = selectedValues[field];
 		const aligned = sameValue(current, proposed);
 		effects.push({
 			id: `cutover:${target}:set`,
@@ -304,9 +357,9 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 	const dependencyClosure = normalizedDependencyClosure(config, choices, contribution);
 	const authorizationPayload = {
 		scope,
-		domain: choices.domain,
+		domains,
 		selectedFields,
-		valuesDigest: sha256(JSON.stringify(choices.values || {})),
+		valuesDigest: sha256(JSON.stringify(selectedValues)),
 		dependencyClosure,
 		effects: normalizedEffects.map(effectAuthorizationView),
 	};
@@ -315,10 +368,11 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 	return {
 		effects: normalizedEffects,
 		hash,
-		choicesHash: sha256(JSON.stringify({ domain: choices.domain, fields: selectedFields, values: choices.values || {}, repositories: scope })),
+		choicesHash: sha256(JSON.stringify({ domains, fields: selectedFields, values: selectedValues, repositories: scope })),
 		requiresConfirmation: blockers.length === 0 && changed,
 		dependencyClosure,
 		scope,
+		domains,
 		fingerprints: collectFingerprints(normalizedEffects),
 		itemIds: normalizedEffects.map(effect => effect.id),
 		correlationTokens: normalizedEffects.map(effect => effect.payload?.correlationToken || effect.correlationToken).filter(Boolean),
@@ -327,14 +381,32 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 	};
 }
 
+function mergeContributions(contributions) {
+	const fieldDependencies = {};
+	for (const contribution of contributions) {
+		for (const [field, dependencies] of Object.entries(contribution.fieldDependencies || {})) {
+			fieldDependencies[field] = [...new Set([...(fieldDependencies[field] || []), ...dependencies])];
+		}
+	}
+	return {
+		effects: contributions.flatMap(contribution => contribution.effects || []),
+		blockers: contributions.flatMap(contribution => contribution.blockers || []),
+		dependencyClosure: contributions.flatMap(contribution => contribution.dependencyClosure || []),
+		fieldDependencies,
+		affectedItems: contributions.flatMap(contribution => contribution.affectedItems || []),
+		collisions: contributions.flatMap(contribution => contribution.collisions || []),
+	};
+}
+
 export function plan(config, snapshot, machine, choices) {
-	let contribution = { effects: [], blockers: [], dependencyClosure: [] };
-	if (choices?.triageMappings) contribution = planTriage(config, snapshot, machine, choices);
-	else if (choices?.contextMap || choices?.artifactRoutes) contribution = planDomain(config, snapshot, machine, choices);
+	const contributions = [];
+	if (choices?.triageMappings) contributions.push(planTriage(config, snapshot, machine, choices));
+	if (choices?.contextMap || choices?.artifactRoutes) contributions.push(planDomain(config, snapshot, machine, choices));
+	const contribution = mergeContributions(contributions);
 	return {
 		...createReconfigurePlan(config, snapshot, machine, choices, contribution),
-		...(contribution.affectedItems ? { affectedItems: contribution.affectedItems } : {}),
-		...(contribution.collisions ? { collisions: contribution.collisions } : {}),
+		...(contribution.affectedItems.length > 0 ? { affectedItems: contribution.affectedItems } : {}),
+		...(contribution.collisions.length > 0 ? { collisions: contribution.collisions } : {}),
 	};
 }
 
@@ -376,6 +448,7 @@ function initialJournalState(planResult, now) {
 		planHash: planResult.hash,
 		choicesHash: planResult.choicesHash,
 		scope: [...planResult.scope],
+		domains: [...planResult.domains],
 		phase: "prepare",
 		status: "in_progress",
 		operations: planResult.effects.filter(isMutation).map(journalOperation),
@@ -526,6 +599,7 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 		schemaVersion: 1,
 		planHash: state.planHash,
 		scope: state.scope,
+		domains: state.domains,
 		status: "completed",
 		acceptedPartial: false,
 		completed: report.completed,
@@ -560,7 +634,7 @@ function journalState(record) {
 }
 
 function assertPlanMatchesJournal(planResult, state) {
-	if (state.planHash !== planResult.hash || state.choicesHash !== planResult.choicesHash || !sameValue(state.scope, planResult.scope)) {
+	if (state.planHash !== planResult.hash || state.choicesHash !== planResult.choicesHash || !sameValue(state.scope, planResult.scope) || !sameValue(state.domains, planResult.domains)) {
 		throw new ReconfigureError("The confirmed journal does not match the requested scope and choices.", "ERR_PLAN_MISMATCH");
 	}
 	const plannedIds = new Set(planResult.effects.filter(isMutation).map(effect => effect.id));
@@ -631,6 +705,7 @@ export async function acceptConfirmedPartial(config, planResult, context, adapte
 		schemaVersion: 1,
 		planHash: state.planHash,
 		scope: state.scope,
+		domains: state.domains,
 		status: "accepted_partial",
 		acceptedPartial: true,
 		completed: report.completed,

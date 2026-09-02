@@ -8,9 +8,53 @@ const BASE_CONFIG = Object.freeze({
 	runtime: Object.freeze({ session_discipline: "required", dangerous_git_guard: "enabled" }),
 });
 
+const LOCAL_JIRA_SYNC_CONFIG = Object.freeze({
+	schema_version: 1,
+	tracker: Object.freeze({ primary: "local", pull_requests: "ignore" }),
+	jira: Object.freeze({ project: "WS", default_issue_type: "Task", sync: "all_local_tickets" }),
+});
+
+const FULL_CONFIG = Object.freeze({
+	schema_version: 1,
+	tracker: Object.freeze({ primary: "local", pull_requests: "ignore" }),
+	changelog: Object.freeze({ update_mode: "pull_request", path: "CHANGELOG.md", skip_types: ["docs", "chore"] }),
+	runtime: Object.freeze({ session_discipline: "required", dangerous_git_guard: "enabled" }),
+	jira: Object.freeze({ project: "WS", default_issue_type: "Task", sync: "all_local_tickets" }),
+	docs: Object.freeze({
+		user_track: "docs",
+		dev_track: "dev-docs",
+		default_audience: "ask",
+		default_scope: "repo",
+		adr_for_arch_changes: true,
+	}),
+});
+
+const PARTIAL_DOCS_CONFIG = Object.freeze({
+	schema_version: 1,
+	docs: Object.freeze({
+		user_track: "docs",
+		dev_track: "dev-docs",
+		default_audience: "ask",
+		default_scope: "repo",
+		adr_for_arch_changes: true,
+	}),
+});
+
+const HUB_SNAPSHOT = Object.freeze({
+	shape: "hub_root",
+	entries: {},
+	repositories: [
+		{ id: "hub", type: "hub", present: true },
+		{ id: "repo-1", type: "working", present: true },
+		{ id: "absent", type: "working", present: false },
+		{ id: "input-data", type: "input", present: true },
+		{ id: "explained", type: "output", present: true },
+	],
+});
+
 function runtimeChoices(overrides = {}) {
 	return {
-		domain: "runtime",
+		domains: ["runtime"],
 		fields: ["runtime.dangerous_git_guard"],
 		values: { "runtime.dangerous_git_guard": "disabled" },
 		...overrides,
@@ -101,12 +145,103 @@ test("strict-valid v1 baseline gates route missing, legacy, older, future, and m
 	assert.throws(() => plan({ schema_version: 1, runtime: { dangerous_git_guard: "enabled" } }, snapshot, {}, choices), error => error.code === "ERR_MALFORMED_CONFIG");
 });
 
-test("standalone and hub sub-repository stay current while hub root defaults to hub alone", () => {
+test("proposed canonical state rejects invalid cross-field tracker and Jira combinations", () => {
+	assert.throws(
+		() => plan(LOCAL_JIRA_SYNC_CONFIG, { shape: "standalone", entries: {} }, {}, {
+			domains: ["tracker"],
+			fields: ["tracker.primary"],
+			values: { "tracker.primary": "jira" },
+		}),
+		error => error.code === "ERR_INVALID_PROPOSED_CONFIG" && /synchronization disabled/.test(error.message),
+	);
+	assert.throws(
+		() => plan({
+			...LOCAL_JIRA_SYNC_CONFIG,
+			tracker: { primary: "github", pull_requests: "ignore" },
+			jira: { ...LOCAL_JIRA_SYNC_CONFIG.jira, sync: "disabled" },
+		}, { shape: "standalone", entries: {} }, {}, {
+			domains: ["tracker"],
+			fields: ["jira.sync"],
+			values: { "jira.sync": "all_local_tickets" },
+		}),
+		error => error.code === "ERR_INVALID_PROPOSED_CONFIG" && /Local primary/.test(error.message),
+	);
+});
+
+test("valid simultaneous cross-field repair and valid partial no-op remain plannable", () => {
+	const repaired = plan(LOCAL_JIRA_SYNC_CONFIG, { shape: "standalone", entries: {} }, {}, {
+		domains: ["tracker"],
+		fields: ["tracker.primary", "jira.sync"],
+		values: { "tracker.primary": "jira", "jira.sync": "disabled" },
+	});
+	assert.equal(repaired.requiresConfirmation, true);
+	const partial = plan(PARTIAL_DOCS_CONFIG, { shape: "standalone", entries: {} }, {}, {
+		domains: ["documentation"],
+		fields: ["docs.default_audience"],
+		values: { "docs.default_audience": "ask" },
+	});
+	assert.equal(partial.requiresConfirmation, false);
+});
+
+test("standalone and hub sub-repository stay current while hub root defaults to eligible hub alone", () => {
 	const choices = runtimeChoices();
 	assert.deepEqual(plan(BASE_CONFIG, { shape: "standalone", repositoryId: "repo-1" }, {}, choices).scope, ["repo-1"]);
 	assert.deepEqual(plan(BASE_CONFIG, { shape: "hub_subrepository", repositoryId: "repo-2" }, {}, choices).scope, ["repo-2"]);
-	assert.deepEqual(plan(BASE_CONFIG, { shape: "hub_root" }, {}, choices).scope, ["hub"]);
-	assert.deepEqual(plan(BASE_CONFIG, { shape: "hub_root" }, {}, runtimeChoices({ repositories: ["hub", "repo-1", "repo-1"] })).scope, ["hub", "repo-1"]);
+	assert.deepEqual(plan(BASE_CONFIG, HUB_SNAPSHOT, {}, choices).scope, ["hub"]);
+	assert.deepEqual(plan(BASE_CONFIG, HUB_SNAPSHOT, {}, runtimeChoices({ repositories: ["hub", "repo-1", "repo-1"] })).scope, ["hub", "repo-1"]);
+});
+
+test("hub scope rejects unknown, input, output, absent, and undiscovered repository targets before effects", () => {
+	for (const repository of ["unknown", "input-data", "explained", "absent"]) {
+		assert.throws(
+			() => plan(BASE_CONFIG, HUB_SNAPSHOT, {}, runtimeChoices({ repositories: [repository] })),
+			error => error.code === "ERR_INELIGIBLE_REPOSITORY_SCOPE" && error.message.includes(repository),
+		);
+	}
+	assert.throws(
+		() => plan(BASE_CONFIG, { shape: "hub_root", entries: {} }, {}, runtimeChoices()),
+		error => error.code === "ERR_INVALID_HUB_SCOPE",
+	);
+});
+
+test("multi-domain and all selections normalize to the complete three-domain contract", () => {
+	const fields = ["tracker.pull_requests", "docs.default_audience", "runtime.dangerous_git_guard"];
+	const values = {
+		"tracker.pull_requests": "triage",
+		"docs.default_audience": "dev",
+		"runtime.dangerous_git_guard": "disabled",
+	};
+	const multi = plan(FULL_CONFIG, { shape: "standalone", repositoryId: "repo", entries: {} }, {}, {
+		domains: ["runtime", "tracker", "documentation", "tracker"],
+		fields,
+		values,
+	});
+	const all = plan(FULL_CONFIG, { shape: "standalone", repositoryId: "repo", entries: {} }, {}, {
+		domains: ["all"],
+		fields,
+		values,
+	});
+	assert.deepEqual(multi.domains, ["tracker", "documentation", "runtime"]);
+	assert.deepEqual(all.domains, multi.domains);
+	assert.equal(all.hash, multi.hash);
+	assert.equal(all.choicesHash, multi.choicesHash);
+	assert.equal(multi.effects.find(effect => effect.target === "config:jira.sync").classification, "PRESERVE");
+	assert.throws(
+		() => plan(FULL_CONFIG, { shape: "standalone", entries: {} }, {}, {
+			domains: ["runtime"],
+			fields: ["docs.default_audience"],
+			values: { "docs.default_audience": "dev" },
+		}),
+		error => error.code === "ERR_FIELD_OUTSIDE_DOMAINS",
+	);
+	assert.throws(
+		() => plan(BASE_CONFIG, { shape: "standalone", entries: {} }, {}, {
+			domain: "runtime",
+			fields: ["runtime.dangerous_git_guard"],
+			values: { "runtime.dangerous_git_guard": "disabled" },
+		}),
+		error => error.code === "ERR_INVALID_DOMAINS",
+	);
 });
 
 test("selected fields patch minimally and report every unselected field, artifact, and dependency", () => {
@@ -120,7 +255,7 @@ test("selected fields patch minimally and report every unselected field, artifac
 });
 
 test("invalid concrete selection and cancelled dependency closure leave the proposal unapplied", () => {
-	assert.throws(() => plan(BASE_CONFIG, { shape: "standalone" }, {}, runtimeChoices({ fields: ["tracker.primary"] })), error => error.code === "ERR_FIELD_OUTSIDE_DOMAIN");
+	assert.throws(() => plan(BASE_CONFIG, { shape: "standalone" }, {}, runtimeChoices({ fields: ["tracker.primary"] })), error => error.code === "ERR_FIELD_OUTSIDE_DOMAINS");
 	assert.throws(() => plan(BASE_CONFIG, { shape: "standalone" }, {}, runtimeChoices({ values: {} })), error => error.code === "ERR_MISSING_PROPOSED_VALUE");
 	assert.throws(() => plan(BASE_CONFIG, { shape: "standalone" }, {}, runtimeChoices({ cancelDependent: true })), error => error.code === "ERR_DEPENDENT_CANCELLED");
 });
@@ -162,6 +297,7 @@ test("journal is secret-free, typed by scope/fingerprints/items/correlation, and
 	assert.equal(interrupted.success, false);
 	const state = adapters.getJournal().state;
 	assert.deepEqual(state.scope, ["repo"]);
+	assert.deepEqual(state.domains, ["runtime"]);
 	assert.deepEqual(Object.keys(state.fingerprints).sort(), ["local", "machine", "remote"]);
 	assert.deepEqual(state.operations.map(operation => operation.id), planned.effects.filter(effect => ["CREATE", "UPDATE", "DELETE"].includes(effect.classification)).map(effect => effect.id));
 	assert.ok(Array.isArray(state.correlationTokens));
@@ -256,6 +392,7 @@ test("successful transaction verifies every effect and writes durable audit befo
 	assert.equal(applied.success, true);
 	assert.deepEqual(adapters.getVerified(), adapters.getApplied());
 	assert.equal(adapters.getAudit().timestamp, NOW_FIXTURE);
+	assert.deepEqual(adapters.getAudit().domains, ["runtime"]);
 	assert.equal(adapters.getAudit().noRollback, true);
 	assert.equal(adapters.getJournal(), null);
 	assert.equal(applied.ownershipReport.repo, "owned");

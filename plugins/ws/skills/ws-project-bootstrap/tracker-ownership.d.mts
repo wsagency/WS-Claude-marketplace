@@ -5,7 +5,9 @@ import type {
 	ReconfigureApplyResult,
 	ReconfigureEffect,
 	ReconfigureInjection,
+	ReconfigureDomainSelection,
 	ReconfigurePlanResult,
+	ReconfigureRepositoryTarget,
 } from "./reconfigure.d.mts";
 
 export type TrackerDisposition = "preserve-as-history" | "copy-selected" | "copy-open" | "copy-all" | "cancel";
@@ -17,7 +19,7 @@ export interface TrackerStoreDisposition {
 }
 
 export interface TrackerOwnershipChoices {
-	domain?: "tracker";
+	domains: ReconfigureDomainSelection[];
 	fields: string[];
 	values?: Record<string, unknown>;
 	sourceTracker: string;
@@ -32,6 +34,8 @@ export interface TrackerOwnershipChoices {
 	ownershipFingerprint?: unknown;
 	shape?: "standalone" | "hub_root" | "hub_subrepository";
 	repositoryId?: string;
+	repositories?: string[];
+	repositoryInventory?: ReconfigureRepositoryTarget[];
 	machine?: Record<string, unknown>;
 }
 

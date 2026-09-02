@@ -93,7 +93,12 @@ function trackerSnapshot(localStore, choices) {
 			fingerprint: remoteFingerprint(ticket),
 		};
 	}
-	return { shape: choices.shape || "standalone", repositoryId: choices.repositoryId || "current", entries };
+	return {
+		shape: choices.shape || "standalone",
+		repositoryId: choices.repositoryId || "current",
+		entries,
+		repositories: choices.repositoryInventory,
+	};
 }
 
 export function planTrackerOwnership(config, localStore, syncState, choices) {
@@ -213,7 +218,7 @@ export function planTrackerOwnership(config, localStore, syncState, choices) {
 		});
 	}
 
-	const normalizedChoices = { ...choices, domain: "tracker", values: choices.values || {} };
+	const normalizedChoices = { ...choices, values: choices.values || {} };
 	const snapshot = trackerSnapshot(localStore, choices);
 	const plan = createReconfigurePlan(config, snapshot, choices.machine || {}, normalizedChoices, {
 		effects,

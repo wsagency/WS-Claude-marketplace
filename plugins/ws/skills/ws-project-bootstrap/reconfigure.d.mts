@@ -1,7 +1,8 @@
 import type { CanonicalProjectConfig, DerivedSetupReadiness } from "./config.d.mts";
 import type { ProjectShape } from "./transaction.d.mts";
 
-export type ReconfigureDomain = "runtime" | "tracker" | "docs" | "changelog";
+export type ReconfigureDomain = "tracker" | "documentation" | "runtime";
+export type ReconfigureDomainSelection = ReconfigureDomain | "all";
 export type ReconfigurePhase = "prepare" | "cutover" | "cleanup" | "done";
 export type ReconfigureClassification = "CREATE" | "UPDATE" | "DELETE" | "PRESERVE" | "SKIP" | "NO-OP" | "BLOCKING_CONFLICT";
 export type TriageRole = "needs_triage" | "needs_info" | "ready_for_agent" | "ready_for_human" | "wontfix";
@@ -27,11 +28,18 @@ export interface ReconfigureSnapshotEntry {
 	remoteFingerprintAfterCutover?: unknown;
 }
 
+
+export interface ReconfigureRepositoryTarget {
+	id: string;
+	type: "hub" | "working" | "input" | "output";
+	present: boolean;
+}
 export interface ReconfigureTargetSnapshot {
 	isRepository?: boolean;
 	shape: ProjectShape;
 	repositoryId?: string;
 	entries?: Record<string, ReconfigureSnapshotEntry>;
+	repositories?: ReconfigureRepositoryTarget[];
 }
 
 export interface DomainArtifactRoute {
@@ -44,7 +52,7 @@ export interface DomainArtifactRoute {
 }
 
 export interface ReconfigureChoices {
-	domain: ReconfigureDomain;
+	domains: ReconfigureDomainSelection[];
 	fields: string[];
 	values?: Record<string, unknown>;
 	repositories?: string[];
@@ -110,6 +118,7 @@ export interface ReconfigurePlanResult {
 	requiresConfirmation: boolean;
 	dependencyClosure: ReconfigureDependency[];
 	scope: string[];
+	domains: ReconfigureDomain[];
 	fingerprints: ReconfigureFingerprints;
 	itemIds: string[];
 	correlationTokens: string[];
@@ -136,6 +145,7 @@ export interface ReconfigureJournalState {
 	planHash: string;
 	choicesHash: string;
 	scope: string[];
+	domains: ReconfigureDomain[];
 	phase: ReconfigurePhase;
 	status: "in_progress" | "failed" | "completed";
 	operations: ReconfigureJournalOperation[];

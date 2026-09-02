@@ -77,7 +77,7 @@ function mockAdapters(overrides = {}) {
 
 function changelogMove(overrides = {}) {
 	return {
-		domain: "changelog",
+		domains: ["documentation"],
 		fields: ["changelog.path"],
 		values: { "changelog.path": "docs/CHANGELOG.md" },
 		pathTransitions: [{
@@ -98,7 +98,7 @@ function changelogMove(overrides = {}) {
 
 test("documentation and changelog fields are independently selectable and all unselected policy/artifacts are preserved", () => {
 	const selected = {
-		domain: "docs",
+		domains: ["documentation"],
 		fields: ["docs.default_audience"],
 		values: { "docs.default_audience": "user" },
 	};
@@ -112,14 +112,14 @@ test("documentation and changelog fields are independently selectable and all un
 
 test("policy-only changes touch canonical policy only when no managed reference depends on them", () => {
 	const audience = plan(BASE_CONFIG, DISCOVERY, {
-		domain: "docs",
+		domains: ["documentation"],
 		fields: ["docs.default_audience"],
 		values: { "docs.default_audience": "dev" },
 	});
 	assert.deepEqual(audience.effects.filter(effect => ["CREATE", "UPDATE", "DELETE"].includes(effect.classification)).map(effect => effect.target), ["config:docs.default_audience"]);
 
 	const cadence = plan(BASE_CONFIG, DISCOVERY, {
-		domain: "changelog",
+		domains: ["documentation"],
 		fields: ["changelog.update_mode"],
 		values: { "changelog.update_mode": "commit" },
 	});
@@ -127,7 +127,7 @@ test("policy-only changes touch canonical policy only when no managed reference 
 });
 
 test("documentation enablement composes the shared missing-only bootstrap and preserves authored files", () => {
-	const result = plan(BASE_CONFIG, DISCOVERY, { domain: "docs", fields: [], enableDocs: true });
+	const result = plan(BASE_CONFIG, DISCOVERY, { domains: ["documentation"], fields: [], enableDocs: true });
 	assert.equal(result.effects.find(effect => effect.target === "docs")?.classification, "PRESERVE");
 	assert.equal(result.effects.find(effect => effect.target === "docs/index.md")?.classification, "PRESERVE");
 	assert.equal(result.effects.find(effect => effect.target === "dev-docs")?.classification, "CREATE");
@@ -136,7 +136,7 @@ test("documentation enablement composes the shared missing-only bootstrap and pr
 });
 
 test("documentation disablement preserves every existing document and authored directory", async () => {
-	const selected = { domain: "docs", fields: [], disableDocs: true };
+	const selected = { domains: ["documentation"], fields: [], disableDocs: true };
 	const result = plan(BASE_CONFIG, DISCOVERY, selected);
 	for (const target of ["CHANGELOG.md", "docs", "docs/index.md", "AGENTS.md"]) {
 		assert.equal(result.effects.find(effect => effect.target === target)?.classification, "PRESERVE");
@@ -239,7 +239,7 @@ test("reviewed valid partial state can be accepted before source cleanup and rec
 
 test("aligned documentation policy is prompt-free and writes nothing", async () => {
 	const selected = {
-		domain: "docs",
+		domains: ["documentation"],
 		fields: ["docs.default_audience"],
 		values: { "docs.default_audience": "ask" },
 	};

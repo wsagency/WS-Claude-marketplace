@@ -18,7 +18,7 @@ const CONFIG = Object.freeze({
 
 function triageChoices(overrides = {}) {
 	return {
-		domain: "tracker",
+		domains: ["tracker"],
 		fields: ["triage.labels.needs_triage"],
 		values: { "triage.labels.needs_triage": "queue/triage" },
 		triageMappings: { needs_triage: { newLabel: "queue/triage" } },
@@ -28,7 +28,7 @@ function triageChoices(overrides = {}) {
 
 function domainChoices(routes, overrides = {}) {
 	return {
-		domain: "tracker",
+		domains: ["tracker"],
 		fields: ["domain.layout"],
 		values: { "domain.layout": "multi_context" },
 		artifactRoutes: routes,
