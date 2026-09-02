@@ -42,6 +42,16 @@ Return only the state delta: `DONE|<repository-root>/.wsagency/config.yaml`, the
 
 **Artifact language.** Every generated artifact and report is English regardless of the conversation language.
 
+## Reconfigure Contract
+
+The `reconfigure.mjs` module provides intentional policy-change transactions over a strict-valid baseline configuration.
+
+Contract exports:
+- `plan(config, snapshot, machine, choices)`: Validates strict-schema constraints, handles hub/standalone scoping, updates selected fields (while mapping unselected to `PRESERVE`), surfaces dependency closures, and produces a plan hash.
+- `apply(planHash, effects, adapters, injection)`: Executes prepare, cutover, and cleanup phases using a transient secret-free journal. Stops on the first failure without rollback.
+- `resume(adapters, injection)`: Resumes a previously interrupted execution from the journal.
+- `acceptPartial(adapters)`: Resolves an interrupted operation by writing an audit record and dropping the journal for a reviewed valid partial state.
+
 ## Graph node
 
 - **Tier:** model-invoked worker
