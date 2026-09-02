@@ -3,17 +3,21 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import {
+	applyPlan,
+	buildPlan,
 	CANONICAL_CONFIG_YAML,
-	RECOMMENDED_LOCAL_CHOICES,
+	deriveReadiness,
 	discoverStandaloneRepository,
-	runSetupTransaction,
+	preflightPlan,
+	RECOMMENDED_LOCAL_CHOICES,
 } from "./transaction.mjs";
 import {
 	parseCanonicalConfigYaml,
 	serializeCanonicalConfig,
 	validateCanonicalConfig,
 } from "./config.mjs";
-import { applyDocumentation, discoverDocumentation, planDocumentation } from "../ws-docs-bootstrap/transaction.mjs";
+import { applyDocumentation, discoverDocumentation, planDocumentation, preflightDocumentation } from "../ws-docs-bootstrap/transaction.mjs";
+import { applyLegacyCleanup, discoverLegacySetup, planLegacyMigration } from "./migration.mjs";
 
 const REGISTRY_KEYS = new Set(["name", "path", "url", "description", "tech", "type", "purpose"]);
 const REPOSITORY_TYPES = new Set(["working", "input", "output"]);
@@ -186,6 +190,14 @@ async function discoverSelectedRepository(hubRoot, repository, machine) {
 			errors.push(`Repository discovery failed: ${error.message}`);
 		}
 	}
+	let legacy = null;
+	if (errors.length === 0) {
+		try {
+			legacy = await discoverLegacySetup(discovery.root, machine);
+		} catch (error) {
+			errors.push(`Legacy setup discovery failed: ${error.message}`);
+		}
+	}
 	if (!discovery.git.isRepository || discovery.git.root !== discovery.root) errors.push("Target is not an independent Git worktree.");
 	const origin = normalizeOrigin(discovery.git.origin);
 	if (!origin) errors.push("Target does not have a valid required origin.");
@@ -199,6 +211,7 @@ async function discoverSelectedRepository(hubRoot, repository, machine) {
 		name: repository.name,
 		registry: { ...repository, normalizedPath: path.relative(hubRoot, requestedRoot) || "." },
 		identity: { name: repository.name, root: discovery.root, origin },
+		legacy,
 		preflightErrors: [...new Set(errors)],
 	};
 }
@@ -216,6 +229,12 @@ function validateHubDiscovery(discovery) {
 export async function discoverHubTransaction(root, machine) {
 	const absoluteRoot = await fs.realpath(path.resolve(root));
 	const hub = validateHubDiscovery(await discoverStandaloneRepository(absoluteRoot, machine));
+	try {
+		hub.legacy = await discoverLegacySetup(hub.root, machine);
+	} catch (error) {
+		hub.legacy = null;
+		hub.preflightErrors.push(`Legacy setup discovery failed: ${error.message}`);
+	}
 	let projectYaml = null;
 	let repositories = [];
 	let registryError = null;
@@ -265,7 +284,12 @@ function pathsOverlap(left, right) {
 }
 
 function transactionBlockers(repository, transaction, docsPlan) {
-	const blockers = [...repository.preflightErrors.map(reason => ({ repository: repository.name, root: repository.root, reason }))];
+	const blockers = [...repository.preflightErrors.map(reason => ({
+		repository: repository.name,
+		root: repository.root,
+		...(/^Canonical configuration path/.test(reason) ? { target: ".wsagency/config.yaml" } : {}),
+		reason,
+	}))];
 	for (const effect of [...(transaction.plan?.effects ?? []), ...(docsPlan?.effects ?? [])]) {
 		if (effect.classification === "BLOCKING_CONFLICT") blockers.push({ repository: repository.name, root: repository.root, target: effect.target, reason: effect.reason });
 	}
@@ -278,13 +302,14 @@ function transactionBlockers(repository, transaction, docsPlan) {
 	return blockers;
 }
 
-function targetFingerprint(repository, corePlan, docsPlan) {
+function targetFingerprint(repository, corePlan, docsPlan, legacyPlan) {
 	return sha256(JSON.stringify({
 		identity: repository.identity,
 		head: repository.git.head,
 		dirty: repository.git.dirty,
 		core: corePlan?.hash ?? null,
 		docs: docsPlan?.hash ?? null,
+		legacy: legacyPlan?.hash ?? null,
 	}));
 }
 
@@ -298,6 +323,45 @@ function normalizeMigrationConfig(source) {
 	const config = parseCanonicalConfigYaml(source);
 	config.schema_version = 1;
 	return serializeCanonicalConfig(config);
+}
+
+function materializeReviewedMigrationPlan(corePlan, legacyPlan) {
+	const reviewedReplacements = new Map(
+		(legacyPlan?.effects ?? [])
+			.filter(effect => effect.classification === "UPDATE" && typeof effect.after === "string")
+			.map(effect => [effect.target, effect]),
+	);
+	let changed = false;
+	const effects = corePlan.effects.map(effect => {
+		const replacement = reviewedReplacements.get(effect.target);
+		if (!replacement || effect.classification !== "BLOCKING_CONFLICT") return effect;
+		changed = true;
+		return {
+			...effect,
+			classification: "UPDATE",
+			reason: "Apply the reviewed semantic legacy migration while preserving authored content.",
+			after: replacement.after,
+			diff: replacement.diff,
+		};
+	});
+	return changed ? { ...corePlan, effects, hash: sha256(JSON.stringify({ delegated: corePlan.hash, effects })) } : corePlan;
+}
+
+function hasSemanticRepositoryState(legacy) {
+	if (!legacy) return false;
+	if (legacy.entries[".wsagency/config.yaml"]?.kind !== "missing") return true;
+	return Object.entries(legacy.entries).some(([target, entry]) =>
+		target !== ".wsagency/config.yaml" && entry.kind !== "missing",
+	);
+}
+
+function targetSpecificChoices(choices, repository, hub) {
+	return repository === hub ? choices.hub ?? {} : choices.working?.[repository.name] ?? {};
+}
+
+function migrationOptions(choices, repository, hub) {
+	const targetChoices = targetSpecificChoices(choices, repository, hub);
+	return targetChoices.migration ?? choices.migration?.[repository.name] ?? {};
 }
 
 function projectDocumentationDiscovery(discovery, corePlan) {
@@ -316,25 +380,32 @@ function projectDocumentationDiscovery(discovery, corePlan) {
 	return { ...discovery, entries };
 }
 
-function plannedPaths(corePlan, docsPlan) {
+function plannedPaths(corePlan, docsPlan, legacyPlan) {
 	const managedRanges = {
 		"dev-docs/agents/issue-tracker.md": "managed:WS-MANAGED:issue-tracker",
 		"dev-docs/agents/triage-labels.md": "managed:WS-MANAGED:triage-labels",
 		"dev-docs/agents/domain.md": "managed:WS-MANAGED:domain",
 		"AGENTS.md": "managed:WS-AGENT-SKILLS",
 	};
-	return [
+	const effects = [
 		...(corePlan?.effects ?? []).map(effect => ({ ...effect, phase: "core" })),
 		...(docsPlan?.effects ?? []).map(effect => ({ ...effect, phase: "docs" })),
-	]
-		.filter(effect => effect.kind !== "state" && effect.classification !== "SKIP")
-		.map(effect => ({
-			phase: effect.phase,
-			target: effect.target,
-			classification: effect.classification,
-			range: managedRanges[effect.target] ?? (effect.kind === "file" ? "full-file" : "directory"),
-			diff: effect.diff,
-		}));
+		...(legacyPlan?.effects ?? [])
+			.filter(effect => effect.order >= 900)
+			.map(effect => ({ ...effect, phase: "cleanup" })),
+	].filter(effect => effect.kind !== "state" && effect.classification !== "SKIP");
+	const seen = new Set();
+	for (const effect of effects.filter(isWriteEffect)) {
+		if (seen.has(effect.target)) throw new Error(`Duplicate planned target across composite phases: ${effect.target}.`);
+		seen.add(effect.target);
+	}
+	return effects.map(effect => ({
+		phase: effect.phase,
+		target: effect.target,
+		classification: effect.classification,
+		range: managedRanges[effect.target] ?? (effect.kind === "file" ? "full-file" : "directory"),
+		diff: effect.diff,
+	}));
 }
 
 async function buildComposite(discovery, choices) {
@@ -344,57 +415,93 @@ async function buildComposite(discovery, choices) {
 		...discovery.excluded,
 		...discovery.working.filter(repository => removed.has(repository.name)).map(repository => ({ name: repository.name, type: "working", reason: "Explicitly excluded from this setup run." })),
 	];
-	const documentation = choices.documentation === true;
-	const existingHubConfig = discovery.hub.entries[".wsagency/config.yaml"]?.kind === "file"
-		? discovery.hub.entries[".wsagency/config.yaml"].content
-		: undefined;
+	const requestedDocumentation = choices.documentation === true;
+	const legacyPlans = new Map();
+	for (const repository of selected) {
+		if (repository.legacy) {
+			legacyPlans.set(repository.name, planLegacyMigration(
+				repository.legacy,
+				migrationOptions(choices, repository, discovery.hub),
+			));
+		}
+	}
+
+	const hubLegacy = legacyPlans.get(discovery.hub.name);
 	let hubConfig = CANONICAL_CONFIG_YAML;
 	let hubConfigError = null;
 	try {
-		hubConfig = mergeConfig(CANONICAL_CONFIG_YAML, existingHubConfig ? normalizeMigrationConfig(existingHubConfig) : undefined);
-		if (documentation && discovery.hub.preflightErrors.length === 0) {
+		if (hubLegacy?.config) hubConfig = serializeCanonicalConfig(hubLegacy.config);
+		else {
+			const existingHubConfig = discovery.hub.entries[".wsagency/config.yaml"]?.kind === "file"
+				? discovery.hub.entries[".wsagency/config.yaml"].content
+				: undefined;
+			hubConfig = mergeConfig(CANONICAL_CONFIG_YAML, existingHubConfig ? normalizeMigrationConfig(existingHubConfig) : undefined);
+		}
+		if ((requestedDocumentation || hubLegacy?.config?.docs) && discovery.hub.preflightErrors.length === 0) {
 			const docsDiscovery = await discoverDocumentation(discovery.hub.root, discovery.hub.projectShape, parseCanonicalConfigYaml(hubConfig));
 			hubConfig = configWithFragment(hubConfig, planDocumentation(docsDiscovery).configFragment);
 		}
 	} catch (error) {
 		hubConfigError = `Cannot materialize hub canonical configuration: ${error.message}`;
 	}
+
 	const targets = [];
 	const blockers = [];
 	for (const repository of selected) {
-		const localErrors = [...repository.preflightErrors];
+		const legacyPlan = legacyPlans.get(repository.name);
+		const localErrors = [
+			...repository.preflightErrors,
+			...(legacyPlan?.blockers ?? []),
+		];
 		if (repository === discovery.hub && hubConfigError) localErrors.push(hubConfigError);
 		let targetConfig = hubConfig;
-		if (repository !== discovery.hub) {
-			const explicit = repository.entries[".wsagency/config.yaml"]?.kind === "file" ? repository.entries[".wsagency/config.yaml"].content : undefined;
+		if (repository !== discovery.hub && legacyPlan?.config && hasSemanticRepositoryState(repository.legacy)) {
 			try {
-				targetConfig = mergeConfig(hubConfig, explicit ? normalizeMigrationConfig(explicit) : undefined);
+				targetConfig = mergeConfig(hubConfig, serializeCanonicalConfig(legacyPlan.config));
 			} catch (error) {
 				localErrors.push(`Cannot materialize canonical configuration: ${error.message}`);
 			}
 		}
-		const plannedRepository = { ...repository, preflightErrors: localErrors };
-		const coreChoices = { ...RECOMMENDED_LOCAL_CHOICES, ...(repository === discovery.hub ? choices.hub : choices.working?.[repository.name]), targetConfig };
-		const transaction = localErrors.length === 0
-			? await runSetupTransaction({ root: repository.root, discovery: repository, choices: coreChoices })
-			: { plan: undefined, operations: [], requiresConfirmation: false, report: "Preflight blocked." };
-		let docsPlan;
-		if (documentation && transaction.plan) {
-			const docsDiscovery = await discoverDocumentation(repository.root, repository.projectShape, parseCanonicalConfigYaml(targetConfig));
-			docsPlan = planDocumentation(projectDocumentationDiscovery(docsDiscovery, transaction.plan));
+		const targetChoices = targetSpecificChoices(choices, repository, discovery.hub);
+		const coreChoices = { ...RECOMMENDED_LOCAL_CHOICES, ...targetChoices, targetConfig };
+		let corePlan;
+		if (localErrors.length === 0) {
+			corePlan = materializeReviewedMigrationPlan(buildPlan(repository, coreChoices), legacyPlan);
 		}
+		const transaction = {
+			plan: corePlan,
+			operations: [],
+			requiresConfirmation: Boolean(corePlan?.effects.some(isWriteEffect)),
+			report: localErrors.length === 0 ? "Composite core plan ready." : "Preflight blocked.",
+		};
+		let docsPlan;
+		const documentation = requestedDocumentation || Boolean(parseCanonicalConfigYaml(targetConfig).docs);
+		if (documentation && corePlan) {
+			const docsDiscovery = await discoverDocumentation(repository.root, repository.projectShape, parseCanonicalConfigYaml(targetConfig));
+			docsPlan = planDocumentation(projectDocumentationDiscovery(docsDiscovery, corePlan));
+		}
+		const plannedRepository = { ...repository, preflightErrors: localErrors };
 		const repositoryBlockers = transactionBlockers(plannedRepository, transaction, docsPlan);
 		blockers.push(...repositoryBlockers);
+		let paths = [];
+		try {
+			paths = plannedPaths(corePlan, docsPlan, legacyPlan);
+		} catch (error) {
+			const blocker = { repository: repository.name, root: repository.root, reason: error.message };
+			repositoryBlockers.push(blocker);
+			blockers.push(blocker);
+		}
 		targets.push({
 			name: repository.name,
 			root: repository.root,
 			role: repository === discovery.hub ? "hub" : "working",
 			identity: repository.identity,
-			fingerprint: targetFingerprint(repository, transaction.plan, docsPlan),
+			fingerprint: targetFingerprint(repository, corePlan, docsPlan, legacyPlan),
 			coreChoices,
-			core: transaction.plan,
+			core: corePlan,
 			docs: docsPlan,
-			plannedPaths: plannedPaths(transaction.plan, docsPlan),
+			legacy: legacyPlan,
+			plannedPaths: paths,
 			dirtyPaths: [...repository.git.dirty],
 			blockers: repositoryBlockers,
 			transaction,
@@ -404,13 +511,14 @@ async function buildComposite(discovery, choices) {
 	const hashPayload = {
 		registryFingerprint: discovery.registryFingerprint,
 		removed: [...removed],
-		documentation,
+		documentation: requestedDocumentation,
 		targets: targets.map(target => ({
 			name: target.name,
 			identity: target.identity,
 			fingerprint: target.fingerprint,
 			core: target.core?.hash ?? null,
 			docs: target.docs?.hash ?? null,
+			legacy: target.legacy?.hash ?? null,
 		})),
 		excluded: excluded.map(repository => ({ name: repository.name, type: repository.type, purpose: repository.purpose })),
 	};
@@ -421,7 +529,7 @@ async function buildComposite(discovery, choices) {
 			scope: { root: discovery.root, projectShape: "hub_root" },
 			registryFingerprint: discovery.registryFingerprint,
 			hub: targets[0]?.core,
-			working: targets.slice(1).map(target => ({ name: target.name, plan: target.core, docs: target.docs })),
+			working: targets.slice(1).map(target => ({ name: target.name, plan: target.core, docs: target.docs, legacy: target.legacy })),
 			targets: targets.map(({ transaction, coreChoices, ...target }) => target),
 			excluded,
 		},
@@ -433,7 +541,8 @@ async function buildComposite(discovery, choices) {
 function staticOutcomes(plan) {
 	const outcomes = plan.excluded.map(repository => ({ repository: repository.name, phase: "preflight", status: "excluded", detail: repository.reason }));
 	for (const target of plan.targets) {
-		for (const [phase, effects] of [["core", target.core?.effects ?? []], ["docs", target.docs?.effects ?? []]]) {
+		const cleanupEffects = (target.legacy?.effects ?? []).filter(effect => effect.order >= 900);
+		for (const [phase, effects] of [["core", target.core?.effects ?? []], ["docs", target.docs?.effects ?? []], ["cleanup", cleanupEffects]]) {
 			for (const effect of effects) {
 				if (effect.classification === "PRESERVE") outcomes.push({ repository: target.name, phase, status: "preserved", target: effect.target });
 				else if (effect.classification === "SKIP") outcomes.push({ repository: target.name, phase, status: "skipped", target: effect.target });
@@ -492,7 +601,9 @@ function recordReadiness(readiness, target, targetReadiness) {
 }
 
 function writeEffects(target, phase) {
-	return (phase === "core" ? target.core?.effects : target.docs?.effects)?.filter(isWriteEffect) ?? [];
+	if (phase === "core") return target.core?.effects.filter(isWriteEffect) ?? [];
+	if (phase === "docs") return target.docs?.effects.filter(isWriteEffect) ?? [];
+	return target.legacy?.effects.filter(effect => effect.order >= 900 && isWriteEffect(effect)) ?? [];
 }
 
 function addEffectOutcomes(outcomes, repository, phase, status, effects) {
@@ -528,7 +639,7 @@ export async function runHubTransaction(request) {
 		return result(request.discovery, composite.plan, [], composite.blockers, outcomes, "Hub setup is blocked before authorization.");
 	}
 	const requiresConfirmation = composite.targets.some(target =>
-		[...(target.core?.effects ?? []), ...(target.docs?.effects ?? [])].some(isWriteEffect),
+		["core", "docs", "cleanup"].some(phase => writeEffects(target, phase).length > 0),
 	);
 	if (!requiresConfirmation) {
 		return result(request.discovery, composite.plan, [], [], outcomes, "No changes required", compositeReadiness(composite));
@@ -543,12 +654,33 @@ export async function runHubTransaction(request) {
 
 	const freshDiscovery = await discoverHubTransaction(request.root, request.discovery.machine);
 	const freshComposite = await buildComposite(freshDiscovery, choices);
+	const documentationTargets = [
+		...freshComposite.targets.filter(target => target.role === "working" && target.docs),
+		...freshComposite.targets.filter(target => target.role === "hub" && target.docs),
+	];
+	const cleanupTargets = [
+		...freshComposite.targets.filter(target => target.role === "working" && writeEffects(target, "cleanup").length > 0),
+		...freshComposite.targets.filter(target => target.role === "hub" && writeEffects(target, "cleanup").length > 0),
+	];
 	if (request.authorization !== freshComposite.plan.hash) {
 		outcomes = staticOutcomes(freshComposite.plan);
 		outcomes.push({ repository: "hub", phase: "authorization", status: "failed", detail: "Composite manifest drifted before apply." });
 		addPending(outcomes, freshComposite.targets, 0, "core");
-		if (choices.documentation === true) addPending(outcomes, freshComposite.targets, 0, "docs");
+		addPending(outcomes, documentationTargets, 0, "docs");
+		addPending(outcomes, cleanupTargets, 0, "cleanup");
 		return result(freshDiscovery, freshComposite.plan, [], [], outcomes, "Authorization is stale; no cross-repository writes were performed.", compositeReadiness(freshComposite));
+	}
+
+	try {
+		for (const target of freshComposite.targets) await preflightPlan(target.root, target.core);
+		for (const target of documentationTargets) await preflightDocumentation(target.root, target.docs);
+	} catch (error) {
+		outcomes = staticOutcomes(freshComposite.plan);
+		outcomes.push({ repository: "hub", phase: "preflight", status: "failed", detail: error.message });
+		addPending(outcomes, freshComposite.targets, 0, "core");
+		addPending(outcomes, documentationTargets, 0, "docs");
+		addPending(outcomes, cleanupTargets, 0, "cleanup");
+		return result(freshDiscovery, freshComposite.plan, [], [], outcomes, "Global composite preflight failed; no mutations were performed.", compositeReadiness(freshComposite));
 	}
 
 	outcomes = staticOutcomes(freshComposite.plan);
@@ -560,82 +692,91 @@ export async function runHubTransaction(request) {
 	} catch (error) {
 		outcomes.push({ repository: "machine", phase: "machine", status: "failed", detail: error.message });
 		addPending(outcomes, freshComposite.targets, 0, "core");
-		if (choices.documentation === true) addPending(outcomes, freshComposite.targets, 0, "docs");
+		addPending(outcomes, documentationTargets, 0, "docs");
+		addPending(outcomes, cleanupTargets, 0, "cleanup");
 		return result(freshDiscovery, freshComposite.plan, operations, [], outcomes, "Machine prerequisites failed; repositories were not touched.", readiness);
 	}
 
 	for (let index = 0; index < freshComposite.targets.length; index += 1) {
 		const target = freshComposite.targets[index];
-		let transaction;
+		let applyResult;
 		try {
 			if (request.beforePhase) await request.beforePhase({ repository: target.name, root: target.root, phase: "core" });
 			const boundaryDiscovery = await discoverStandaloneRepository(target.root, freshDiscovery.machine);
-			const boundaryPlan = await runSetupTransaction({ root: target.root, discovery: boundaryDiscovery, choices: target.coreChoices });
-			if (boundaryPlan.plan?.hash !== target.core?.hash) throw new Error("Root fingerprint drifted immediately before its first write.");
-			transaction = await runSetupTransaction({
-				root: target.root,
-				discovery: boundaryDiscovery,
-				choices: target.coreChoices,
-				authorization: target.core.hash,
-				injectedFailure: coreFailureInjection(request, target, injectedFailureRoot),
-			});
-			operations.push(...transaction.operations.map(operation => ({ ...operation, repository: target.name, root: target.root, phase: "core" })));
-			recordReadiness(readiness, target, transaction.readiness);
-			if (transactionFailed(transaction)) throw new Error(transaction.report);
+			const boundaryCore = materializeReviewedMigrationPlan(buildPlan(boundaryDiscovery, target.coreChoices), target.legacy);
+			if (boundaryCore.hash !== target.core.hash) throw new Error("Root fingerprint drifted immediately before its first write.");
+			applyResult = await applyPlan(
+				target.root,
+				target.core,
+				coreFailureInjection(request, target, injectedFailureRoot),
+			);
+			operations.push(...applyResult.operations.map(operation => ({ ...operation, repository: target.name, root: target.root, phase: "core" })));
+			const verifiedDiscovery = await discoverStandaloneRepository(target.root, freshDiscovery.machine);
+			recordReadiness(readiness, target, deriveReadiness(verifiedDiscovery, target.coreChoices));
+			if (applyResult.failure) throw applyResult.failure.error;
 			outcomes.push({ repository: target.name, phase: "core", status: target.core.effects.some(isWriteEffect) ? "completed" : "no-op" });
 			addEffectOutcomes(outcomes, target.name, "core", "completed", writeEffects(target, "core"));
 		} catch (error) {
 			outcomes.push({ repository: target.name, phase: "core", status: "failed", detail: error.message });
-			if (transaction?.failure) {
-				addEffectOutcomes(outcomes, target.name, "core", "completed", transaction.failure.completed);
-				outcomes.push({ repository: target.name, phase: "core", status: "failed", target: transaction.failure.target, detail: transaction.failure.error });
-				addEffectOutcomes(
-					outcomes,
-					target.name,
-					"core",
-					"pending",
-					transaction.failure.pending.filter(pendingTarget => pendingTarget !== transaction.failure.target),
-				);
+			if (applyResult?.failure) {
+				addEffectOutcomes(outcomes, target.name, "core", "completed", applyResult.failure.completed);
+				outcomes.push({ repository: target.name, phase: "core", status: "failed", target: applyResult.failure.target, detail: error.message });
+				addEffectOutcomes(outcomes, target.name, "core", "pending", applyResult.failure.pending.filter(pendingTarget => pendingTarget !== applyResult.failure.target));
 			} else addEffectOutcomes(outcomes, target.name, "core", "pending", writeEffects(target, "core"));
 			addPending(outcomes, freshComposite.targets, index + 1, "core");
-			if (choices.documentation === true) addPending(outcomes, freshComposite.targets, 0, "docs");
+			addPending(outcomes, documentationTargets, 0, "docs");
+			addPending(outcomes, cleanupTargets, 0, "cleanup");
 			return result(freshDiscovery, freshComposite.plan, operations, [], outcomes, "Core setup stopped at the first failure; no rollback was performed.", readiness);
 		}
 	}
 
-	if (choices.documentation === true) {
-		for (let index = 0; index < freshComposite.targets.length; index += 1) {
-			const target = freshComposite.targets[index];
-			try {
-				if (request.beforePhase) await request.beforePhase({ repository: target.name, root: target.root, phase: "docs" });
-				if (!target.core.effects.some(isWriteEffect)) {
-					const boundaryDiscovery = await discoverStandaloneRepository(target.root, freshDiscovery.machine);
-					const boundaryPlan = await runSetupTransaction({ root: target.root, discovery: boundaryDiscovery, choices: target.coreChoices });
-					if (boundaryPlan.plan?.hash !== target.core.hash) throw new Error("Root fingerprint drifted immediately before documentation performed the first write.");
-				}
-				const docsDiscovery = await discoverDocumentation(target.root, target.core.scope.projectShape, parseCanonicalConfigYaml(target.coreChoices.targetConfig));
-				const docsPlan = planDocumentation(docsDiscovery);
-				if (docsPlan.hash !== target.docs.hash) throw new Error("Documentation fingerprint drifted immediately before its first write.");
-				const docsFailure = injectedFailureRoot === target.root && request.injectedFailure.phase === "docs_write"
-					? request.injectedFailure.target
-					: undefined;
-				const docsOperations = await applyDocumentation(target.root, docsPlan, docsPlan.hash, docsFailure);
-				operations.push(...docsOperations.map(operation => ({ ...operation, repository: target.name, root: target.root, phase: "docs" })));
-				outcomes.push({ repository: target.name, phase: "docs", status: docsPlan.effects.some(isWriteEffect) ? "completed" : "no-op" });
-				addEffectOutcomes(outcomes, target.name, "docs", "completed", writeEffects(target, "docs"));
-			} catch (error) {
-				operations.push(...(error.operations ?? []).map(operation => ({ ...operation, repository: target.name, root: target.root, phase: "docs" })));
-				outcomes.push({ repository: target.name, phase: "docs", status: "failed", detail: error.message });
-				const completed = error.completed ?? [];
-				const pending = error.pending ?? writeEffects(target, "docs");
-				addEffectOutcomes(outcomes, target.name, "docs", "completed", completed);
-				if (pending.length > 0) {
-					outcomes.push({ repository: target.name, phase: "docs", status: "failed", target: pending[0].target, detail: error.message });
-					addEffectOutcomes(outcomes, target.name, "docs", "pending", pending.slice(1));
-				} else addEffectOutcomes(outcomes, target.name, "docs", "pending", writeEffects(target, "docs"));
-				addPending(outcomes, freshComposite.targets, index + 1, "docs");
-				return result(freshDiscovery, freshComposite.plan, operations, [], outcomes, "Documentation setup stopped at the first failure; no rollback was performed.", readiness);
+	for (let index = 0; index < documentationTargets.length; index += 1) {
+		const target = documentationTargets[index];
+		try {
+			if (request.beforePhase) await request.beforePhase({ repository: target.name, root: target.root, phase: "docs" });
+			const docsDiscovery = await discoverDocumentation(target.root, target.core.scope.projectShape, parseCanonicalConfigYaml(target.coreChoices.targetConfig));
+			const docsPlan = planDocumentation(docsDiscovery);
+			if (docsPlan.hash !== target.docs.hash) throw new Error("Documentation fingerprint drifted immediately before its first write.");
+			const docsFailure = injectedFailureRoot === target.root && request.injectedFailure.phase === "docs_write"
+				? request.injectedFailure.target
+				: undefined;
+			const docsOperations = await applyDocumentation(target.root, docsPlan, docsPlan.hash, docsFailure);
+			operations.push(...docsOperations.map(operation => ({ ...operation, repository: target.name, root: target.root, phase: "docs" })));
+			outcomes.push({ repository: target.name, phase: "docs", status: docsPlan.effects.some(isWriteEffect) ? "completed" : "no-op" });
+			addEffectOutcomes(outcomes, target.name, "docs", "completed", writeEffects(target, "docs"));
+		} catch (error) {
+			operations.push(...(error.operations ?? []).map(operation => ({ ...operation, repository: target.name, root: target.root, phase: "docs" })));
+			outcomes.push({ repository: target.name, phase: "docs", status: "failed", detail: error.message });
+			const completed = error.completed ?? [];
+			const pending = error.pending ?? writeEffects(target, "docs");
+			addEffectOutcomes(outcomes, target.name, "docs", "completed", completed);
+			if (pending.length > 0) {
+				outcomes.push({ repository: target.name, phase: "docs", status: "failed", target: pending[0].target, detail: error.message });
+				addEffectOutcomes(outcomes, target.name, "docs", "pending", pending.slice(1));
 			}
+			addPending(outcomes, documentationTargets, index + 1, "docs");
+			addPending(outcomes, cleanupTargets, 0, "cleanup");
+			return result(freshDiscovery, freshComposite.plan, operations, [], outcomes, "Documentation setup stopped at the first failure; no rollback was performed.", readiness);
+		}
+	}
+
+	for (let index = 0; index < cleanupTargets.length; index += 1) {
+		const target = cleanupTargets[index];
+		try {
+			const cleanup = await applyLegacyCleanup(target.root, target.legacy, target.legacy.hash, {
+				sessionDiscipline: freshDiscovery.machine.sessionDiscipline === true,
+				dangerousGitGuard: freshDiscovery.machine.dangerousGitGuard === true,
+			});
+			operations.push(...cleanup.map(operation => ({ ...operation, repository: target.name, root: target.root, phase: "cleanup" })));
+			outcomes.push({ repository: target.name, phase: "cleanup", status: "completed" });
+			addEffectOutcomes(outcomes, target.name, "cleanup", "completed", writeEffects(target, "cleanup"));
+		} catch (error) {
+			const progress = error.cleanupProgress;
+			operations.push(...(progress?.completed ?? []).map(operation => ({ ...operation, repository: target.name, root: target.root, phase: "cleanup" })));
+			outcomes.push({ repository: target.name, phase: "cleanup", status: "failed", target: progress?.failed?.target, detail: error.message });
+			addEffectOutcomes(outcomes, target.name, "cleanup", "pending", progress?.pending ?? writeEffects(target, "cleanup"));
+			addPending(outcomes, cleanupTargets, index + 1, "cleanup");
+			return result(freshDiscovery, freshComposite.plan, operations, [], outcomes, "Legacy cleanup stopped at the first failure; no rollback was performed.", readiness);
 		}
 	}
 

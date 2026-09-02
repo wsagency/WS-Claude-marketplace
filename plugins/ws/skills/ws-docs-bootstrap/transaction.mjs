@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -98,7 +98,10 @@ function sha256(value) {
 async function readSnapshotEntry(root, target, expectedKind) {
 	const absolute = path.join(root, target);
 	try {
-		const details = await stat(absolute);
+		const details = await lstat(absolute);
+		if (details.isSymbolicLink()) {
+			return { kind: "blocked", fingerprint: "blocked:symlink" };
+		}
 		if (expectedKind === "directory" && details.isDirectory()) {
 			return { kind: "directory", fingerprint: "directory" };
 		}
@@ -204,8 +207,7 @@ function documentationPlanHash(scope, effects, configFragment, contextFragments)
 
 export function planDocumentation(discovery) {
 	const effects = [];
-	const isStandalone = discovery.projectShape === "standalone" || discovery.projectShape === "not_git";
-	const includeUserTrack = isStandalone;
+	const includeUserTrack = ["standalone", "not_git", "hub_subrepository"].includes(discovery.projectShape);
 	const targets = documentationTargets(discovery.policy);
 	const configFragment = {
 		docs: { ...targets.docs },
@@ -250,6 +252,13 @@ export function planDocumentation(discovery) {
 
 	const contextFragments = { ...DOCUMENTATION_CONTEXT_FRAGMENTS };
 
+	const seenTargets = new Set();
+	for (const effect of effects) {
+		if (seenTargets.has(effect.target)) {
+			throw new Error(`Duplicate planned documentation target: ${effect.target}.`);
+		}
+		seenTargets.add(effect.target);
+	}
 	effects.sort((left, right) => left.order - right.order);
 	const scope = { root: discovery.root, projectShape: discovery.projectShape };
 	return {
@@ -261,12 +270,25 @@ export function planDocumentation(discovery) {
 	};
 }
 
-export async function applyDocumentation(root, plan, authorization, failureInjection) {
+export async function preflightDocumentation(root, plan) {
 	const resolvedRoot = await realpath(path.resolve(root));
 	if (plan.scope?.root !== resolvedRoot) throw new Error("Documentation plan scope does not match the target root.");
-	if (authorization !== plan.hash || plan.hash !== documentationPlanHash(plan.scope, plan.effects, plan.configFragment, plan.contextFragments)) {
+	if (plan.hash !== documentationPlanHash(plan.scope, plan.effects, plan.configFragment, plan.contextFragments)) {
 		throw new Error("Documentation plan authorization is stale or invalid.");
 	}
+	for (const effect of plan.effects.filter(effect => effect.classification === "CREATE" || effect.classification === "UPDATE")) {
+		await validateContainment(resolvedRoot, effect.target);
+		const current = await readSnapshotEntry(resolvedRoot, effect.target, effect.kind);
+		if (current.fingerprint !== effect.fingerprint) {
+			throw new Error(`Documentation plan drift detected for ${effect.target}.`);
+		}
+	}
+}
+
+export async function applyDocumentation(root, plan, authorization, failureInjection) {
+	const resolvedRoot = await realpath(path.resolve(root));
+	if (authorization !== plan.hash) throw new Error("Documentation plan authorization is stale or invalid.");
+	await preflightDocumentation(resolvedRoot, plan);
 	const operations = [];
 	const completed = [];
 	const writes = plan.effects.filter(effect => effect.classification === "CREATE" || effect.classification === "UPDATE");
@@ -276,13 +298,6 @@ export async function applyDocumentation(root, plan, authorization, failureInjec
 		error.pending = writes;
 		error.operations = operations;
 		throw error;
-	}
-	for (const effect of writes) {
-		await validateContainment(resolvedRoot, effect.target);
-		const current = await readSnapshotEntry(resolvedRoot, effect.target, effect.kind);
-		if (current.fingerprint !== effect.fingerprint) {
-			throw new Error(`Documentation plan drift detected for ${effect.target}.`);
-		}
 	}
 
 	for (let index = 0; index < writes.length; index += 1) {

@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -198,7 +198,10 @@ async function detectProjectShape(root, isRepository) {
 async function readSnapshotEntry(root, target, expectedKind) {
 	const absolute = path.join(root, target);
 	try {
-		const details = await stat(absolute);
+		const details = await lstat(absolute);
+		if (details.isSymbolicLink()) {
+			return { kind: "blocked", fingerprint: "blocked:symlink" };
+		}
 		if (expectedKind === "directory" && details.isDirectory()) {
 			return { kind: "directory", fingerprint: "directory" };
 		}
@@ -500,6 +503,7 @@ export function buildPlan(discovery, choices, originVerification) {
 	const effects = [];
 	const isNotGit = discovery.projectShape === "not_git";
 	const createRepo = isNotGit && choices.createRepository;
+	const configureRequestedOrigin = !discovery.git.origin && choices.createRepository === true;
 	let originValidation = null;
 
 	let gitClassification = discovery.git.isRepository ? "NO-OP" : "BLOCKING_CONFLICT";
@@ -516,7 +520,7 @@ export function buildPlan(discovery, choices, originVerification) {
 	if (discovery.git.origin) {
 		originClassification = "PRESERVE";
 		originReason = "Preserve the detected origin; it is never copied into WS configuration.";
-	} else if (createRepo) {
+	} else if (configureRequestedOrigin) {
 		originValidation = validateOrigin(choices.origin || "", originVerification);
 		if (!choices.origin) {
 			originClassification = "BLOCKING_CONFLICT";
@@ -532,7 +536,7 @@ export function buildPlan(discovery, choices, originVerification) {
 	}
 	effects.push(baseEffect(1, "git:origin", "state", originClassification, originReason, null, originAfter));
 
-	const originIdentity = createRepo && originClassification === "CREATE" ? originValidation.identity : null;
+	const originIdentity = configureRequestedOrigin && originClassification === "CREATE" ? originValidation.identity : null;
 
 	if (discovery.projectShape === "not_git" || discovery.projectShape === "standalone" || discovery.projectShape === "hub_root" || discovery.projectShape === "hub_subrepository") {
 		effects.push(baseEffect(2, "project:shape", "state", "NO-OP", `Detected ${discovery.projectShape} repository scope.`, null));
@@ -692,20 +696,26 @@ function failedVerificationReport(plan, readiness) {
 	return verifiedReport(plan, readiness).replace("WS setup verified", "WS setup verification failed");
 }
 
+export async function preflightPlan(root, plan) {
+	const resolvedRoot = await realpath(path.resolve(root));
+	for (const effect of plan.effects) {
+		if (!isWriteEffect(effect) || effect.kind === "state") continue;
+		await validateContainment(resolvedRoot, effect.target);
+		const current = await readSnapshotEntry(resolvedRoot, effect.target, effect.kind);
+		if (current.fingerprint !== effect.fingerprint) {
+			throw new Error(`Authorization is stale: ${effect.target} changed before apply.`);
+		}
+	}
+}
+
 export async function applyPlan(root, plan, injectedFailure) {
 	const resolvedRoot = await realpath(path.resolve(root));
 	const operations = [];
 	const completed = [];
 	const pending = [];
+	await preflightPlan(resolvedRoot, plan);
 	for (const effect of plan.effects) {
 		if (!isWriteEffect(effect)) continue;
-		if (effect.kind !== "state") {
-			await validateContainment(resolvedRoot, effect.target);
-			const current = await readSnapshotEntry(resolvedRoot, effect.target, effect.kind);
-			if (current.fingerprint !== effect.fingerprint) {
-				throw new Error(`Authorization is stale: ${effect.target} changed before apply.`);
-			}
-		}
 		pending.push(effect.target);
 	}
 	for (const effect of plan.effects) {
@@ -794,7 +804,7 @@ export async function runSetupTransaction(request) {
 		};
 	}
 	if (!["recommended_local", "canonical", "materialized"].includes(choices.profile)) throw new Error(`Unsupported setup profile: ${choices.profile}`);
-	const originVerification = isNotGit && choices.createRepository && typeof choices.origin === "string"
+	const originVerification = choices.createRepository === true && !request.discovery.git.origin && typeof choices.origin === "string"
 		? await resolveOriginVerification(choices.origin, request.originVerifier)
 		: null;
 	const plan = buildPlan(request.discovery, choices, originVerification);
@@ -832,7 +842,7 @@ export async function runSetupTransaction(request) {
 		};
 	}
 	const freshDiscovery = await discoverStandaloneRepository(request.root, request.discovery.machine);
-	const freshOriginVerification = isNotGit && choices.createRepository && typeof choices.origin === "string"
+	const freshOriginVerification = choices.createRepository === true && !freshDiscovery.git.origin && typeof choices.origin === "string"
 		? await resolveOriginVerification(choices.origin, request.originVerifier)
 		: null;
 	const freshPlan = buildPlan(freshDiscovery, choices, freshOriginVerification);

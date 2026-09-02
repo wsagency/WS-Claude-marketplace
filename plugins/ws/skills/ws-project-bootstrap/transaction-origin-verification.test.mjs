@@ -254,3 +254,33 @@ test("apply succeeds only after the authorized identity is reverified", async ()
 		assert.equal(execFileSync("git", ["config", "--get", "remote.origin.url"], { cwd: root, encoding: "utf8" }).trim(), ORIGINS[0].origin);
 	});
 });
+
+test("rerun after git init succeeds and origin write fails plans the missing verified origin", async () => {
+	await withEmptyDirectory("ws-origin-partial-", async root => {
+		const choices = choicesFor(ORIGINS[0].origin);
+		const verifier = accessibleVerifier(ORIGINS[0].identity);
+		const discovery = await discoverStandaloneRepository(root, READY_RUNTIME);
+		const planned = await runSetupTransaction({ root, discovery, choices, originVerifier: verifier });
+		const interrupted = await runSetupTransaction({
+			root,
+			discovery,
+			choices,
+			authorization: planned.plan.hash,
+			originVerifier: verifier,
+			injectedFailure: { phase: "write", target: "git:origin" },
+		});
+		assert.equal(interrupted.failure.target, "git:origin");
+		assert.equal((await stat(path.join(root, ".git"))).isDirectory(), true);
+
+		const rerunDiscovery = await discoverStandaloneRepository(root, READY_RUNTIME);
+		const rerun = await runSetupTransaction({
+			root,
+			discovery: rerunDiscovery,
+			choices,
+			originVerifier: verifier,
+		});
+		assert.equal(rerun.plan.effects.find(effect => effect.target === "git:repository").classification, "NO-OP");
+		assert.equal(rerun.plan.effects.find(effect => effect.target === "git:origin").classification, "CREATE");
+		assert.deepEqual(rerun.plan.originIdentity, ORIGINS[0].identity);
+	});
+});

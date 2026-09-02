@@ -1,7 +1,7 @@
 import { afterEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import * as path from "node:path";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { discoverHubTransaction, mergeConfig, runHubTransaction } from "./hub-transaction.mjs";
@@ -97,6 +97,49 @@ describe("hub configuration materialization", () => {
 		);
 		const applied = await runHubTransaction({ root: hubRoot, discovery, authorization: planned.plan.hash });
 		assert.match(await readFile(path.join(hubRoot, ".wsagency", "config.yaml"), "utf8"), /^schema_version: 1$/m);
+	});
+
+	test("each hub target composes semantic pre-5 values before core setup", async () => {
+		const { hubRoot } = await createHub([registryEntry({ name: "work" })], { create: [{ name: "work" }] });
+		const workRoot = path.join(hubRoot, "work");
+		await mkdir(path.join(workRoot, ".claude"), { recursive: true });
+		await writeFile(path.join(workRoot, ".claude", "docs-config.yaml"), `docs:
+  user_track: handbook
+  dev_track: engineering-docs
+  default_audience: user
+  default_scope: repo
+  auto:
+    changelog_per_commit: false
+    adr_for_arch_changes: true
+`);
+		git(workRoot, "add", ".claude/docs-config.yaml");
+		git(workRoot, "commit", "--quiet", "-m", "test: add pre-5 docs policy");
+		const choices = {
+			documentation: true,
+			working: {
+				work: {
+					migration: { resolutions: { "changelog.update_mode": "pull_request" } },
+				},
+			},
+		};
+
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const planned = await runHubTransaction({ root: hubRoot, discovery, choices });
+		const child = planned.plan.targets.find(target => target.name === "work");
+		const configEffect = child.core.effects.find(effect => effect.target === ".wsagency/config.yaml");
+		assert.match(configEffect.after, /user_track: handbook/);
+		assert.match(configEffect.after, /dev_track: engineering-docs/);
+
+		const applied = await runHubTransaction({
+			root: hubRoot,
+			discovery,
+			choices,
+			authorization: planned.plan.hash,
+		});
+		assert.equal(applied.outcomes.some(outcome => outcome.status === "failed"), false);
+		assert.match(await readFile(path.join(workRoot, ".wsagency", "config.yaml"), "utf8"), /user_track: handbook/);
+		assert.equal(await exists(path.join(workRoot, "handbook", "index.md")), true);
+		assert.equal(await exists(path.join(workRoot, ".claude", "docs-config.yaml")), false);
 	});
 });
 
@@ -199,6 +242,31 @@ describe("complete hub preflight", () => {
 	});
 });
 
+	test("symlinked managed targets in a later root block the entire hub before writes", async () => {
+		const { hubRoot } = await createHub(
+			[registryEntry({ name: "work-a" }), registryEntry({ name: "work-b" })],
+			{ create: [{ name: "work-a" }, { name: "work-b" }] },
+		);
+		const outside = await mkdtemp(path.join(tmpdir(), "ws-hub-managed-outside-"));
+		temporaryRoots.push(outside);
+		await writeFile(path.join(outside, "config.yaml"), CANONICAL_CONFIG_YAML);
+		await mkdir(path.join(hubRoot, "work-b", ".wsagency"));
+		await symlink(
+			path.join(outside, "config.yaml"),
+			path.join(hubRoot, "work-b", ".wsagency", "config.yaml"),
+		);
+
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const blocked = await runHubTransaction({ root: hubRoot, discovery });
+		assert.equal(blocked.requiresConfirmation, false);
+		assert.ok(blocked.blockers.some(blocker =>
+			blocker.repository === "work-b"
+			&& blocker.target === ".wsagency/config.yaml"
+		));
+		assert.equal(await exists(path.join(hubRoot, ".wsagency", "config.yaml")), false);
+		assert.equal(await exists(path.join(hubRoot, "work-a", ".wsagency", "config.yaml")), false);
+	});
+
 describe("dirty-path preflight", () => {
 	test("names and preserves tracked and untracked dirty paths outside the manifest", async () => {
 		const { hubRoot } = await createHub([registryEntry({ name: "work" })], { create: [{ name: "work" }] });
@@ -275,15 +343,17 @@ describe("ordered hub apply", () => {
 			"hub:core",
 			"work-a:core",
 			"work-b:core",
-			"hub:docs",
 			"work-a:docs",
 			"work-b:docs",
+			"hub:docs",
 		]);
 		const firstDocs = applied.operations.findIndex(operation => operation.phase === "docs");
 		const lastCore = applied.operations.findLastIndex(operation => operation.phase === "core");
 		assert.ok(firstDocs > lastCore);
 		assert.equal(await readFile(path.join(hubRoot, "dev-docs/index.md"), "utf8"), "# Internal Documentation\n\nWelcome to the dev-docs.\n");
 		assert.equal(await readFile(path.join(hubRoot, "work-b", "dev-docs/index.md"), "utf8"), "# Internal Documentation\n\nWelcome to the dev-docs.\n");
+		assert.equal(await readFile(path.join(hubRoot, "work-a", "docs/index.md"), "utf8"), "# Documentation\n\nWelcome to the documentation.\n");
+		assert.equal(await exists(path.join(hubRoot, "docs", "index.md")), false);
 		assert.deepEqual(
 			new Set(applied.outcomes.map(outcome => outcome.status)),
 			new Set(["completed", "preserved", "skipped", "excluded", "no-op"]),
@@ -432,9 +502,9 @@ describe("documentation failure recovery", () => {
 					&& outcome.target === "CHANGELOG.md"
 				), true);
 				assert.equal(failed.operations.filter(operation => operation.phase === "core").length > 0, true);
-				const failingIndex = ["hub", "work-a", "work-b"].indexOf(failingName);
-				for (const pendingName of ["hub", "work-a", "work-b"].slice(failingIndex + 1)) {
-					assert.equal(failed.outcomes.some(outcome => outcome.repository === pendingName && outcome.phase === "docs" && outcome.status === "pending"), true);
+				const docsOrder = ["work-a", "work-b", "hub"];
+				const failingIndex = docsOrder.indexOf(failingName);
+				for (const pendingName of docsOrder.slice(failingIndex + 1)) {
 					assert.equal(failed.outcomes.some(outcome =>
 						outcome.repository === pendingName
 						&& outcome.phase === "docs"

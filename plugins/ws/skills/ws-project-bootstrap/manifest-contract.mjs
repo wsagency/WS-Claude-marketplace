@@ -3,8 +3,8 @@ import { serializeCanonicalConfig, validateCanonicalConfig } from "./config.mjs"
 import { runHubTransaction } from "./hub-transaction.mjs";
 import { applyLegacyCleanup, planLegacyMigration } from "./migration.mjs";
 import { acceptConfirmedPartial, applyConfirmedPlan, createReconfigurePlan, resumeConfirmedPlan } from "./reconfigure.mjs";
-import { applyPlan, buildPlan, deriveReadiness, discoverStandaloneRepository, runSetupTransaction } from "./transaction.mjs";
-import { applyDocumentation, discoverDocumentation, planDocumentation } from "../ws-docs-bootstrap/transaction.mjs";
+import { applyPlan, buildPlan, deriveReadiness, discoverStandaloneRepository, preflightPlan, runSetupTransaction } from "./transaction.mjs";
+import { applyDocumentation, discoverDocumentation, planDocumentation, preflightDocumentation } from "../ws-docs-bootstrap/transaction.mjs";
 import { auditBackfill, executeBackfill, planBackfill } from "./backfill-jira.mjs";
 
 export const MANIFEST_CONTRACT_VERSION = 1;
@@ -75,6 +75,9 @@ function hubItems(plan) {
 		}
 		for (const [index, effect] of (target.docs?.effects ?? []).entries()) {
 			items.push(item(effect, index, { phase: "docs", scope: target.name }));
+		}
+		for (const [index, effect] of (target.legacy?.effects ?? []).filter(effect => effect.order >= 900).entries()) {
+			items.push(item(effect, index, { phase: "cleanup", scope: target.name }));
 		}
 	}
 	return items;
@@ -220,10 +223,8 @@ function withBackfillReadiness(readiness, backfill, execution) {
 	};
 }
 
-async function executePlannedBackfill(backfill) {
-	if (!backfill?.plan || backfill.plan.unmapped.length === 0) {
-		return { completed: [], pending: [], errors: [], nextSyncState: backfill?.input?.syncState };
-	}
+async function refreshPlannedBackfill(backfill) {
+	if (!backfill) return null;
 	const durableLocalTickets = await backfill.input.persistence.readLocalTickets();
 	if (hash(durableLocalTickets) !== backfill.localTicketsFingerprint) {
 		throw new Error("Local tickets changed after manifest authorization.");
@@ -232,11 +233,27 @@ async function executePlannedBackfill(backfill) {
 	if (hash(durableSyncState) !== backfill.syncFingerprint) {
 		throw new Error("Local/Jira sync state changed after manifest authorization.");
 	}
+	return {
+		...backfill,
+		input: {
+			...backfill.input,
+			localTickets: durableLocalTickets,
+			syncState: durableSyncState,
+		},
+	};
+}
+
+async function executePlannedBackfill(backfill) {
+	if (!backfill) return { completed: [], pending: [], errors: [], nextSyncState: undefined };
+	const refreshed = await refreshPlannedBackfill(backfill);
+	if (!refreshed.plan || refreshed.plan.unmapped.length === 0) {
+		return { completed: [], pending: [], errors: [], nextSyncState: refreshed.input.syncState };
+	}
 	return executeBackfill({
-		plan: backfill.plan,
-		syncState: durableSyncState,
-		jiraAdapter: backfill.input.jiraAdapter,
-		persistence: backfill.input.persistence,
+		plan: refreshed.plan,
+		syncState: refreshed.input.syncState,
+		jiraAdapter: refreshed.input.jiraAdapter,
+		persistence: refreshed.input.persistence,
 	});
 }
 
@@ -260,13 +277,32 @@ function backfillFailure(execution, error) {
 		pending,
 	};
 }
-async function planConfiguredDocumentation(root, projectShape, config) {
+function projectDocumentationDiscovery(discovery, corePlan) {
+	const entries = Object.fromEntries(Object.entries(discovery.entries).map(([target, entry]) => [target, { ...entry }]));
+	for (const effect of corePlan?.effects ?? []) {
+		if (!MUTATIONS.has(effect.classification) || effect.kind === "state") continue;
+		if (entries[effect.target]) {
+			entries[effect.target] = effect.kind === "directory"
+				? { kind: "directory", fingerprint: "directory" }
+				: { kind: "file", content: effect.after, fingerprint: hash(effect.after) };
+		}
+		for (const [target, entry] of Object.entries(entries)) {
+			if (entry.kind === "missing" && effect.target.startsWith(`${target}/`)) {
+				entries[target] = { kind: "directory", fingerprint: "directory" };
+			}
+		}
+	}
+	return { ...discovery, entries };
+}
+
+async function planConfiguredDocumentation(root, projectShape, config, corePlan) {
 	if (!config?.docs) return null;
-	return planDocumentation(await discoverDocumentation(
+	const discovery = await discoverDocumentation(
 		root,
 		projectShape,
 		{ docs: config.docs, changelog: config.changelog },
-	));
+	);
+	return planDocumentation(projectDocumentationDiscovery(discovery, corePlan));
 }
 
 function withDocumentationReadiness(readiness, docsPlan) {
@@ -296,10 +332,10 @@ async function runSetup(request) {
 	const configSource = request.choices?.targetConfig;
 	const configValidation = configSource ? validateCanonicalConfig(configSource) : null;
 	const config = configValidation?.status === "valid" ? configValidation.config : null;
-	const [docsPlan, backfill] = await Promise.all([
-		config ? planConfiguredDocumentation(request.root, request.snapshot.projectShape, config) : null,
-		planLocalJiraBackfill(config, request.adapters),
-	]);
+	const docsPlan = config
+		? await planConfiguredDocumentation(request.root, request.snapshot.projectShape, config, planned.plan)
+		: null;
+	const backfill = await planLocalJiraBackfill(config, request.adapters);
 	const items = [
 		...setupItems(planned.plan),
 		...(backfill?.effects ?? []).map((effect, index) => item(effect, index, { phase: "backfill", scope: "repository" })),
@@ -345,6 +381,28 @@ async function runSetup(request) {
 	}
 
 	assertAuthorization(request.authorization, complete.hash);
+	let authorizedBackfill = backfill;
+	try {
+		authorizedBackfill = await refreshPlannedBackfill(backfill);
+		await preflightPlan(request.root, planned.plan);
+		if (docsPlan) await preflightDocumentation(request.root, docsPlan);
+	} catch (error) {
+		if (!/^Local(?: tickets|\/Jira sync state) changed after manifest authorization\.$/.test(error.message)) throw error;
+		const failure = backfillFailure(undefined, error);
+		return {
+			manifest: complete,
+			requiresAuthorization: false,
+			applied: false,
+			operations: [],
+			readiness: withBackfillReadiness(
+				withDocumentationReadiness(planned.readiness, docsPlan),
+				backfill,
+				{ completed: [], pending: backfill?.plan?.unmapped.map(entry => entry.localId) ?? [], errors: [{ localId: "backfill", error: error.message }] },
+			),
+			report: `Setup stopped before writes at ${failure.target}: ${failure.error}.`,
+			failure,
+		};
+	}
 	const applied = await runSetupTransaction({
 		root: request.root,
 		discovery: request.snapshot,
@@ -367,7 +425,7 @@ async function runSetup(request) {
 
 	let backfillResult;
 	try {
-		backfillResult = await executePlannedBackfill(backfill);
+		backfillResult = await executePlannedBackfill(authorizedBackfill);
 	} catch (error) {
 		const failure = backfillFailure(undefined, error);
 		return {
@@ -508,6 +566,7 @@ async function runMigration(request) {
 			request.root,
 			request.snapshot.core.projectShape,
 			legacyPlan.config,
+			corePlan,
 		),
 		planLocalJiraBackfill(legacyPlan.config, request.adapters),
 	]);
@@ -558,6 +617,24 @@ async function runMigration(request) {
 		};
 	}
 	assertAuthorization(request.authorization, complete.hash);
+	let authorizedBackfill;
+	try {
+		authorizedBackfill = await refreshPlannedBackfill(backfill);
+		await preflightPlan(request.root, corePlan);
+		if (docsPlan) await preflightDocumentation(request.root, docsPlan);
+	} catch (error) {
+		if (!/^Local(?: tickets|\/Jira sync state) changed after manifest authorization\.$/.test(error.message)) throw error;
+		const failure = backfillFailure(undefined, error);
+		return {
+			manifest: complete,
+			requiresAuthorization: false,
+			applied: false,
+			operations: [],
+			readiness: withBackfillReadiness(undefined, backfill, { completed: [], pending: backfill?.plan?.unmapped.map(entry => entry.localId) ?? [], errors: [{ localId: "preflight", error: error.message }] }),
+			report: `Migration stopped before writes at ${failure.target}: ${failure.error}.`,
+			failure,
+		};
+	}
 	const applyResult = await applyPlan(request.root, corePlan, request.injection?.failure);
 	const verifiedDiscovery = await discoverStandaloneRepository(request.root, request.snapshot.core.machine);
 	const coreReadiness = deriveReadiness(verifiedDiscovery, coreChoices);
@@ -591,7 +668,7 @@ async function runMigration(request) {
 
 	let backfillResult;
 	try {
-		backfillResult = await executePlannedBackfill(backfill);
+		backfillResult = await executePlannedBackfill(authorizedBackfill);
 	} catch (error) {
 		const failure = backfillFailure(undefined, error);
 		return {

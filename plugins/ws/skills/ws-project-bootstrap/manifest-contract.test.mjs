@@ -526,6 +526,40 @@ test("Local Jira backfill fails on execution if local tickets drift after author
 	}
 });
 
+test("zero-item Local Jira backfill refreshes durable targets before core writes", async () => {
+	const { parent, root } = await createStandaloneRepository("ws-manifest-backfill-expanded-");
+	const sourceTickets = {};
+	const backfill = createBackfillHarness({ localTickets: sourceTickets });
+	try {
+		const choices = materializedSetupChoices(config => {
+			config.jira = { project: "WCM", default_issue_type: "Task", sync: "all_local_tickets" };
+		});
+		const request = {
+			mode: "setup",
+			root,
+			snapshot: await discoverStandaloneRepository(root, MACHINE),
+			choices,
+			adapters: { jiraBackfill: backfill.adapter() },
+		};
+		const planned = await runManifestTransaction(request);
+		assert.deepEqual(planned.manifest.categories.CREATE.filter(effect => effect.phase === "backfill"), []);
+
+		sourceTickets["local-2"] = {
+			title: "Added after authorization",
+			description: "This expanded target was not authorized.",
+			status: "open",
+		};
+
+		const failed = await runManifestTransaction({ ...request, authorization: planned.manifest.hash });
+		assert.equal(failed.applied, false);
+		assert.match(failed.failure.error, /Local tickets changed after manifest authorization/);
+		assert.equal(backfill.jiraAdapter.getCallLog().filter(call => call.method === "createTicket").length, 0);
+		assert.equal(await exists(path.join(root, ".wsagency", "config.yaml")), false);
+	} finally {
+		await rm(parent, { recursive: true, force: true });
+	}
+});
+
 test("documentation failure preserves completed core work and a fresh manifest resumes it", async () => {
 	const { parent, root } = await createStandaloneRepository("ws-manifest-docs-failure-");
 	try {

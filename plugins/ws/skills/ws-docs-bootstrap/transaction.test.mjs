@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { applyDocumentation, discoverDocumentation, planDocumentation } from "./transaction.mjs";
+import { parseCanonicalConfigYaml, validateCanonicalConfigObject } from "../ws-project-bootstrap/config.mjs";
 
 const CHANGELOG = "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\nThe format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).\n\n## [Unreleased]\n";
 
@@ -77,13 +78,15 @@ test("validated canonical policy controls every bootstrap path", async () => {
 	});
 });
 
-test("hub subrepositories and hub roots omit product user-track scaffolding", () => {
-	for (const projectShape of ["hub_subrepository", "hub_root"]) {
-		const plan = planDocumentation({ root: "/mock/root", projectShape, entries: {} });
-		assert.equal(plan.effects.find(effect => effect.target === "docs")?.classification, "SKIP");
-		assert.ok(plan.effects.some(effect => effect.target === "dev-docs" && effect.classification === "CREATE"));
-		assert.ok(!plan.effects.some(effect => effect.target === "docs/contributing.md"));
-	}
+test("hub subrepositories include repo user docs while hub roots omit product user docs", () => {
+	const subrepository = planDocumentation({ root: "/mock/work", projectShape: "hub_subrepository", entries: {} });
+	assert.ok(subrepository.effects.some(effect => effect.target === "docs" && effect.classification === "CREATE"));
+	assert.ok(subrepository.effects.some(effect => effect.target === "docs/contributing.md"));
+
+	const hub = planDocumentation({ root: "/mock/hub", projectShape: "hub_root", entries: {} });
+	assert.equal(hub.effects.find(effect => effect.target === "docs")?.classification, "SKIP");
+	assert.ok(hub.effects.some(effect => effect.target === "dev-docs" && effect.classification === "CREATE"));
+	assert.ok(!hub.effects.some(effect => effect.target === "docs/contributing.md"));
 });
 
 test("authored content is preserved and exact generated content is a no-op", () => {
@@ -100,6 +103,54 @@ test("authored content is preserved and exact generated content is a no-op", () 
 	assert.equal(contributing.classification, "PRESERVE");
 	assert.equal(contributing.after, "Custom contributing.\n");
 	assert.equal(plan.effects.find(effect => effect.target === "CHANGELOG.md")?.classification, "NO-OP");
+});
+
+test("reserved and colliding documentation paths fail canonical validation", () => {
+	const base = parseCanonicalConfigYaml(`schema_version: 1
+changelog:
+  update_mode: pull_request
+  path: CHANGELOG.md
+  skip_types: [docs]
+docs:
+  user_track: docs
+  dev_track: dev-docs
+  default_audience: ask
+  default_scope: repo
+  adr_for_arch_changes: true
+`);
+	for (const mutate of [
+		config => { config.docs.user_track = ".wsagency"; },
+		config => { config.changelog.path = "AGENTS.md"; },
+		config => { config.changelog.path = "docs/index.md"; },
+	]) {
+		const config = structuredClone(base);
+		mutate(config);
+		const validation = validateCanonicalConfigObject(config);
+		assert.equal(validation.status, "invalid");
+		assert.ok(validation.errors.some(error => error.code === "path_conflict"));
+	}
+});
+
+test("documentation planning rejects duplicate generated targets defensively", () => {
+	assert.throws(() => planDocumentation({
+		root: "/mock/root",
+		projectShape: "standalone",
+		policy: {
+			docs: {
+				user_track: "docs",
+				dev_track: "dev-docs",
+				default_audience: "ask",
+				default_scope: "repo",
+				adr_for_arch_changes: true,
+			},
+			changelog: {
+				update_mode: "pull_request",
+				path: "docs/index.md",
+				skip_types: ["docs"],
+			},
+		},
+		entries: {},
+	}), /duplicate planned documentation target/i);
 });
 
 test("apply rejects wrong authorization and drift without overwriting authored content", async () => {
@@ -156,14 +207,17 @@ test("failure before writes reports the entire pending manifest", async () => {
 	});
 });
 
-test("apply rejects symlinked target ancestry before writing outside the repository", async () => {
+test("managed discovery blocks symlinked documentation targets before apply", async () => {
 	await withTemporaryRoot(async root => {
 		const outside = await realpath(await mkdtemp(path.join(tmpdir(), "ws-docs-outside-")));
 		try {
-			await symlink(outside, path.join(root, "docs"));
+			await writeFile(path.join(outside, "authored.md"), "# Authored\n");
+			await symlink(path.join(outside, "authored.md"), path.join(root, "CHANGELOG.md"));
 			const plan = planDocumentation(await discoverDocumentation(root, "standalone"));
-			await assert.rejects(() => applyDocumentation(root, plan, plan.hash), /symlink/i);
-			await assert.rejects(() => access(path.join(outside, "index.md")), /ENOENT/);
+			const changelog = plan.effects.find(effect => effect.target === "CHANGELOG.md");
+			assert.equal(changelog.classification, "BLOCKING_CONFLICT");
+			assert.match(changelog.reason, /non-file/i);
+			assert.equal(await readFile(path.join(outside, "authored.md"), "utf8"), "# Authored\n");
 		} finally {
 			await rm(outside, { recursive: true, force: true });
 		}

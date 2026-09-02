@@ -43,6 +43,15 @@ const SECTION_CONTRACTS = Object.freeze({
 const LABEL_KEYS = ["needs_triage", "needs_info", "ready_for_agent", "ready_for_human", "wontfix"];
 const JIRA_COMMIT_KEYS = ["actions", "smart_commit_trailer", "post_commit_comment", "pr_transition"];
 const SECRET_KEY = /(?:^|_)(?:token|secret|password|credential|api_key|account_id|cloud_id|site|user_identity|username)(?:_|$)/i;
+const RESERVED_DOCUMENTATION_FILES = new Set([
+	".wsagency/config.yaml",
+	"AGENTS.md",
+	"CLAUDE.md",
+	"CONTEXT.md",
+	"CONTEXT-MAP.md",
+	"project.yaml",
+]);
+const RESERVED_DOCUMENTATION_DIRECTORIES = [".git", ".wsagency", "dev-docs/agents", "dev-docs/tickets"];
 
 export class ConfigValidationError extends Error {
 	constructor(code, message, configPath = "$") {
@@ -266,6 +275,49 @@ function expectRelativePath(value, configPath, errors) {
 	}
 }
 
+function isAtOrBelow(candidate, parent) {
+	return candidate === parent || candidate.startsWith(`${parent}/`);
+}
+
+function documentationPathConflicts(config) {
+	const user = config.docs.user_track;
+	const dev = config.docs.dev_track;
+	const directories = [
+		user,
+		`${user}/tutorials`,
+		`${user}/how-to`,
+		`${user}/reference`,
+		`${user}/explanation`,
+		`${user}/release-notes`,
+		dev,
+		`${dev}/decisions`,
+		`${dev}/scoping`,
+		`${dev}/runbooks`,
+		`${dev}/reference`,
+		`${dev}/explanation`,
+	];
+	const files = [
+		config.changelog?.path,
+		"CONTRIBUTING.md",
+		`${user}/contributing.md`,
+		`${user}/index.md`,
+		`${dev}/development.md`,
+		`${dev}/index.md`,
+	].filter(Boolean);
+	const duplicateDirectories = new Set(directories).size !== directories.length;
+	const duplicateFiles = new Set(files).size !== files.length;
+	const fileDirectoryCollision = files.some(file => directories.includes(file));
+	const reservedDirectory = directories.some(directory =>
+		RESERVED_DOCUMENTATION_DIRECTORIES.some(reserved => isAtOrBelow(directory, reserved))
+		|| RESERVED_DOCUMENTATION_FILES.has(directory),
+	);
+	const reservedFile = files.some(file =>
+		RESERVED_DOCUMENTATION_FILES.has(file)
+		|| RESERVED_DOCUMENTATION_DIRECTORIES.some(reserved => isAtOrBelow(file, reserved)),
+	);
+	return duplicateDirectories || duplicateFiles || fileDirectoryCollision || reservedDirectory || reservedFile;
+}
+
 function validateConfig(config) {
 	const errors = [];
 	if (!requireObject(config, "$", errors)) return errors;
@@ -321,6 +373,14 @@ function validateConfig(config) {
 		expectBoolean(config.docs.adr_for_arch_changes, "$.docs.adr_for_arch_changes", errors);
 		if (config.docs.user_track === config.docs.dev_track || config.docs.user_track.startsWith(`${config.docs.dev_track}/`) || config.docs.dev_track.startsWith(`${config.docs.user_track}/`)) issue(errors, "path_conflict", "Documentation tracks must not overlap.", "$.docs");
 		if (config.changelog?.path === config.docs.user_track || config.changelog?.path === config.docs.dev_track) issue(errors, "path_conflict", "The changelog file cannot occupy a documentation track directory.", "$.changelog.path");
+		if (
+			typeof config.docs.user_track === "string"
+			&& typeof config.docs.dev_track === "string"
+			&& typeof config.changelog?.path === "string"
+			&& documentationPathConflicts(config)
+		) {
+			issue(errors, "path_conflict", "Documentation paths must not collide with generated or reserved setup targets.", "$.docs");
+		}
 	}
 	if (config.tracker?.primary === "jira") {
 		if (!config.jira) issue(errors, "missing_dependency", "Jira-primary tracking requires $.jira.", "$.jira");
