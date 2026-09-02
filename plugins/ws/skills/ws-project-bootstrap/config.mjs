@@ -166,6 +166,59 @@ export function parseCanonicalConfigYaml(source) {
 	return root;
 }
 
+const SERIALIZATION_ORDER = Object.freeze({
+	"$": ["schema_version", "tracker", "triage", "domain", "commit", "changelog", "ui", "runtime", "jira", "docs"],
+	"$.tracker": ["primary", "pull_requests"],
+	"$.triage": ["labels"],
+	"$.triage.labels": LABEL_KEYS,
+	"$.domain": ["layout"],
+	"$.commit": ["jira"],
+	"$.commit.jira": JIRA_COMMIT_KEYS,
+	"$.changelog": ["update_mode", "path", "skip_types"],
+	"$.ui": ["session_start_dashboard"],
+	"$.runtime": ["session_discipline", "dangerous_git_guard"],
+	"$.jira": ["project", "board", "default_issue_type", "sync"],
+	"$.docs": ["user_track", "dev_track", "default_audience", "default_scope", "adr_for_arch_changes"],
+});
+
+function serializeScalar(value) {
+	if (Array.isArray(value)) return `[${value.map(serializeScalar).join(", ")}]`;
+	if (value === null || typeof value === "boolean" || typeof value === "number") return String(value);
+	if (/^[A-Za-z0-9_./-]+$/.test(value) && !/^(?:true|false|null|~|yes|no|on|off)$/i.test(value)) return value;
+	return JSON.stringify(value);
+}
+
+function serializeMapping(value, configPath, indent) {
+	const lines = [];
+	const keys = SERIALIZATION_ORDER[configPath] ?? Object.keys(value).sort();
+	for (const key of keys) {
+		if (!Object.hasOwn(value, key)) continue;
+		const child = value[key];
+		const prefix = `${" ".repeat(indent)}${key}:`;
+		if (child && typeof child === "object" && !Array.isArray(child)) {
+			lines.push(prefix, ...serializeMapping(child, `${configPath}.${key}`, indent + 2));
+		} else lines.push(`${prefix} ${serializeScalar(child)}`);
+	}
+	return lines;
+}
+
+/** Serialize validated policy in the sole canonical key and whitespace order. */
+export function serializeCanonicalConfig(config) {
+	const errors = validateConfig(config);
+	if (errors.length > 0) {
+		const first = errors[0];
+		throw new ConfigValidationError(first.code, first.message, first.path);
+	}
+	const blocks = [];
+	for (const key of SERIALIZATION_ORDER.$) {
+		if (!Object.hasOwn(config, key)) continue;
+		const value = config[key];
+		if (value && typeof value === "object" && !Array.isArray(value)) blocks.push([`${key}:`, ...serializeMapping(value, `$.${key}`, 2)].join("\n"));
+		else blocks.push(`${key}: ${serializeScalar(value)}`);
+	}
+	return `${blocks.join("\n\n")}\n`;
+}
+
 function issue(errors, code, message, configPath) {
 	errors.push({ code, message, path: configPath });
 }

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
 	deriveSetupReadiness,
 	validateCanonicalConfig,
+	serializeCanonicalConfig,
 } from "../../../plugins/ws/skills/ws-project-bootstrap/config.mjs";
 import { CANONICAL_CONFIG_YAML } from "../../../plugins/ws/skills/ws-project-bootstrap/transaction.mjs";
 
@@ -11,6 +12,13 @@ test("canonical Local policy validates without persisted readiness defaults", ()
 	if (result.status !== "valid") throw new Error("Expected canonical Local policy to validate.");
 	expect(result.config.tracker?.primary).toBe("local");
 	expect(result.config).not.toHaveProperty("ready");
+});
+
+test("canonical config serializes deterministically for transaction planning", () => {
+	const result = validateCanonicalConfig(CANONICAL_CONFIG_YAML);
+	if (result.status !== "valid") throw new Error("Expected canonical Local policy to validate.");
+
+	expect(serializeCanonicalConfig(result.config)).toBe(CANONICAL_CONFIG_YAML);
 });
 
 test("docs-only canonical policy is valid but not engineering-ready", () => {

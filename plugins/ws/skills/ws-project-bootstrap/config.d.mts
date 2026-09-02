@@ -65,5 +65,6 @@ export class ConfigValidationError extends Error {
 }
 
 export function parseCanonicalConfigYaml(source: string): CanonicalProjectConfig;
+export function serializeCanonicalConfig(config: CanonicalProjectConfig): string;
 export function validateCanonicalConfig(source: string): ConfigValidationResult;
 export function deriveSetupReadiness(validation: ConfigValidationResult, snapshot?: ReadinessSnapshot): DerivedSetupReadiness;
