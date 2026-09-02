@@ -944,13 +944,13 @@ async function recoverRemoteOutcome(effect, state, planResult, context, adapters
 		: { recovered: true, outcome: outcome.outcome ?? outcome };
 }
 
-async function executeConfirmedPlan(planResult, context, adapters, injection, state) {
+async function executeConfirmedPlan(planResult, context, adapters, injection, state, resumed) {
 	const applyEffect = requiredAdapter(adapters, ["applyEffect"], "ERR_APPLY_ADAPTER_REQUIRED");
 	const verifyEffect = requiredAdapter(adapters, ["verifyEffect"], "ERR_VERIFY_ADAPTER_REQUIRED");
 	const now = adapters.now ? adapters.now.bind(adapters) : Date.now;
 	let currentEffect = null;
 	try {
-		const correlationRecoveryEnabled = state.status === "failed" || state.appliedIds.length > 0;
+		const correlationRecoveryEnabled = resumed;
 		await revalidateInitialFingerprints(planResult, state, adapters);
 		let appliedIndex = state.appliedIds.length;
 		for (const phase of PHASES.slice(PHASES.indexOf(state.phase))) {
@@ -1213,7 +1213,7 @@ export async function applyConfirmedPlan(planResult, context, adapters, injectio
 	const now = adapters.now ? adapters.now.bind(adapters) : Date.now;
 	const state = initialJournalState(planResult, now);
 	await persistJournal(adapters, state);
-	return executeConfirmedPlan(planResult, context, adapters, injection, state);
+	return executeConfirmedPlan(planResult, context, adapters, injection, state, false);
 }
 
 export async function resumeConfirmedPlan(planResult, context, adapters, injection = {}) {
@@ -1222,7 +1222,7 @@ export async function resumeConfirmedPlan(planResult, context, adapters, injecti
 	if (!state) throw new ReconfigureError("No interrupted work found to resume.", "ERR_NO_JOURNAL");
 	assertSecretFreeJournal(state);
 	const confirmedRemainder = assertPlanMatchesJournal(planResult, state);
-	return executeConfirmedPlan(confirmedRemainder, context, adapters, injection, state);
+	return executeConfirmedPlan(confirmedRemainder, context, adapters, injection, state, true);
 }
 
 export async function acceptConfirmedPartial(config, planResult, context, adapters) {

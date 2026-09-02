@@ -710,3 +710,137 @@ test("an unjournaled remote create is recovered by correlation before retry", as
 	assert.equal(recoveries, 1);
 	assert.equal(adapters.getAudit().repositories.repo.verifiedResults[remoteEffect.id].identity.id, "WS-101");
 });
+
+test("an in-progress zero-ID resume recovers a remote result before dependents", async () => {
+	const choices = runtimeChoices({ values: { "runtime.dangerous_git_guard": "enabled" } });
+	const remoteEffect = {
+		id: "prepare:remote:copy",
+		target: "remote:jira:copy:1",
+		kind: "state",
+		classification: "CREATE",
+		phase: "prepare",
+		reason: "Create a correlated copy.",
+		diff: "created",
+		fingerprint: null,
+		remoteFingerprint: null,
+		correlationToken: "correlation-resume",
+		payload: { operation: "create_copy", external: true, correlationToken: "correlation-resume" },
+	};
+	const dependentEffect = {
+		id: "cutover:local:mapping",
+		target: "local:mapping:1",
+		kind: "state",
+		classification: "UPDATE",
+		phase: "cutover",
+		reason: "Persist the recovered remote mapping.",
+		diff: "updated",
+		fingerprint: "mapping-v1",
+		dependencies: [remoteEffect.id],
+	};
+	const planned = createReconfigurePlan(BASE_CONFIG, PHASED_SNAPSHOT, {}, choices, {
+		effects: [remoteEffect, dependentEffect],
+	});
+	const recoveredIdentity = { id: "WS-102", version: 4, hash: "copy-hash-2" };
+	let remoteCreates = 0;
+	let recoveries = 0;
+	let adapters;
+	adapters = createMockReconfigureAdapters({
+		applyEffect: async effect => {
+			if (effect.id === remoteEffect.id) remoteCreates++;
+			if (effect.id === dependentEffect.id) {
+				assert.deepEqual(adapters.getJournal().state.returnedIdentities[remoteEffect.id], recoveredIdentity);
+				assert.deepEqual(adapters.getJournal().state.verifiedResults[remoteEffect.id], {
+					repositoryId: null,
+					target: remoteEffect.target,
+					identity: recoveredIdentity,
+					version: recoveredIdentity.version,
+					hash: recoveredIdentity.hash,
+					fingerprint: recoveredIdentity,
+				});
+			}
+			return { identity: { id: `result:${effect.id}`, version: 1, hash: `hash:${effect.id}` } };
+		},
+		recoverRemoteResultByCorrelation: async token => {
+			recoveries++;
+			assert.equal(token, "correlation-resume");
+			return { identity: recoveredIdentity };
+		},
+		verifyEffect: async (effect, outcome) => effect.id === remoteEffect.id
+			? {
+				verified: true,
+				identity: outcome.identity,
+				version: outcome.identity.version,
+				hash: outcome.identity.hash,
+			}
+			: true,
+	});
+	const writeJournal = adapters.writeJournal;
+	let stopAfterPreApplyJournal = true;
+	adapters.writeJournal = async (...args) => {
+		await writeJournal(...args);
+		if (stopAfterPreApplyJournal) {
+			stopAfterPreApplyJournal = false;
+			throw new Error("Simulated process stop after pre-apply journal persistence");
+		}
+	};
+
+	await assert.rejects(
+		() => applyConfirmedPlan(planned, {}, adapters),
+		/Simulated process stop after pre-apply journal persistence/,
+	);
+	assert.equal(adapters.getJournal().state.status, "in_progress");
+	assert.deepEqual(adapters.getJournal().state.appliedIds, []);
+	assert.deepEqual(adapters.getJournal().state.verifiedIds, []);
+
+	const resumed = await resumeConfirmedPlan(planned, {}, adapters);
+	assert.equal(resumed.success, true);
+	assert.equal(remoteCreates, 0);
+	assert.equal(recoveries, 1);
+	assert.deepEqual(
+		adapters.getAudit().repositories.repo.verifiedResults[remoteEffect.id],
+		{
+			repositoryId: null,
+			target: remoteEffect.target,
+			identity: recoveredIdentity,
+			version: recoveredIdentity.version,
+			hash: recoveredIdentity.hash,
+			fingerprint: recoveredIdentity,
+		},
+	);
+});
+
+test("a fresh execution applies remote effects without correlation recovery", async () => {
+	const choices = runtimeChoices({ values: { "runtime.dangerous_git_guard": "enabled" } });
+	const remoteEffect = {
+		id: "prepare:remote:fresh-copy",
+		target: "remote:jira:copy:fresh",
+		kind: "state",
+		classification: "CREATE",
+		phase: "prepare",
+		reason: "Create a fresh correlated copy.",
+		diff: "created",
+		fingerprint: null,
+		remoteFingerprint: null,
+		correlationToken: "correlation-fresh",
+		payload: { operation: "create_copy", external: true, correlationToken: "correlation-fresh" },
+	};
+	const planned = createReconfigurePlan(BASE_CONFIG, PHASED_SNAPSHOT, {}, choices, { effects: [remoteEffect] });
+	let remoteCreates = 0;
+	let recoveries = 0;
+	const adapters = createMockReconfigureAdapters({
+		applyEffect: async effect => {
+			if (effect.id === remoteEffect.id) remoteCreates++;
+			return { identity: { id: "WS-103", version: 1, hash: "fresh-hash" } };
+		},
+		recoverRemoteResultByCorrelation: async () => {
+			recoveries++;
+			return { identity: { id: "WS-existing", version: 9, hash: "existing-hash" } };
+		},
+	});
+
+	const result = await applyConfirmedPlan(planned, {}, adapters);
+	assert.equal(result.success, true);
+	assert.equal(remoteCreates, 1);
+	assert.equal(recoveries, 0);
+	assert.equal(adapters.getAudit().repositories.repo.verifiedResults[remoteEffect.id].identity.id, "WS-103");
+});
