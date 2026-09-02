@@ -95,95 +95,73 @@ export function getAdapterContent(primaryTracker) {
 	return readFileSync(join(SKILL_ROOT, "templates", name), "utf8");
 }
 
+function stateEffect(order, target, classification, reason) {
+	return {
+		order,
+		target,
+		kind: "state",
+		classification,
+		reason,
+		diff: "",
+		fingerprint: null,
+	};
+}
+
 export function planTrackerEffects(config, discovery, jiraValidation, capabilities) {
 	const effects = [];
 	const primary = config?.tracker?.primary;
 	const uiDashboard = config?.ui?.session_start_dashboard;
 	const commitJira = config?.commit?.jira?.actions;
 
-	let hasBlocker = false;
-
 	if ((uiDashboard === "jira_assignments" || commitJira === "ask" || commitJira === "always") && !config?.jira) {
-		effects.push({
-			classification: "BLOCKING_CONFLICT",
-			reason: "Jira-aware configuration requires Jira binding",
-		});
-		hasBlocker = true;
+		effects.push(stateEffect(90, "configuration:jira", "BLOCKING_CONFLICT", "Jira-aware configuration requires Jira binding"));
 	}
-
 	if (!primary) return effects;
 
 	if (primary === "jira") {
 		if (!jiraValidation?.ready) {
-			effects.push({
-				classification: "BLOCKING_CONFLICT",
-				reason: jiraValidation?.reason || "Jira capability not verified",
-			});
-			hasBlocker = true;
+			effects.push(stateEffect(91, "integration:jira", "BLOCKING_CONFLICT", jiraValidation?.reason || "Jira capability not verified"));
 		}
-
 		if (config.jira?.sync !== "disabled") {
-			effects.push({
-				classification: "BLOCKING_CONFLICT",
-				reason: "Jira primary tracker requires Jira sync to be disabled",
-			});
-			hasBlocker = true;
+			effects.push(stateEffect(92, "configuration:jira.sync", "BLOCKING_CONFLICT", "Jira primary tracker requires Jira sync to be disabled"));
 		}
 	}
 
 	const providers = discoverProviders(discovery?.git?.origin);
 	if (primary === "github" || primary === "gitlab") {
 		if (!providers.includes(primary)) {
-			effects.push({
-				classification: "BLOCKING_CONFLICT",
-				reason: `${primary} selected as primary but repository origin does not match`,
-			});
-			hasBlocker = true;
+			effects.push(stateEffect(93, `integration:${primary}`, "BLOCKING_CONFLICT", `${primary} selected as primary but repository origin does not match`));
 		} else if (primary === "github" && !capabilities?.ghCli) {
-			effects.push({
-				classification: "BLOCKING_CONFLICT",
-				reason: "gh CLI is not available",
-			});
-			hasBlocker = true;
+			effects.push(stateEffect(94, "integration:github", "BLOCKING_CONFLICT", "gh CLI is not available"));
 		} else if (primary === "gitlab" && !capabilities?.glabCli) {
-			effects.push({
-				classification: "BLOCKING_CONFLICT",
-				reason: "glab CLI is not available",
-			});
-			hasBlocker = true;
+			effects.push(stateEffect(95, "integration:gitlab", "BLOCKING_CONFLICT", "glab CLI is not available"));
 		}
 	}
+	if (effects.some(effect => effect.classification === "BLOCKING_CONFLICT")) return effects;
 
-	if (!hasBlocker) {
-		const target = "dev-docs/agents/issue-tracker.md";
-		const desiredContent = getAdapterContent(primary);
-		const entry = discovery?.entries?.[target];
-		let classification = "CREATE";
-		let reason = `Write ${primary} tracker adapter`;
-
-		if (entry?.kind === "file") {
-			if (entry.content === desiredContent) {
-				classification = "NO-OP";
-				reason = `Tracker adapter aligned`;
-			} else {
-				classification = "UPDATE";
-				reason = `Update tracker adapter`;
-			}
-		}
-
-		effects.push({
-			order: 10,
-			target,
-			kind: "file",
-			classification,
-			reason,
-			before: entry?.content,
-			after: desiredContent,
-			diff: "", // renderDiff skipped for pure functions, left for transaction.mjs to handle if needed
-			fingerprint: entry?.fingerprint || MISSING_FINGERPRINT
-		});
+	const target = "dev-docs/agents/issue-tracker.md";
+	const desiredContent = getAdapterContent(primary);
+	const entry = discovery?.entries?.[target];
+	let classification = "CREATE";
+	let reason = `Write ${primary} tracker adapter`;
+	if (entry?.kind === "file") {
+		classification = entry.content === desiredContent ? "NO-OP" : "UPDATE";
+		reason = entry.content === desiredContent ? "Tracker adapter aligned" : "Update tracker adapter";
+	} else if (entry && entry.kind !== "missing") {
+		return [stateEffect(96, target, "BLOCKING_CONFLICT", "A non-file entry occupies the tracker adapter path")];
 	}
 
+	effects.push({
+		order: 100,
+		target,
+		kind: "file",
+		classification,
+		reason,
+		before: entry?.content,
+		after: desiredContent,
+		diff: "",
+		fingerprint: entry?.fingerprint ?? MISSING_FINGERPRINT,
+	});
 	return effects;
 }
 
