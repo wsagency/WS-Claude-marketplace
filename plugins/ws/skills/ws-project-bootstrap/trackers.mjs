@@ -7,43 +7,30 @@ const MISSING_FINGERPRINT = null;
 
 export function parseOriginIdentity(originUrl) {
 	if (!originUrl || typeof originUrl !== "string") return null;
-
+	const source = originUrl.trim();
 	let url;
 	try {
-		if (originUrl.startsWith("git@")) {
-			const match = originUrl.match(/^git@([^:]+):(.+)\.git$/);
-			if (match) {
-				const [, host, path] = match;
-				url = new URL(`https://${host}/${path}`);
-			} else {
-				return null;
-			}
-		} else if (originUrl.startsWith("https://") || originUrl.startsWith("http://")) {
-			url = new URL(originUrl);
-		} else {
-			return null;
-		}
+		const scp = !source.includes("://") && source.match(/^(?:[^@\s]+@)?([^:/\s]+):([^?#]+)$/);
+		if (scp) url = new URL(`ssh://${scp[1]}/${scp[2]}`);
+		else url = new URL(source);
 	} catch {
 		return null;
 	}
+	if (!["https:", "http:", "ssh:", "git:"].includes(url.protocol) || url.password || url.search || url.hash) return null;
 
-	const host = url.hostname;
-	let provider = null;
-	if (host === "github.com") {
-		provider = "github";
-	} else if (host === "gitlab.com") {
-		provider = "gitlab";
-	}
-
+	const host = url.hostname.toLowerCase();
+	const provider = host === "github.com" ? "github" : host === "gitlab.com" ? "gitlab" : null;
 	if (!provider) return null;
 
-	let pathname = url.pathname.replace(/^\//, "");
-	if (pathname.endsWith(".git")) {
-		pathname = pathname.slice(0, -4);
+	let pathname;
+	try {
+		pathname = decodeURIComponent(url.pathname).replace(/^\/+|\/+$/g, "");
+	} catch {
+		return null;
 	}
+	if (pathname.endsWith(".git")) pathname = pathname.slice(0, -4);
 	const parts = pathname.split("/");
-	if (parts.length < 2) return null;
-
+	if (parts.length < 2 || parts.some(part => part === "" || part === "." || part === "..")) return null;
 	return {
 		provider,
 		host,

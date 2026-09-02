@@ -21,6 +21,12 @@ test("validated GitHub and GitLab origins expose only their matching primary tra
 		owner: "wsagency",
 		repo: "example",
 	});
+	expect(parseOriginIdentity("ssh://git@gitlab.com/wsagency/group/example.git")).toEqual({
+		provider: "gitlab",
+		host: "gitlab.com",
+		owner: "wsagency",
+		repo: "group/example",
+	});
 	expect(discoverProviders("https://gitlab.com/wsagency/group/example.git")).toEqual(["local", "gitlab"]);
 	expect(discoverProviders("https://example.com/wsagency/example.git")).toEqual(["local"]);
 });
