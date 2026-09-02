@@ -8,8 +8,8 @@ Before starting, ensure you have:
 
 - **Claude Code CLI** installed and configured
 - **Git** with SSH access to `github.com`
-- **tea CLI** (required for the ws plugin's git flows)
-- **jira-cli** (required for the ws plugin's git flows)
+- **tea CLI** (required only for Gitea pull-request flows)
+- **jira-cli** (required only when the repository selects Jira behavior)
 
 ### Installing Dependencies
 
@@ -77,22 +77,22 @@ claude plugin list
 
 You should see `ws` in the output.
 
-## Step 4: Use Your First Command
+## Step 4: Configure the Project
 
-Now let's use the plugin. Navigate to any project with a git repository:
+Navigate to a Git repository and start Claude Code:
 
 ```bash
 cd /path/to/your/project
 claude
 ```
 
-Inside Claude Code, try updating the changelog:
+Run the sole setup command:
 
-```
-/ws-docs changelog
+```text
+/ws-setup
 ```
 
-Claude will analyze recent commits and add an entry to your CHANGELOG.md (or create one if it doesn't exist).
+Review the complete plan, then select **Apply plan**. New repositories default to Local Markdown tickets and can optionally select GitHub, GitLab, Jira, Local/Jira synchronization, and documentation. Existing pre-5 repositories receive a migration plan. Run `/ws-setup` once more to verify the prompt-free `No changes required` result.
 
 ## Step 5: Explore More Commands
 
@@ -103,28 +103,24 @@ The same install already includes the git workflow commands for commit and PR au
 
 ### Using omp instead of (or alongside) Claude Code
 
-On omp the recommended path is the native `@wsagency/omp-ws` package (see the
-README section "Installation in omp"); the `/marketplace` flow below is the
-compat alternative.
+On omp, install the native `@wsagency/omp-ws` package. It contains the same generated commands, skills, agents, schema, templates, and migration support plus the native runtime layer:
 
-The marketplace works in [omp](https://omp.sh) too — plugins installed via
-Claude Code are auto-visible there, or add directly inside omp:
-
+```bash
+omp plugin install @wsagency/omp-ws
 ```
+
+Do not also enable `ws@ws-marketplace` in omp because the complete surface would load twice. The Claude-format marketplace remains a compatibility alternative:
+
+```text
 /marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
 /plugin install ws@ws-marketplace
 ```
 
-See [Use the marketplace with omp](../how-to/use-with-omp.md) and
-[Set up omp for the WS stack](../how-to/omp-setup.md).
+See [Use the marketplace with omp](../how-to/use-with-omp.md), [Set up omp for the WS stack](../how-to/omp-setup.md), and [Migrate an existing project to WS 5](../how-to/migrate-to-ws-5.md).
 
-### Your first command
+### Your first engineering command
 
-Run **`/ws-help`** — a one-screen guide that adapts to your project and tells
-you where to start (spoiler: `/ws-matt grill`).
-
-The ws plugin also ships Matt Pocock's engineering skill graph: run `/ws-matt`
-for a graph status, or `/ws-matt setup` to bootstrap a project.
+Run `/ws-help` for a project-aware orientation, then use `/ws-matt grill` to stress-test an idea. Project setup remains owned by `/ws-setup`; it is not an engineering graph route.
 
 ### One repo, or many? A hub is optional
 
@@ -143,6 +139,6 @@ If you encounter issues:
 - **Plugin not found**: Run `claude plugin marketplace update ws-marketplace` to refresh
 - **SSH errors**: Verify your SSH key is added to github.com
 - **tea errors**: Run `tea login list` to verify your Gitea authentication
-- **jira errors**: Run `jira me` to verify jira-cli authentication (see `/ws-init`)
+- **jira errors**: Run `jira me` to verify jira-cli authentication, then rerun `/ws-setup`
 
 See [Troubleshooting](../how-to/troubleshooting.md) for more solutions.

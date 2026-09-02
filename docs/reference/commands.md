@@ -1,6 +1,6 @@
 # Command Reference
 
-All available commands in the WS Claude Marketplace. Everything ships in the single **ws** plugin; all operations route through eight commands: `/ws-help`, `/ws-matt`, `/ws-setup`, `/ws-docs`, `/ws-hub`, `/ws-commit`, `/ws-status`, `/ws-init`.
+All operations in the single **ws** plugin route through seven commands: `/ws-help`, `/ws-setup`, `/ws-matt`, `/ws-docs`, `/ws-hub`, `/ws-commit`, and `/ws-status`.
 
 Every artifact these commands generate — specs, tickets, ADRs, changelog entries, commit and PR bodies, review findings, research notes, generated docs and HTML — is written in English regardless of the conversation language. Translations are derived copies, never the original.
 
@@ -12,20 +12,19 @@ One-screen orientation guide to the WS system (start here: /ws-matt grill). Adap
 
 ## /ws-matt
 
-Matt Pocock's engineering skills (MIT, vendored) as a graph-engineered skill set: 19 `ws-*` skill nodes (18 vendored + ws-graph-engineering) in two tiers (entry orchestrators / worker disciplines), each SKILL.md carrying a `## Graph node` contract. Full graph: `plugins/ws/docs/graph.md`.
+Matt Pocock's engineering skills (MIT, vendored) form a graph-engineered skill set with two tiers: entry orchestrators and worker disciplines. Each `SKILL.md` declares a `## Graph node` contract. Project setup is outside this graph and belongs only to `/ws-setup`. Full graph: `plugins/ws/docs/graph.md`.
 
 Single entry for the skill graph.
 
 **Arguments:**
 | Name | Required | Description |
 |------|----------|-------------|
-| `entry` | No | None = graph status; `ask`, `implement`, `spec`, `tickets`, `triage`, `grill`, `architecture`, `wayfinder` route to the matching entry node; `setup` bootstraps the project (issue tracker conventions + omp edge-discipline rule) |
+| `entry` | No | None = graph status; `ask`, `implement`, `spec`, `tickets`, `triage`, `grill`, `architecture`, or `wayfinder` routes to the matching engineering entry node |
 
 **Examples:**
 ```
 /ws-matt
 /ws-matt implement
-/ws-matt setup
 ```
 
 ---
@@ -48,7 +47,7 @@ Position-aware in WS project hubs (repo types per ADR 0006): invoked **inside a 
 | Verb | Destination / effect |
 |---|---|
 | (none) | Discovery — status table of docs artifacts |
-| `init` | Scaffold both tracks (`docs/`, `dev-docs/`), config, CHANGELOG, 3-file CONTRIBUTING |
+| `init` | Invoke the shared missing-only docs bootstrap, materialize documentation policy in `.wsagency/config.yaml`, and preserve every authored artifact |
 | `audit` | Verbose diagnosis (docs-doctor + arch-watcher + public-api-watcher in parallel) |
 | `catchup` | Propose CHANGELOG entries, reference updates, ADRs from git history; user triages |
 | `repair` | Create missing artifacts only (never deletes) |
@@ -313,7 +312,7 @@ Show the user's Jira workload (assigned tickets grouped by status) and suggest t
 
 **Arguments:** None
 
-**Prerequisites:** `/ws-init` already run
+**Prerequisites:** A strict-valid `.wsagency/config.yaml` with a Jira binding and current jira-cli capability. Run `/ws-setup` to configure or migrate it.
 
 **Example:**
 ```
@@ -324,45 +323,37 @@ Show the user's Jira workload (assigned tickets grouped by status) and suggest t
 
 ## /ws-setup
 
-Safely reconciles an existing standalone Git repository through one deterministic manifest transaction. The currently supported complete profile is the recommended Local Markdown engineering setup.
+The sole public project-setup command. It configures, migrates, repairs, verifies, resumes, and intentionally reconfigures canonical WS policy across standalone repositories, hub working repositories, and hub roots.
 
-**Arguments:** None
+**Arguments:**
 
-**Behavior:**
-1. Discovers repository, setup, and active-runtime state without writing
-2. Asks only whether to use the unresolved recommended Local profile; an existing valid canonical configuration answers that choice
-3. Renders one ordered plan classifying every effect as `CREATE`, `UPDATE`, `PRESERVE`, `SKIP`, `NO-OP`, or `BLOCKING_CONFLICT`, including exact managed-content changes
-4. Obtains one confirmation for the complete plan hash, applies writes in order, and reads each result back before reporting derived readiness
-5. On an aligned rerun, asks no questions, writes nothing, and reports `No changes required`
+| Value | Required | Description |
+|---|---|---|
+| `reconfigure` | No | Intentionally change selected fields in an already strict-valid v1 policy |
 
-The transaction creates `.wsagency/config.yaml`, Local tracker directories, tracker/triage/domain adapters, root context guidance, and managed runtime-policy context. It does not write secrets or machine identity. Repository creation, hub scope, external trackers, documentation bootstrap, migration, and reconfiguration remain blocking or skipped states until their dedicated transaction slices land.
+**Ordinary behavior:**
+1. Discovers repository shape, canonical and legacy state, managed artifacts, active work, and machine capabilities without writing
+2. Applies canonical-first migration precedence and asks only unresolved choices
+3. Strict-validates every materialized `.wsagency/config.yaml` and capability dependency
+4. Renders one complete cross-worker manifest with `CREATE`, `UPDATE`, `PRESERVE`, `SKIP`, `NO-OP`, and `BLOCKING_CONFLICT` effects, exact diffs, external operations, exclusions, and an authorization hash
+5. Obtains one final confirmation, revalidates fingerprints, then runs machine, core, tracker, documentation, and verified legacy-cleanup effects in order
+6. Reads each result back, stops on the first failure without rollback, and reports exact completed and pending work plus independent configuration, engineering, tracker, documentation, and runtime readiness
+7. On an aligned rerun, asks no questions, invokes no worker, writes nothing, and reports `No changes required`
 
-**Example:**
-```
+New repositories default to Local Markdown. GitHub, GitLab, Jira, and Local/Jira all-ticket synchronization are available when their required repository and machine capabilities are present. At a hub root, setup covers the hub and every registered, locally present working repository in registry order while showing input, output, and absent repositories as excluded. Hub values fill missing initial child choices and are materialized; they are not runtime inheritance.
+
+`/ws-setup reconfigure` selects repository scope, policy domains, and concrete fields. It preserves everything unselected, shows dependency closure and data disposition, and uses a secret-free prepare/cutover/cleanup journal with safe resume and reviewed partial acceptance.
+
+Existing repositories should follow [Migrate an existing project to WS 5](../how-to/migrate-to-ws-5.md).
+
+**Examples:**
+```text
 /ws-setup
+/ws-setup reconfigure
 ```
 
 ---
 
-
-## /ws-init
-
-Verify jira-cli setup and configure the marketplace for this user. If run inside a git repo, also binds that project to a specific Jira project key.
-
-**Arguments:** None
-
-**Behavior:**
-1. Checks the `jira` binary and `jira me`; if missing, prints install/token/`jira init` steps and aborts
-2. Writes `~/.claude/ws/config.yaml` (site host + defaults; auth stays in jira-cli)
-3. If in a git repo, asks which Jira project to bind (`jira project list`); writes `./.claude/ws-project.yaml`, preserving existing `changelog:`/`hooks:` settings (with a diff) on re-run
-4. Reports summary and suggests next commands
-
-**Example:**
-```
-/ws-init
-```
-
----
 
 ## Agents
 

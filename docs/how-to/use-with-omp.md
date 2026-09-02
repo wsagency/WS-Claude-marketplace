@@ -61,8 +61,7 @@ the ws plugin to the current repo version.
 - **Skills** — all plugin skills, plus skills vendored into projects under
   `.claude/skills/` (omp reads that directory too).
 - **Agents** — plugin `agents/` definitions are read by omp's task system.
-- **Jira flows** — `/ws-init`, `/ws-status`, `/ws-commit`, `/ws-commit pr`
-  use jira-cli (a plain binary), fully agent-neutral.
+- **Setup and Jira flows** — `/ws-setup`, `/ws-status`, `/ws-commit`, and `/ws-commit pr` share canonical repository policy; jira-cli remains the agent-neutral integration owner.
 - **Outline publish** — `/ws-docs publish` runs `outline-sync.py`
   (Python 3 stdlib, one-way), agent-neutral.
 - **Context files** — the AGENTS.md convention: canonical project context lives in
@@ -75,13 +74,9 @@ the ws plugin to the current repo version.
 
 ## ws-matt in omp
 
-The skill graph runs well in omp: plugin skills load through omp's
-Claude-compatible providers, and worker agents (`ws-reviewer`, `researcher`,
-`tdd-runner` — native omp names are the unprefixed stems) carry `output` JSON
-schemas and `autoloadSkills` for omp's task system. `/ws-matt setup` installs
-the WS **session policy** rule (`omp-edge-discipline.md`, `alwaysApply`) into
-`.omp/rules/`, enforcing the two-tier topology (entry nodes never chain into
-entry nodes) and the `DONE|{path}` file-handoff protocol session-wide.
+The skill graph runs well in omp: plugin skills load through omp's Claude-compatible providers, and worker agents (`ws-reviewer`, `researcher`, and `tdd-runner`—native omp names are the unprefixed stems) carry output schemas and autoloaded skills for omp's task system.
+
+The native package auto-discovers the `omp-edge-discipline.md` session policy. `/ws-setup` verifies that runtime capability and configures repository policy separately; `/ws-matt` has no setup route.
 
 Choosing a backend: each work unit has one scheduling owner. With
 `HERDR_ENV=1` and 2+ substantial lanes — independent, long-lived, own repo or

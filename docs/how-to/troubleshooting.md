@@ -175,7 +175,7 @@ Solutions for common issues with the WS Claude Marketplace.
    jira me
    ```
 
-5. Run `/ws-init` inside Claude Code — it checks the `jira` binary and `jira me`, prints the exact install/token/`jira init` steps if anything is missing, and binds the current project to a Jira project
+5. Run `/ws-setup`. It validates the current jira-cli capability, asks for unresolved Jira project choices, and stores only the project binding and behavior in `.wsagency/config.yaml`.
 
 ## Docs Issues (`/ws-docs`)
 

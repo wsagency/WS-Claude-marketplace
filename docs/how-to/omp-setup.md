@@ -45,13 +45,9 @@ bash:
     - { match: "rm -rf *", approval: prompt }
 ```
 
-Personal standing rules: create `~/.omp/agent/RULES.md` (e.g. "Never commit or
-push unless asked"). Project rules live in `.omp/rules/`, and the ws plugin
-populates that directory one command at a time: `/ws-matt setup` installs
-`omp-edge-discipline.md` — the WS **session policy** rule. `/ws-hub init`
-installs the WS TTSR pack (`ws-guard-git`, `ws-commit-format`,
-`ws-generated-files`); its OpenWiki flow additionally installs
-`openwiki-freshness`.
+Personal standing rules belong in `~/.omp/agent/RULES.md` (for example, “Never commit or push unless asked”). The native `@wsagency/omp-ws` package auto-discovers `omp-edge-discipline.md`, so every WS session receives the graph and artifact policy without a project-local installer. `/ws-setup` verifies this active runtime capability against the repository's `.wsagency/config.yaml`.
+
+`/ws-hub init` installs the hub-specific TTSR pack (`ws-guard-git`, `ws-commit-format`, and `ws-generated-files`). Its OpenWiki flow also installs `openwiki-freshness`. These hub rules remain project-local because they depend on hub shape.
 
 ## Features worth switching on (one-liners)
 
