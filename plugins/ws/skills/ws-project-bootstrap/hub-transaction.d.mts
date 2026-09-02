@@ -159,7 +159,11 @@ export interface HubTransactionRequest {
 	beforePhase?: (boundary: { repository: string; root: string; phase: "core" | "docs" | "backfill" }) => void | Promise<void>;
 	backfill?: {
 		usesLocalJiraBackfill: (config: CanonicalProjectConfig) => boolean;
-		plan: (config: CanonicalProjectConfig, target: { repository: string; root: string }) => Promise<InternalBackfillPlan | null>;
+		plan: (config: CanonicalProjectConfig, target: {
+			repository: string;
+			root: string;
+			identity: HubRepositoryDiscovery["identity"];
+		}) => Promise<InternalBackfillPlan | null>;
 		publicPlan: (backfill: InternalBackfillPlan | null) => PublicBackfillPlan | null;
 		execute: (backfill: InternalBackfillPlan) => Promise<BackfillResult>;
 		refresh: (backfill: InternalBackfillPlan) => Promise<InternalBackfillPlan>;

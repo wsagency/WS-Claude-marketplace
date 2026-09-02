@@ -502,7 +502,11 @@ async function buildComposite(request) {
 
 		let backfill = null;
 		if (backfillFactory && backfillFactory.usesLocalJiraBackfill(parseCanonicalConfigYaml(targetConfig))) {
-			backfill = await backfillFactory.plan(parseCanonicalConfigYaml(targetConfig), { repository: repository.name, root: repository.root });
+			backfill = await backfillFactory.plan(parseCanonicalConfigYaml(targetConfig), {
+				repository: repository.name,
+				root: repository.root,
+				identity: repository.identity,
+			});
 			if (backfill?.blockers?.length > 0) repositoryBlockers.push(...backfill.blockers.map(reason => ({ repository: repository.name, root: repository.root, reason })));
 		}
 

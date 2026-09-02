@@ -1,3 +1,11 @@
+import {
+	createJiraCorrelation,
+	parseJiraCorrelationId,
+	repositorySourceLink,
+	resolveJiraCorrelation,
+	resolveRepositoryIdentity,
+	validateRepositoryIdentity,
+} from "./correlation-identity.mjs";
 import { MAPPED_TICKET_FIELDS, hashField, hashTicketFields, sanitizeTicketFields } from "./sync.mjs";
 
 export async function auditBackfill(localTickets, syncState, jiraAdapter) {
@@ -59,11 +67,17 @@ export async function auditBackfill(localTickets, syncState, jiraAdapter) {
 	return audit;
 }
 
-export function planBackfill(localTickets, syncState, config) {
+export function planBackfill(localTickets, syncState, config, repository) {
+	const repositoryIdentity = resolveRepositoryIdentity({
+		root: repository?.root,
+		verifiedOrigin: repository?.verifiedOrigin,
+		persistedIdentity: syncState.repositoryIdentity,
+	});
 	const plan = {
 		unmapped: [],
 		project: config?.jira?.project || "PROJ",
 		defaultType: config?.jira?.default_issue_type || "Task",
+		repositoryIdentity,
 	};
 
 	for (const [localId, ticket] of Object.entries(localTickets)) {
@@ -77,8 +91,21 @@ export function planBackfill(localTickets, syncState, config) {
 			priority: ticket.priority,
 			type: ticket.type || plan.defaultType
 		};
-		
+		const sanitizedFields = sanitizeTicketFields(mappedFields);
 		const unsupportedFields = Object.keys(ticket.localMetadata || {});
+		const pending = syncState.pendingOperations?.find(operation =>
+			operation.action === "create" && operation.localId === localId
+		);
+		let correlation;
+		if (pending) {
+			if (!parseJiraCorrelationId(pending.correlationId)) {
+				throw new Error(`Pending Jira create for ${localId} does not have a repository-scoped correlation identity.`);
+			}
+			correlation = resolveJiraCorrelation(repositoryIdentity, plan.project, pending.correlationId);
+		} else {
+			const sourceCorrelationId = hashField({ localId, action: "create", payload: sanitizedFields });
+			correlation = createJiraCorrelation(repositoryIdentity, plan.project, sourceCorrelationId);
+		}
 
 		plan.unmapped.push({
 			localId,
@@ -86,9 +113,10 @@ export function planBackfill(localTickets, syncState, config) {
 			proposedType: mappedFields.type,
 			mappedFields,
 			unsupportedFields,
-			sourceLink: `local://${localId}`,
-			// Deterministic correlation token
-			correlationToken: hashField(`${localId}:${plan.project}`)
+			sourceLink: repositorySourceLink(repositoryIdentity, localId),
+			correlationId: correlation.id,
+			correlationToken: correlation.token,
+			correlationMarker: correlation.marker,
 		});
 	}
 
@@ -102,8 +130,13 @@ export async function executeBackfill({ plan, syncState, jiraAdapter, persistenc
 	if (typeof jiraAdapter.findTicketByCorrelation !== "function") {
 		throw new TypeError("Backfill Jira adapter must support correlation recovery.");
 	}
+	const repositoryIdentity = validateRepositoryIdentity(plan.repositoryIdentity);
+	if (syncState.repositoryIdentity && syncState.repositoryIdentity !== repositoryIdentity) {
+		throw new Error("Backfill sync state belongs to a different repository.");
+	}
 
 	const cloneSyncState = state => ({
+		repositoryIdentity: state.repositoryIdentity ?? repositoryIdentity,
 		mappings: Object.fromEntries(Object.entries(state.mappings || {}).map(([localId, mapping]) => [
 			localId,
 			{ ...mapping, fieldHashes: { ...(mapping.fieldHashes || {}) } }
@@ -124,13 +157,24 @@ export async function executeBackfill({ plan, syncState, jiraAdapter, persistenc
 	const persistAndReadBack = async verify => {
 		await persistence.persistSyncState(cloneSyncState(nextSyncState));
 		const persisted = cloneSyncState(await persistence.readSyncState());
+		nextSyncState.repositoryIdentity = persisted.repositoryIdentity;
 		nextSyncState.mappings = persisted.mappings;
 		nextSyncState.pendingOperations = persisted.pendingOperations;
-		if (!verify(persisted)) throw new Error("Durable sync-state read-back verification failed");
+		if (persisted.repositoryIdentity !== repositoryIdentity || !verify(persisted)) {
+			throw new Error("Durable sync-state read-back verification failed");
+		}
 	};
 
 	for (const item of plan.unmapped) {
 		try {
+			const correlation = resolveJiraCorrelation(repositoryIdentity, plan.project, item.correlationId);
+			if (
+				correlation.id !== item.correlationId
+				|| correlation.token !== item.correlationToken
+				|| correlation.marker !== item.correlationMarker
+			) {
+				throw new Error(`Backfill correlation ownership verification failed for ${item.localId}.`);
+			}
 			if (nextSyncState.mappings[item.localId]) {
 				result.completed.push(item.localId);
 				continue;
@@ -141,11 +185,11 @@ export async function executeBackfill({ plan, syncState, jiraAdapter, persistenc
 			let pending = nextSyncState.pendingOperations.find(operation =>
 				operation.action === "create" &&
 				operation.localId === item.localId &&
-				operation.correlationId === item.correlationToken
+				operation.correlationId === item.correlationId
 			);
 			if (!pending) {
 				pending = {
-					correlationId: item.correlationToken,
+					correlationId: item.correlationId,
 					localId: item.localId,
 					action: "create",
 					payload: mappedFields
@@ -153,22 +197,22 @@ export async function executeBackfill({ plan, syncState, jiraAdapter, persistenc
 				nextSyncState.pendingOperations.push(pending);
 				await persistAndReadBack(state => state.pendingOperations.some(operation =>
 					operation.localId === item.localId &&
-					operation.correlationId === item.correlationToken &&
+					operation.correlationId === item.correlationId &&
 					hashField(operation.payload) === hashField(mappedFields)
 				));
-				pending = nextSyncState.pendingOperations.find(operation => operation.correlationId === item.correlationToken);
+				pending = nextSyncState.pendingOperations.find(operation => operation.correlationId === item.correlationId);
 			}
 
 			let remoteTicket = pending.returnedId ? await jiraAdapter.getTicket(pending.returnedId) : null;
-			if (!remoteTicket) remoteTicket = await jiraAdapter.findTicketByCorrelation(item.correlationToken);
+			if (!remoteTicket) remoteTicket = await jiraAdapter.findTicketByCorrelation(item.correlationId);
 			if (!remoteTicket) {
 				await persistAndReadBack(state => state.pendingOperations.some(operation =>
 					operation.localId === item.localId &&
-					operation.correlationId === item.correlationToken &&
+					operation.correlationId === item.correlationId &&
 					hashField(operation.payload) === hashField(mappedFields)
 				));
-				pending = nextSyncState.pendingOperations.find(operation => operation.correlationId === item.correlationToken);
-				remoteTicket = await jiraAdapter.createTicket(mappedFields, item.correlationToken);
+				pending = nextSyncState.pendingOperations.find(operation => operation.correlationId === item.correlationId);
+				remoteTicket = await jiraAdapter.createTicket(mappedFields, item.correlationId);
 			}
 			if (!remoteTicket?.id || remoteTicket.version === undefined) {
 				throw new Error("Jira create or recovery did not return an identity and version");
@@ -177,7 +221,7 @@ export async function executeBackfill({ plan, syncState, jiraAdapter, persistenc
 			pending.returnedId = remoteTicket.id;
 			pending.returnedVersion = remoteTicket.version;
 			await persistAndReadBack(state => state.pendingOperations.some(operation =>
-				operation.correlationId === item.correlationToken &&
+				operation.correlationId === item.correlationId &&
 				operation.returnedId === remoteTicket.id &&
 				operation.returnedVersion === remoteTicket.version
 			));
@@ -188,7 +232,7 @@ export async function executeBackfill({ plan, syncState, jiraAdapter, persistenc
 				fieldHashes: mappedHashes
 			};
 			nextSyncState.pendingOperations = nextSyncState.pendingOperations.filter(operation =>
-				operation.correlationId !== item.correlationToken
+				operation.correlationId !== item.correlationId
 			);
 			await persistAndReadBack(state =>
 				state.mappings[item.localId]?.jiraId === remoteTicket.id &&
@@ -196,7 +240,7 @@ export async function executeBackfill({ plan, syncState, jiraAdapter, persistenc
 				Object.entries(mappedHashes).every(([field, fieldHash]) =>
 					state.mappings[item.localId]?.fieldHashes?.[field] === fieldHash
 				) &&
-				!state.pendingOperations.some(operation => operation.correlationId === item.correlationToken)
+				!state.pendingOperations.some(operation => operation.correlationId === item.correlationId)
 			);
 
 			result.completed.push(item.localId);

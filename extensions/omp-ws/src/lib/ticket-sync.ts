@@ -1,4 +1,6 @@
+import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { CanonicalProjectConfig } from "../../../../plugins/ws/skills/ws-project-bootstrap/config.d.mts";
@@ -10,6 +12,13 @@ import type {
 	TicketFields,
 	TrackerPersistence,
 } from "../../../../plugins/ws/skills/ws-project-bootstrap/sync.d.mts";
+import {
+	parseJiraCorrelationId,
+	parseJiraCorrelationMarker,
+	resolveJiraCorrelation,
+	resolveRepositoryIdentity,
+	validateRepositoryIdentity,
+} from "../../../../plugins/ws/skills/ws-project-bootstrap/correlation-identity.mjs";
 import { runTrackerOperation } from "../../../../plugins/ws/skills/ws-project-bootstrap/sync.mjs";
 import { run as defaultRun, type RunResult } from "./exec";
 import { isUnknownRecord } from "./type-guards";
@@ -21,7 +30,7 @@ const JIRA_FIELDS_END = "<!-- WS-MANAGED:jira-fields:END -->";
 const JIRA_FIELDS_PREFIX = "<!-- WS-JIRA-FIELDS:";
 const ACCEPTANCE_START = "WS-ACCEPTANCE-CRITERIA-BEGIN";
 const ACCEPTANCE_END = "WS-ACCEPTANCE-CRITERIA-END";
-const CORRELATION_PREFIX = "WS-CORRELATION-";
+const CORRELATION_PREFIX = "WS-CORRELATION-WSC1-";
 const JIRA_TIMEOUT_MS = 10_000;
 const TICKET_ACTIONS = new Set(["create", "update", "comment", "status"]);
 
@@ -242,7 +251,31 @@ async function atomicWrite(filePath: string, content: string): Promise<void> {
 	}
 }
 
-function validateSyncState(value: unknown): SyncState {
+function repositoryOrigin(root: string): string | null {
+	try {
+		const origin = execFileSync("git", ["config", "--get", "remote.origin.url"], {
+			cwd: root,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
+		return origin || null;
+	} catch {
+		return null;
+	}
+}
+
+function persistedRepositoryIdentity(root: string): string | null {
+	try {
+		const parsed = JSON.parse(readFileSync(path.join(root, SYNC_STATE_PATH), "utf8")) as unknown;
+		if (!isUnknownRecord(parsed) || parsed.repositoryIdentity === undefined) return null;
+		return validateRepositoryIdentity(parsed.repositoryIdentity);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+		throw error;
+	}
+}
+
+function validateSyncState(value: unknown, fallbackRepositoryIdentity: string): SyncState {
 	if (!isUnknownRecord(value) || !isUnknownRecord(value.mappings) || !Array.isArray(value.pendingOperations)) {
 		throw new Error(".wsagency/sync-state.json must contain mappings and pendingOperations.");
 	}
@@ -294,7 +327,10 @@ function validateSyncState(value: unknown): SyncState {
 			...(candidate.returnedVersion !== undefined ? { returnedVersion: candidate.returnedVersion } : {}),
 		};
 	});
-	return { mappings, pendingOperations };
+	const repositoryIdentity = value.repositoryIdentity === undefined
+		? fallbackRepositoryIdentity
+		: validateRepositoryIdentity(value.repositoryIdentity);
+	return { repositoryIdentity, mappings, pendingOperations };
 }
 
 async function existingTicketPath(root: string, localId: string): Promise<{ filePath: string; state: "open" | "done" } | null> {
@@ -319,9 +355,12 @@ async function existingTicketPath(root: string, localId: string): Promise<{ file
 
 export function createTicketPersistence(root: string): TrackerPersistence {
 	const syncStatePath = path.join(root, SYNC_STATE_PATH);
+	const fallbackRepositoryIdentity = resolveRepositoryIdentity({ root, verifiedOrigin: repositoryOrigin(root) });
+	let durableRepositoryIdentity: string | undefined;
 	return {
 		async persistSyncState(state) {
-			const validated = validateSyncState(state);
+			const validated = validateSyncState(state, durableRepositoryIdentity ?? fallbackRepositoryIdentity);
+			durableRepositoryIdentity = validated.repositoryIdentity;
 			await atomicWrite(syncStatePath, `${JSON.stringify(validated, null, "\t")}\n`);
 		},
 		async readSyncState() {
@@ -329,7 +368,14 @@ export function createTicketPersistence(root: string): TrackerPersistence {
 			try {
 				source = await fs.readFile(syncStatePath, "utf8");
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code === "ENOENT") return { mappings: {}, pendingOperations: [] };
+				if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+					durableRepositoryIdentity = fallbackRepositoryIdentity;
+					return {
+						repositoryIdentity: fallbackRepositoryIdentity,
+						mappings: {},
+						pendingOperations: [],
+					};
+				}
 				throw error;
 			}
 			let parsed: unknown;
@@ -338,7 +384,9 @@ export function createTicketPersistence(root: string): TrackerPersistence {
 			} catch (error) {
 				throw new Error(".wsagency/sync-state.json is not valid JSON.", { cause: error });
 			}
-			return validateSyncState(parsed);
+			const validated = validateSyncState(parsed, fallbackRepositoryIdentity);
+			durableRepositoryIdentity = validated.repositoryIdentity;
+			return validated;
 		},
 		async persistLocalStore(store) {
 			for (const [localId, ticket] of Object.entries(store)) {
@@ -427,13 +475,13 @@ function parseDescriptionEnvelope(value: unknown): { description: string; accept
 		acceptanceCriteria = text.slice(acceptanceStart + ACCEPTANCE_START.length, acceptanceEnd).trim();
 		text = `${text.slice(0, acceptanceStart)}${text.slice(acceptanceEnd + ACCEPTANCE_END.length)}`.trim();
 	}
-	const correlationPattern = new RegExp(`(?:^|\\n)${CORRELATION_PREFIX}([a-f0-9]{64})(?:$|\\n)`, "i");
-	const correlation = text.match(correlationPattern);
-	if (correlation) text = text.replace(correlation[0], "\n").trim();
+	const correlationLine = text.split("\n").find(line => parseJiraCorrelationMarker(line.trim()));
+	const correlation = correlationLine ? parseJiraCorrelationMarker(correlationLine.trim()) : null;
+	if (correlationLine) text = text.replace(correlationLine, "").replace(/\n{3,}/g, "\n\n").trim();
 	return {
 		description: text,
 		...(acceptanceCriteria !== undefined ? { acceptanceCriteria } : {}),
-		...(correlation?.[1] ? { correlationId: correlation[1].toLowerCase() } : {}),
+		...(correlation ? { correlationId: correlation.id } : {}),
 	};
 }
 
@@ -442,7 +490,11 @@ function formatDescription(fields: TicketFields, correlationId?: string): string
 	if (typeof fields.acceptanceCriteria === "string" && fields.acceptanceCriteria.trim() !== "") {
 		sections.push(`${ACCEPTANCE_START}\n${fields.acceptanceCriteria.trim()}\n${ACCEPTANCE_END}`);
 	}
-	if (correlationId) sections.push(`${CORRELATION_PREFIX}${correlationId}`);
+	if (correlationId) {
+		const correlation = parseJiraCorrelationId(correlationId);
+		if (!correlation) throw new Error("Jira correlation identity must be repository-scoped.");
+		sections.push(`${CORRELATION_PREFIX}${correlation.scope}-${correlation.token}`);
+	}
 	return sections.filter(Boolean).join("\n\n");
 }
 
@@ -529,6 +581,11 @@ export function createJiraAdapter(
 ): JiraAdapter {
 	const project = config.jira?.project;
 	if (!project) throw new Error("Missing Jira project in canonical policy.");
+	const repositoryIdentity = resolveRepositoryIdentity({
+		root,
+		verifiedOrigin: repositoryOrigin(root),
+		persistedIdentity: persistedRepositoryIdentity(root),
+	});
 	const invoke = async (args: string[], action: string): Promise<RunResult> => {
 		const result = await runExec("jira", args, { cwd: root, timeout: JIRA_TIMEOUT_MS });
 		if (result.code !== 0) throw jiraFailure(action, result);
@@ -543,17 +600,17 @@ export function createJiraAdapter(
 			return (await getParsed(id)).ticket;
 		},
 		async findTicketByCorrelation(correlationId) {
-			const marker = `${CORRELATION_PREFIX}${correlationId}`;
-			const jql = `project = ${jqlString(project)} AND description ~ ${jqlString(marker)}`;
+			const expected = resolveJiraCorrelation(repositoryIdentity, project, correlationId);
+			const jql = `project = ${jqlString(project)} AND description ~ ${jqlString(expected.marker)}`;
 			const result = await invoke(["issue", "list", "-q", jql, "--raw"], "Jira correlation lookup");
 			for (const key of outputIssueKeys(parseJsonOutput("Jira correlation lookup", result.stdout))) {
 				const candidate = await getParsed(key);
-				if (candidate.correlationId === correlationId.toLowerCase()) return candidate.ticket;
+				if (candidate.correlationId === expected.id) return candidate.ticket;
 			}
 			return null;
 		},
 		async createTicket(fields, correlationId) {
-			if (!/^[a-f0-9]{64}$/i.test(correlationId)) throw new Error("Jira correlation identity must be a SHA-256 value.");
+			const expected = resolveJiraCorrelation(repositoryIdentity, project, correlationId);
 			const title = typeof fields.title === "string" && fields.title.trim() !== "" ? fields.title : "Untitled";
 			const type = typeof fields.type === "string" && fields.type !== "" ? fields.type : config.jira?.default_issue_type ?? "Task";
 			const args = [
@@ -561,7 +618,7 @@ export function createJiraAdapter(
 				"-p", project,
 				"-t", type,
 				"-s", title,
-				"-b", formatDescription(fields, correlationId.toLowerCase()),
+				"-b", formatDescription(fields, expected.id),
 			];
 			if (typeof fields.priority === "string" && fields.priority !== "") args.push("-y", fields.priority);
 			args.push("--raw", "--no-input");
@@ -576,8 +633,8 @@ export function createJiraAdapter(
 			key ??= result.stdout.match(/\b[A-Z][A-Z0-9]+-\d+\b/)?.[0];
 			if (!key) throw new Error("Jira create returned no verifiable issue key.");
 			let created = await getParsed(key);
-			if (created.correlationId !== correlationId.toLowerCase()) {
-				throw new Error(`Jira create verification for ${key} did not preserve the correlation identity.`);
+			if (created.correlationId !== expected.id) {
+				throw new Error(`Jira create verification for ${key} did not preserve repository correlation ownership.`);
 			}
 			if (fields.status === "done" && created.ticket.status !== "done") {
 				const transitioned = await adapter.updateStatus(key, "done");
@@ -585,7 +642,7 @@ export function createJiraAdapter(
 					ticket: transitioned?.id && transitioned.version !== undefined
 						? transitioned
 						: (await getParsed(key)).ticket,
-					correlationId,
+					correlationId: expected.id,
 				};
 			}
 			return created.ticket;

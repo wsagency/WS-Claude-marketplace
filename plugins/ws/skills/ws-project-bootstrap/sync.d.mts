@@ -36,6 +36,7 @@ export interface PendingSyncOperation {
 }
 
 export interface SyncState {
+	repositoryIdentity?: string;
 	mappings: Record<string, SyncMapping>;
 	pendingOperations: PendingSyncOperation[];
 }

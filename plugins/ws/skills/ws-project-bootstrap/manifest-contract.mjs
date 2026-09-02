@@ -128,7 +128,7 @@ function backfillStateEffect(classification, reason, fingerprint = null) {
 	};
 }
 
-async function planLocalJiraBackfill(config, adapters) {
+async function planLocalJiraBackfill(config, adapters, repository) {
 	if (!usesLocalJiraBackfill(config)) return null;
 	const input = adapters?.jiraBackfill;
 	const requiredCallbacks = [
@@ -163,7 +163,7 @@ async function planLocalJiraBackfill(config, adapters) {
 	const blockers = auditProblems.map(problem =>
 		`Local/Jira mapping audit found ${problem.classification} state for ${problem.localId}${problem.jiraId ? ` (${problem.jiraId})` : ""}.`,
 	);
-	const plan = planBackfill(input.localTickets, input.syncState, config);
+	const plan = planBackfill(input.localTickets, input.syncState, config, repository);
 	const localTicketsFingerprint = hash(input.localTickets);
 	const syncFingerprint = hash(input.syncState);
 	const effects = [
@@ -369,7 +369,10 @@ async function runSetup(request) {
 	const docsPlan = config
 		? await planConfiguredDocumentation(request.root, request.snapshot.projectShape, config, planned.plan)
 		: null;
-	const backfill = await planLocalJiraBackfill(config, request.adapters);
+	const backfill = await planLocalJiraBackfill(config, request.adapters, {
+		root: request.root,
+		verifiedOrigin: planned.plan.originIdentity ?? request.snapshot.git.origin,
+	});
 	const currentDocsReadiness = await discoverDocumentationReadiness(
 		request.root,
 		request.snapshot.projectShape,
@@ -552,7 +555,11 @@ async function runHub(request) {
 		beforePhase: request.adapters?.beforePhase,
 		backfill: {
 			usesLocalJiraBackfill,
-			plan: async (config, target) => planLocalJiraBackfill(config, { jiraBackfill: await request.adapters?.backfillFactory?.(target) }),
+			plan: async (config, target) => planLocalJiraBackfill(
+				config,
+				{ jiraBackfill: await request.adapters?.backfillFactory?.(target) },
+				{ root: target.root, verifiedOrigin: target.identity.origin },
+			),
 			publicPlan: publicBackfillPlan,
 			execute: executePlannedBackfill,
 			refresh: refreshPlannedBackfill,
@@ -606,7 +613,10 @@ async function runMigration(request) {
 			legacyPlan.config,
 			corePlan,
 		),
-		planLocalJiraBackfill(legacyPlan.config, request.adapters),
+		planLocalJiraBackfill(legacyPlan.config, request.adapters, {
+			root: request.root,
+			verifiedOrigin: corePlan?.originIdentity ?? request.snapshot.core.git.origin,
+		}),
 	]);
 	const currentDocsReadiness = await discoverDocumentationReadiness(
 		request.root,

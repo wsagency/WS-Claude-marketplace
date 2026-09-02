@@ -1,8 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { auditBackfill, planBackfill, executeBackfill } from "./backfill-jira.mjs";
+import { createJiraCorrelation, resolveRepositoryIdentity } from "./correlation-identity.mjs";
 import { FakeJiraAdapter } from "./test-support/fake-jira-adapter.mjs";
 import { hashField } from "./sync.mjs";
+
+const TEST_REPOSITORY = { root: "/repositories/backfill-tests" };
+const TEST_REPOSITORY_IDENTITY = resolveRepositoryIdentity(TEST_REPOSITORY);
 
 function clone(value) {
 	return structuredClone(value);
@@ -34,8 +38,24 @@ function durablePersistence(initialState, hooks = {}) {
 	};
 }
 
-function backfillItem(localId, correlationToken, title = localId) {
-	return { localId, correlationToken, mappedFields: { title, status: "open" } };
+function backfillItem(localId, sourceIdentity, title = localId) {
+	const correlation = createJiraCorrelation(TEST_REPOSITORY_IDENTITY, "PROJ", hashField(sourceIdentity));
+	return {
+		localId,
+		mappedFields: { title, status: "open" },
+		correlationId: correlation.id,
+		correlationToken: correlation.token,
+		correlationMarker: correlation.marker,
+	};
+}
+
+function backfillPlan(items) {
+	return {
+		repositoryIdentity: TEST_REPOSITORY_IDENTITY,
+		project: "PROJ",
+		defaultType: "Task",
+		unmapped: items,
+	};
 }
 
 test("auditBackfill classifies valid, missing, stale, and duplicated mappings", async () => {
@@ -124,8 +144,8 @@ test("planBackfill includes open and done tickets with deterministic correlation
 		"LOCAL-3": { id: "LOCAL-3", title: "Done", status: "done" }
 	};
 	const syncState = { mappings: { "LOCAL-1": { jiraId: "TKT-1" } }, pendingOperations: [] };
-	const first = planBackfill(localTickets, syncState, { jira: { project: "TKT", default_issue_type: "Task" } });
-	const second = planBackfill(localTickets, syncState, { jira: { project: "TKT", default_issue_type: "Task" } });
+	const first = planBackfill(localTickets, syncState, { jira: { project: "TKT", default_issue_type: "Task" } }, TEST_REPOSITORY);
+	const second = planBackfill(localTickets, syncState, { jira: { project: "TKT", default_issue_type: "Task" } }, TEST_REPOSITORY);
 	assert.deepEqual(first, second);
 	assert.deepEqual(first.unmapped.map(item => item.localId), ["LOCAL-2", "LOCAL-3"]);
 	assert.equal(first.unmapped[0].proposedType, "Bug");
@@ -134,21 +154,70 @@ test("planBackfill includes open and done tickets with deterministic correlation
 	assert.notEqual(first.unmapped[0].correlationToken, first.unmapped[1].correlationToken);
 });
 
-test("planBackfill retains unmapped tickets with pending create intents for recovery", () => {
+test("repository identity isolates identical Local slugs in one Jira project", () => {
+	const localTickets = { "same-slug": { id: "same-slug", title: "Same", status: "open" } };
+	const syncState = { mappings: {}, pendingOperations: [] };
+	const config = { jira: { project: "TKT", default_issue_type: "Task" } };
+	const first = planBackfill(localTickets, syncState, config, { root: "/repositories/first" });
+	const second = planBackfill(localTickets, syncState, config, { root: "/repositories/second" });
+
+	assert.notEqual(first.repositoryIdentity, second.repositoryIdentity);
+	assert.notEqual(first.unmapped[0].sourceLink, second.unmapped[0].sourceLink);
+	assert.notEqual(first.unmapped[0].correlationToken, second.unmapped[0].correlationToken);
+});
+
+test("verified origin identity is normalized before repository correlation", () => {
+	const localTickets = { ticket: { id: "ticket", title: "Ticket", status: "open" } };
+	const syncState = { mappings: {}, pendingOperations: [] };
+	const config = { jira: { project: "TKT", default_issue_type: "Task" } };
+	const httpsPlan = planBackfill(localTickets, syncState, config, {
+		root: "/clones/first",
+		verifiedOrigin: "https://github.com/WSAgency/example.git",
+	});
+	const sshPlan = planBackfill(localTickets, syncState, config, {
+		root: "/clones/second",
+		verifiedOrigin: "git@github.com:wsagency/example.git",
+	});
+
+	assert.equal(httpsPlan.repositoryIdentity, "origin:github:github.com/wsagency/example");
+	assert.equal(httpsPlan.repositoryIdentity, sshPlan.repositoryIdentity);
+	assert.equal(httpsPlan.unmapped[0].correlationToken, sshPlan.unmapped[0].correlationToken);
+	assert.doesNotMatch(JSON.stringify(httpsPlan), /clones|git@|https:/);
+});
+
+test("verified origin rejects persisted identity copied from another repository", () => {
+	const persistedIdentity = resolveRepositoryIdentity({
+		verifiedOrigin: "https://github.com/wsagency/repository-a.git",
+	});
+
+	assert.throws(
+		() => resolveRepositoryIdentity({
+			root: "/clones/repository-b",
+			verifiedOrigin: "https://github.com/wsagency/repository-b.git",
+			persistedIdentity,
+		}),
+		/repository ownership mismatch/i,
+	);
+});
+
+test("planBackfill retains repository-owned pending create intents for recovery", () => {
 	const localTickets = { "LOCAL-1": { id: "LOCAL-1", title: "Recover", status: "open" } };
+	const config = { jira: { project: "TKT", default_issue_type: "Task" } };
+	const initial = planBackfill(localTickets, { mappings: {}, pendingOperations: [] }, config, TEST_REPOSITORY);
 	const pendingOperations = [{
-		correlationId: hashField("LOCAL-1:TKT"),
+		correlationId: initial.unmapped[0].correlationId,
 		localId: "LOCAL-1",
 		action: "create",
 		payload: { title: "Recover" },
 	}];
 	const plan = planBackfill(
 		localTickets,
-		{ mappings: {}, pendingOperations },
-		{ jira: { project: "TKT", default_issue_type: "Task" } },
+		{ repositoryIdentity: initial.repositoryIdentity, mappings: {}, pendingOperations },
+		config,
+		TEST_REPOSITORY,
 	);
 	assert.deepEqual(plan.unmapped.map(item => item.localId), ["LOCAL-1"]);
-	assert.equal(plan.unmapped[0].correlationToken, pendingOperations[0].correlationId);
+	assert.equal(plan.unmapped[0].correlationId, pendingOperations[0].correlationId);
 });
 
 test("every create is followed by durable returned-key journaling, mapping persistence, and read-back", async () => {
@@ -179,7 +248,7 @@ test("every create is followed by durable returned-key journaling, mapping persi
 	};
 
 	const result = await executeBackfill({
-		plan: { unmapped: [backfillItem("LOCAL-1", "corr-1"), backfillItem("LOCAL-2", "corr-2")] },
+		plan: backfillPlan([backfillItem("LOCAL-1", "corr-1"), backfillItem("LOCAL-2", "corr-2")]),
 		syncState,
 		jiraAdapter,
 		persistence
@@ -187,10 +256,12 @@ test("every create is followed by durable returned-key journaling, mapping persi
 	assert.deepEqual(result.completed, ["LOCAL-1", "LOCAL-2"]);
 	assert.equal(result.errors.length, 0);
 	const firstMappingRead = order.findIndex(event => event.startsWith("read-mapping:LOCAL-1:"));
-	const secondCreate = order.indexOf("create:corr-2");
+	const secondCorrelation = backfillItem("LOCAL-2", "corr-2").correlationId;
+	const secondCreate = order.indexOf(`create:${secondCorrelation}`);
 	assert.ok(firstMappingRead >= 0 && firstMappingRead < secondCreate, order.join(" -> "));
 	assert.ok(order.some(event => event.startsWith("persist-returned:PROJ-1")));
 	assert.equal(persistence.snapshot().mappings["LOCAL-2"].jiraId, "PROJ-2");
+	assert.equal(persistence.snapshot().repositoryIdentity, TEST_REPOSITORY_IDENTITY);
 });
 
 test("outage leaves a durably verified correlation intent and stops sequential creation", async () => {
@@ -199,14 +270,17 @@ test("outage leaves a durably verified correlation intent and stops sequential c
 	const jiraAdapter = new FakeJiraAdapter();
 	jiraAdapter.simulateOutage(true);
 	const result = await executeBackfill({
-		plan: { unmapped: [backfillItem("LOCAL-1", "corr-1"), backfillItem("LOCAL-2", "corr-2")] },
+		plan: backfillPlan([backfillItem("LOCAL-1", "corr-1"), backfillItem("LOCAL-2", "corr-2")]),
 		syncState,
 		jiraAdapter,
 		persistence
 	});
 	assert.deepEqual(result.pending, ["LOCAL-1", "LOCAL-2"]);
 	assert.equal(result.errors.length, 1);
-	assert.deepEqual(persistence.snapshot().pendingOperations.map(operation => operation.correlationId), ["corr-1"]);
+	assert.deepEqual(
+		persistence.snapshot().pendingOperations.map(operation => operation.correlationId),
+		[backfillItem("LOCAL-1", "corr-1").correlationId],
+	);
 	assert.equal(jiraAdapter.getCallLog().filter(call => call.method === "createTicket").length, 0);
 });
 
@@ -223,7 +297,7 @@ test("mapping read-back failure after persistence blocks the next create", async
 		}
 	});
 	const jiraAdapter = new FakeJiraAdapter();
-	const plan = { unmapped: [backfillItem("LOCAL-1", "corr-1"), backfillItem("LOCAL-2", "corr-2")] };
+	const plan = backfillPlan([backfillItem("LOCAL-1", "corr-1"), backfillItem("LOCAL-2", "corr-2")]);
 	const failed = await executeBackfill({ plan, syncState, jiraAdapter, persistence });
 	assert.deepEqual(failed.completed, []);
 	assert.deepEqual(failed.pending, ["LOCAL-1", "LOCAL-2"]);
@@ -248,11 +322,11 @@ test("crash after remote create resumes by correlation without a duplicate creat
 		}
 	});
 	const jiraAdapter = new FakeJiraAdapter();
-	const plan = { unmapped: [backfillItem("LOCAL-1", "corr-resume", "Recovered")] };
+	const plan = backfillPlan([backfillItem("LOCAL-1", "corr-resume", "Recovered")]);
 	const interrupted = await executeBackfill({ plan, syncState, jiraAdapter, persistence });
 	assert.equal(interrupted.errors.length, 1);
 	assert.equal(jiraAdapter.getCallLog().filter(call => call.method === "createTicket").length, 1);
-	assert.equal(persistence.snapshot().pendingOperations[0].correlationId, "corr-resume");
+	assert.equal(persistence.snapshot().pendingOperations[0].correlationId, plan.unmapped[0].correlationId);
 	assert.equal(persistence.snapshot().pendingOperations[0].returnedId, undefined);
 
 	const resumed = await executeBackfill({ plan, syncState: persistence.snapshot(), jiraAdapter, persistence });
@@ -260,4 +334,57 @@ test("crash after remote create resumes by correlation without a duplicate creat
 	assert.equal(resumed.nextSyncState.mappings["LOCAL-1"].jiraId, "PROJ-1");
 	assert.equal(jiraAdapter.getCallLog().filter(call => call.method === "createTicket").length, 1);
 	assert.ok(jiraAdapter.getCallLog().some(call => call.method === "findTicketByCorrelation"));
+});
+
+test("crash retry recovers only the issue owned by its repository", async () => {
+	const localTickets = { "same-slug": { id: "same-slug", title: "Shared title", status: "open" } };
+	const config = { jira: { project: "TKT", default_issue_type: "Task" } };
+	const firstPlan = planBackfill(
+		localTickets,
+		{ mappings: {}, pendingOperations: [] },
+		config,
+		{ root: "/repositories/first" },
+	);
+	const secondPlan = planBackfill(
+		localTickets,
+		{ mappings: {}, pendingOperations: [] },
+		config,
+		{ root: "/repositories/second" },
+	);
+	const jiraAdapter = new FakeJiraAdapter();
+	const secondPersistence = durablePersistence({ mappings: {}, pendingOperations: [] });
+	const second = await executeBackfill({
+		plan: secondPlan,
+		syncState: secondPersistence.snapshot(),
+		jiraAdapter,
+		persistence: secondPersistence,
+	});
+	assert.equal(second.nextSyncState.mappings["same-slug"].jiraId, "PROJ-1");
+
+	let crashOnce = true;
+	const firstPersistence = durablePersistence({ mappings: {}, pendingOperations: [] }, {
+		beforePersist: ({ state }) => {
+			if (crashOnce && state.pendingOperations.some(operation => operation.returnedId)) {
+				crashOnce = false;
+				throw new Error("simulated crash before returned identity became durable");
+			}
+		},
+	});
+	const interrupted = await executeBackfill({
+		plan: firstPlan,
+		syncState: firstPersistence.snapshot(),
+		jiraAdapter,
+		persistence: firstPersistence,
+	});
+	assert.equal(interrupted.errors.length, 1);
+	assert.equal(jiraAdapter.getCallLog().filter(call => call.method === "createTicket").length, 2);
+
+	const resumed = await executeBackfill({
+		plan: firstPlan,
+		syncState: firstPersistence.snapshot(),
+		jiraAdapter,
+		persistence: firstPersistence,
+	});
+	assert.equal(resumed.nextSyncState.mappings["same-slug"].jiraId, "PROJ-2");
+	assert.equal(jiraAdapter.getCallLog().filter(call => call.method === "createTicket").length, 2);
 });

@@ -3,6 +3,10 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { hashField } from "../../../plugins/ws/skills/ws-project-bootstrap/sync.mjs";
+import {
+	createJiraCorrelation,
+	resolveRepositoryIdentity,
+} from "../../../plugins/ws/skills/ws-project-bootstrap/correlation-identity.mjs";
 import type { CanonicalProjectConfig } from "../../../plugins/ws/skills/ws-project-bootstrap/config.d.mts";
 import type { RunOptions, RunResult } from "../src/lib/exec";
 import type { RepositoryPolicyState } from "../src/lib/project-policy";
@@ -258,7 +262,8 @@ describe("Local ticket persistence", () => {
 
 describe("Jira CLI adapter", () => {
 	test("maps ADF, update, status, comments, and correlation with verified Jira identities", async () => {
-		const correlationId = "a".repeat(64);
+		const sourceCorrelationId = "a".repeat(64);
+		const correlation = createJiraCorrelation(resolveRepositoryIdentity({ root }), "WCM", sourceCorrelationId);
 		const jira = new FakeJiraCli(issue({
 			description: {
 				type: "doc",
@@ -267,7 +272,7 @@ describe("Jira CLI adapter", () => {
 					{ type: "paragraph", content: [{ type: "text", text: "WS-ACCEPTANCE-CRITERIA-BEGIN" }] },
 					{ type: "paragraph", content: [{ type: "text", text: "- [ ] Works" }] },
 					{ type: "paragraph", content: [{ type: "text", text: "WS-ACCEPTANCE-CRITERIA-END" }] },
-					{ type: "paragraph", content: [{ type: "text", text: `WS-CORRELATION-${correlationId}` }] },
+					{ type: "paragraph", content: [{ type: "text", text: correlation.marker }] },
 				],
 			},
 		}));
@@ -284,7 +289,7 @@ describe("Jira CLI adapter", () => {
 			priority: "Medium",
 			comments: [],
 		});
-		expect((await adapter.findTicketByCorrelation(correlationId))?.id).toBe("WCM-1");
+		expect((await adapter.findTicketByCorrelation(sourceCorrelationId))?.id).toBe("WCM-1");
 
 		const updated = await adapter.updateTicket("WCM-1", {
 			title: "Updated",
@@ -297,7 +302,7 @@ describe("Jira CLI adapter", () => {
 		expect(edit?.args).toEqual([
 			"issue", "edit", "WCM-1",
 			"-s", "Updated",
-			"-b", `New body\n\nWS-ACCEPTANCE-CRITERIA-BEGIN\n- [ ] New criterion\nWS-ACCEPTANCE-CRITERIA-END\n\nWS-CORRELATION-${correlationId}`,
+			"-b", `New body\n\nWS-ACCEPTANCE-CRITERIA-BEGIN\n- [ ] New criterion\nWS-ACCEPTANCE-CRITERIA-END\n\n${correlation.marker}`,
 			"-y", "High",
 			"--no-input",
 		]);
@@ -313,6 +318,37 @@ describe("Jira CLI adapter", () => {
 		expect(jira.calls.find(call => call.args[1] === "comment")?.args).toEqual([
 			"issue", "comment", "add", "WCM-1", "Durable comment", "--no-input",
 		]);
+	});
+
+	test("scopes search and create markers to the repository contract", async () => {
+		const secondRoot = await fs.mkdtemp(path.join(os.tmpdir(), "ws-ticket-sync-second-"));
+		try {
+			const sourceCorrelationId = "b".repeat(64);
+			const jira = new FakeJiraCli();
+			const firstAdapter = createJiraAdapter(root, CONFIG, jira.run);
+			await firstAdapter.createTicket({ title: "First repository" }, sourceCorrelationId);
+			const firstMarker = jira.calls.find(call => call.args[1] === "create")?.args.join(" ");
+			const firstExpected = createJiraCorrelation(
+				resolveRepositoryIdentity({ root }),
+				"WCM",
+				sourceCorrelationId,
+			);
+			expect(firstMarker).toContain(firstExpected.marker);
+
+			const secondAdapter = createJiraAdapter(secondRoot, CONFIG, jira.run);
+			expect(await secondAdapter.findTicketByCorrelation(sourceCorrelationId)).toBeNull();
+			const secondLookup = jira.calls.filter(call => call.args[1] === "list").at(-1)?.args.join(" ");
+			const secondExpected = createJiraCorrelation(
+				resolveRepositoryIdentity({ root: secondRoot }),
+				"WCM",
+				sourceCorrelationId,
+			);
+			expect(secondLookup).toContain(secondExpected.marker);
+			expect(secondExpected.token).not.toBe(firstExpected.token);
+			expect(secondExpected.marker).not.toBe(firstExpected.marker);
+		} finally {
+			await fs.rm(secondRoot, { recursive: true, force: true });
+		}
 	});
 });
 
@@ -357,9 +393,10 @@ describe("native synchronization boundary", () => {
 		expect(create?.args).toContain("--raw");
 		expect(create?.args.join(" ")).not.toContain("private.example");
 		expect(create?.args.join(" ")).not.toContain("private-local-ticket");
-		expect(create?.args.join(" ")).toMatch(/WS-CORRELATION-[a-f0-9]{64}/);
+		expect(create?.args.join(" ")).toMatch(/WS-CORRELATION-WSC1-[a-f0-9]{64}-[a-f0-9]{64}/);
 		const state = await createTicketPersistence(root).readSyncState();
 		expect(state.pendingOperations).toEqual([]);
+		expect(state.repositoryIdentity).toBe(resolveRepositoryIdentity({ root }));
 		expect(state.mappings[localId]?.jiraId).toBe("WCM-101");
 		expect(state.mappings[localId]?.jiraVersion).toBe(jira.issue?.fields.updated);
 		expect(state.mappings[localId]?.jiraVersion).not.toBe("10001");

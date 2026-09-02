@@ -1,4 +1,5 @@
 import type { CanonicalProjectConfig } from "./config.d.mts";
+import type { RepositoryIdentityInput } from "./correlation-identity.d.mts";
 import type { JiraAdapter, LocalTicket, SyncState, TicketFields } from "./sync.d.mts";
 
 export interface BackfillAudit {
@@ -16,13 +17,16 @@ export interface UnmappedTicket {
 	mappedFields: Record<string, unknown>;
 	unsupportedFields: string[];
 	sourceLink: string;
+	correlationId: string;
 	correlationToken: string;
+	correlationMarker: string;
 }
 
 export interface BackfillPlan {
 	unmapped: UnmappedTicket[];
 	project: string;
 	defaultType: string;
+	repositoryIdentity: string;
 }
 
 export interface BackfillResult {
@@ -49,5 +53,5 @@ export interface ExecuteBackfillArgs {
 
 
 export function auditBackfill(localTickets: Record<string, LocalTicket>, syncState: SyncState, jiraAdapter: JiraAdapter): Promise<BackfillAudit>;
-export function planBackfill(localTickets: Record<string, LocalTicket>, syncState: SyncState, config: CanonicalProjectConfig): BackfillPlan;
+export function planBackfill(localTickets: Record<string, LocalTicket>, syncState: SyncState, config: CanonicalProjectConfig, repository: RepositoryIdentityInput): BackfillPlan;
 export function executeBackfill(args: ExecuteBackfillArgs): Promise<BackfillResult>;
