@@ -45,16 +45,17 @@ bun run build          # generate the complete markdown/runtime surface + bundle
 omp plugin link "$(pwd)"
 ```
 
-Restart omp. Once published to npm:
+Install the published package directly:
 
 ```bash
-omp plugin install @wsagency/omp-ws
+omp plugin install @wsagency/omp-ws@0.7.0
 ```
 
 `npm pack` and `npm publish` run the `prepack` script (`bun run build`)
-automatically, so a clean checkout produces a complete tarball with no manual
-build step — every path in `package.json#files` is regenerated from
-`plugins/ws/` before the tarball is created.
+automatically. Release builds require the exact marketplace commit identity and
+emit a checksum manifest for the generated commands, skills, agents, and rules,
+so the pre-publication verifier can prove the tarball matches the reviewed
+source.
 
 **Rebuild after plugin changes:** any change to `plugins/ws/` that the generator
 consumes (commands, skills, agents, rules, templates, or runtime scripts)
@@ -208,9 +209,9 @@ skills remain authoritative, and free-form file edits stay equally valid.
 
 | Tool | What it does |
 |---|---|
-| `ws_ticket` | create / move / close tickets in `dev-docs/tickets/open|done` per the canonical Local-tracker convention. Refuses with a pointer to `/ws-setup` when the Local tracker is not configured. |
+| `ws_ticket` | Create, move, or close tickets in the canonical repository root's `dev-docs/tickets/open|done`. Requires strict-valid `.wsagency/config.yaml` with `tracker.primary: local`; when `jira.sync: all_local_tickets` is configured, every write uses the durable synchronization boundary and fails closed if that boundary is unavailable. |
 | `ws_changelog` | append an entry (`feat|fix|perf|refactor|security|breaking`, text, optional ticket) under `[Unreleased]` in CHANGELOG.md, creating sections in canonical Keep-a-Changelog order; mirrors to `docs/changelog.md` when that file exists. |
-| `ws_adr` | scaffold a lightweight two-tier ADR (`# NNNN — Title` + 1-3 sentences) in `dev-docs/decisions/`, auto-numbered; returns the path. |
+| `ws_adr` | Scaffold a lightweight two-tier ADR (`# NNNN — Title` + 1-3 sentences) in the strict-valid canonical policy's `docs.dev_track/decisions/` directory, auto-numbered; returns the path. |
 
 ## Development
 

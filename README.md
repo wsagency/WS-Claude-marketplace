@@ -52,7 +52,7 @@ claude plugin marketplace update ws-marketplace
 claude plugin uninstall ws@ws-marketplace
 ```
 
-### Installation in omp — native package (recommended)
+### Installation in omp — native package
 
 On omp, install the **native package** `@wsagency/omp-ws` — it carries the
 COMPLETE suite (all commands, skills, and agents, generated from the same
@@ -60,13 +60,10 @@ source as the Claude plugin — ADR 0004) plus omp-only capabilities: a
 **fail-safe git guard**, TTSR convention rules, the opt-in changelog gate, a
 **Jira session dashboard widget**, docs-drift and OpenWiki-freshness nudges,
 compaction preservation, and the schema-validated `ws_ticket` /
-`ws_changelog` / `ws_adr` tools. Requires [bun](https://bun.sh):
+`ws_changelog` / `ws_adr` tools:
 
 ```bash
-git clone git@github.com:wsagency/WS-Claude-marketplace.git
-cd WS-Claude-marketplace/extensions/omp-ws
-bun install && bun run build
-omp plugin link .
+omp plugin install @wsagency/omp-ws@0.7.0
 ```
 
 Restart open omp sessions afterwards. Do NOT also install the marketplace
@@ -80,11 +77,9 @@ Claude Code. omp reads both registries.
 Native runtime policy, duplicate-install handling, and machine guard
 strengthening: [extensions/omp-ws/README.md](./extensions/omp-ws/README.md).
 
-Compat alternative (no bun, no checkout): omp also reads this registry in
-Claude-plugin format — `/marketplace add git@github.com:wsagency/WS-Claude-marketplace.git`
-then `/plugin install ws@ws-marketplace` (⚠️ always with the
-`@ws-marketplace` suffix — a bare `install ws` resolves to the npm websocket
-package). You get all commands/skills/agents but none of the native layer.
+The Claude-format marketplace installation is not a supported omp consumer
+path after WS 5.0. Disable or uninstall `ws@ws-marketplace` before enabling
+the native package.
 Machine setup (model roles, feature toggles):
 [docs/how-to/omp-setup.md](./docs/how-to/omp-setup.md). What works and known
 gaps: [docs/how-to/use-with-omp.md](./docs/how-to/use-with-omp.md).
@@ -275,12 +270,12 @@ See [`dev-docs/runbooks/create-plugin.md`](dev-docs/runbooks/create-plugin.md) f
 
 ## Using with omp
 
-The marketplace also works in [omp](https://omp.sh) — its plugin system reads this
-repo's Claude-compatible registry natively (commands, skills, agents). Jira and Outline
-flows are CLI/script-based and fully agent-neutral. Context files follow the
-**AGENTS.md convention**: canonical content in `AGENTS.md`, `CLAUDE.md` is a thin
-`@AGENTS.md` import. See [Use the marketplace with omp](docs/how-to/use-with-omp.md)
-for setup and known gaps.
+The native `@wsagency/omp-ws` package is the supported omp distribution. It
+contains the complete generated command, skill, and agent surface plus the
+native runtime layer. Context files follow the **AGENTS.md convention**:
+canonical content in `AGENTS.md`, while `CLAUDE.md` is a thin `@AGENTS.md`
+import. See [Use WS with omp](docs/how-to/use-with-omp.md) for setup and known
+gaps.
 
 ## Documentation
 

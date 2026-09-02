@@ -15,7 +15,7 @@ New to the marketplace? Start here:
 Practical guides for common tasks:
 
 - [Migrate an existing project to WS 5](how-to/migrate-to-ws-5.md) — Replace pre-5 setup sources with `/ws-setup` and canonical project policy
-- [Use the marketplace with omp](how-to/use-with-omp.md) — Install and run everything in omp; what works and known gaps
+- [Use WS with omp](how-to/use-with-omp.md) — Install the native package, update it, and understand runtime gaps
 - [Set up omp for the WS stack](how-to/omp-setup.md) — Machine setup: model roles, safety posture, feature toggles
 - [Troubleshooting](how-to/troubleshooting.md) — Fix common installation and runtime issues
 

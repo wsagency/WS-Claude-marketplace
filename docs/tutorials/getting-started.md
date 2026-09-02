@@ -106,17 +106,14 @@ The same install already includes the git workflow commands for commit and PR au
 On omp, install the native `@wsagency/omp-ws` package. It contains the same generated commands, skills, agents, schema, templates, and migration support plus the native runtime layer:
 
 ```bash
-omp plugin install @wsagency/omp-ws
+omp plugin install @wsagency/omp-ws@0.7.0
 ```
 
-Do not also enable `ws@ws-marketplace` in omp because the complete surface would load twice. The Claude-format marketplace remains a compatibility alternative:
+Do not also enable `ws@ws-marketplace` in omp because the complete surface
+would load twice. The Claude-format marketplace remains the Claude Code
+distribution, not an omp consumer path.
 
-```text
-/marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
-/plugin install ws@ws-marketplace
-```
-
-See [Use the marketplace with omp](../how-to/use-with-omp.md), [Set up omp for the WS stack](../how-to/omp-setup.md), and [Migrate an existing project to WS 5](../how-to/migrate-to-ws-5.md).
+See [Use WS with omp](../how-to/use-with-omp.md), [Set up omp for the WS stack](../how-to/omp-setup.md), and [Migrate an existing project to WS 5](../how-to/migrate-to-ws-5.md).
 
 ### Your first engineering command
 
