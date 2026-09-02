@@ -9,6 +9,8 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import type { ZodType } from "zod/v4";
 import { slugify } from "../lib/slug";
+import { updateTicketText } from "../lib/ticket-sync";
+import type { TicketFields } from "../../../../plugins/ws/skills/ws-project-bootstrap/sync.d.mts";
 import {
 	loadRepositoryPolicy,
 	missingPolicyCapability,
@@ -23,6 +25,7 @@ export interface TicketCreateInput {
 	blockedBy?: string[];
 	share?: string;
 	criteria?: string[];
+	jiraFields?: Pick<TicketFields, "priority" | "type" | "comments">;
 }
 
 /** Render a ticket file exactly in the local-tracker template shape. */
@@ -38,7 +41,8 @@ export function renderTicket(input: TicketCreateInput): string {
 	for (const criterion of input.criteria ?? []) {
 		lines.push(`- [ ] ${criterion}`);
 	}
-	return `${lines.join("\n").trimEnd()}\n`;
+	const rendered = `${lines.join("\n").trimEnd()}\n`;
+	return input.jiraFields ? updateTicketText(rendered, input.jiraFields) : rendered;
 }
 
 export function ticketPaths(ticketsDir: string, slug: string): { open: string; done: string } {
@@ -78,7 +82,7 @@ export interface NativeTicketSyncOperation {
 	action: "create" | "status";
 	localId: string;
 	payload: Record<string, unknown>;
-	perform: () => Promise<string>;
+	perform: (effectivePayload?: Record<string, unknown>) => Promise<string>;
 }
 
 export type NativeTicketSyncBoundary = (request: {
@@ -125,13 +129,14 @@ export function registerTicketTool(pi: ExtensionAPI, dependencies: TicketToolDep
 			if (policy.status !== "valid" || !policy.config?.tracker) {
 				return textResult(missingPolicyCapability("ws_ticket", "tracker.primary"), true);
 			}
-			if (policy.config.tracker.primary !== "local") {
+			const config = policy.config;
+			if (config.tracker!.primary !== "local") {
 				return textResult(
-					`ws_ticket: canonical tracker.primary is ${policy.config.tracker.primary}; Local ticket writes are refused.`,
+					`ws_ticket: canonical tracker.primary is ${config.tracker!.primary}; Local ticket writes are refused.`,
 					true,
 				);
 			}
-			const synchronize = policy.config.jira?.sync === "all_local_tickets";
+			const synchronize = config.jira?.sync === "all_local_tickets";
 			if (synchronize && dependencies.runSynchronizedOperation === undefined) {
 				return textResult(
 					"ws_ticket: all-ticket Jira synchronization is configured, but the durable synchronization boundary is unavailable; refusing the Local write.",
@@ -176,8 +181,11 @@ export function registerTicketTool(pi: ExtensionAPI, dependencies: TicketToolDep
 					payload: {
 						title: params.title,
 						description: params.body,
-						acceptanceCriteria: params.criteria?.join("\n"),
+						...(params.criteria?.length
+							? { acceptanceCriteria: params.criteria.map(criterion => `- [ ] ${criterion}`).join("\n") }
+							: {}),
 						status: "ready-for-agent",
+						type: config.jira?.default_issue_type ?? "Task",
 					},
 					perform: async () => {
 						await fs.mkdir(path.dirname(open), { recursive: true });
@@ -189,6 +197,9 @@ export function registerTicketTool(pi: ExtensionAPI, dependencies: TicketToolDep
 								blockedBy: params.blocked_by,
 								share: params.share,
 								criteria: params.criteria,
+								jiraFields: {
+									type: config.jira?.default_issue_type ?? "Task",
+								},
 							}),
 							"utf8",
 						);
@@ -221,18 +232,43 @@ export function registerTicketTool(pi: ExtensionAPI, dependencies: TicketToolDep
 				action: "status",
 				localId: slug,
 				payload: { status: target === "done" ? "done" : "ready-for-agent" },
-				perform: async () => {
-					await fs.mkdir(path.dirname(to), { recursive: true });
-					if (params.share) {
-						const text = await fs.readFile(from, "utf8");
-						if (!text.includes(`share: ${params.share}`)) {
-							const lines = text.split("\n");
-							lines.splice(1, 0, "", `share: ${params.share}`);
-							await fs.writeFile(from, lines.join("\n"), "utf8");
+				perform: async effectivePayload => {
+					let effectiveStatus = target === "done" ? "done" : "ready-for-agent";
+					if (effectivePayload?.status === "done" || effectivePayload?.status === "ready-for-agent") {
+						effectiveStatus = effectivePayload.status;
+					}
+					const effectiveState = effectiveStatus === "done" ? "done" : "open";
+					const currentOpen = await exists(open);
+					const currentDone = await exists(done);
+					if (currentOpen === currentDone) {
+						throw new Error(currentOpen
+							? `Ticket exists in both open/ and done/: ${slug}`
+							: `Ticket disappeared before the status write: ${slug}`);
+					}
+					const current = currentOpen ? open : done;
+					const destination = effectiveState === "done" ? done : open;
+					let text = await fs.readFile(current, "utf8");
+					if (params.share && !text.includes(`share: ${params.share}`)) {
+						const lines = text.split("\n");
+						lines.splice(1, 0, "", `share: ${params.share}`);
+						text = lines.join("\n");
+					}
+					text = updateTicketText(text, { status: effectiveStatus });
+					await fs.writeFile(current, text, "utf8");
+					if (current !== destination) {
+						await fs.mkdir(path.dirname(destination), { recursive: true });
+						if (await exists(destination)) throw new Error(`Destination already exists: ${destination}`);
+						await fs.link(current, destination);
+						try {
+							await fs.unlink(current);
+						} catch (error) {
+							await fs.rm(destination, { force: true }).catch(() => undefined);
+							throw error;
 						}
 					}
-					await fs.rename(from, to);
-					return `Moved ${from} -> ${to}`;
+					return current === destination
+						? `Kept ${current} at ${effectiveStatus}`
+						: `Moved ${current} -> ${destination}`;
 				},
 			});
 		},

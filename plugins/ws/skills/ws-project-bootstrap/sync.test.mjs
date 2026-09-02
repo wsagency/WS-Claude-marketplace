@@ -273,6 +273,58 @@ test("an after-pass failure preserves recoverable state", async () => {
 	assert.equal(jiraAdapter.existingData["WCM-6"].title, "After");
 });
 
+test("reuses a durably returned comment identity instead of posting it twice", async () => {
+	const jiraAdapter = new FakeJiraAdapter({
+		"WCM-6C": {
+			id: "WCM-6C",
+			version: 2,
+			title: "Comment recovery",
+			comments: [{ id: "comment-9", text: "Already accepted" }],
+		},
+	});
+	const persistence = durablePersistence(
+		{
+			"local-6c": {
+				id: "local-6c",
+				title: "Comment recovery",
+				comments: [{ id: "local-comment", text: "Already accepted" }],
+			},
+		},
+		{
+			mappings: {
+				"local-6c": {
+					...mapping("WCM-6C", { title: "Comment recovery", comments: [] }),
+					jiraVersion: 1,
+				},
+			},
+			pendingOperations: [{
+				correlationId: "pending-comment",
+				localId: "local-6c",
+				action: "comment",
+				payload: { text: "Already accepted" },
+				returnedId: "comment-9",
+				returnedVersion: 2,
+			}],
+		},
+	);
+
+	const recovered = await runOperation({
+		config: CONFIG,
+		localStore: persistence.localSnapshot(),
+		syncState: persistence.syncSnapshot(),
+		operation: null,
+		jiraAdapter,
+		persistence,
+	});
+
+	assert.equal(jiraAdapter.getCallLog().some(call => call.method === "addComment"), false);
+	assert.deepEqual(recovered.nextSyncState.pendingOperations, []);
+	assert.deepEqual(
+		persistence.localSnapshot()["local-6c"].comments,
+		[{ id: "comment-9", text: "Already accepted" }],
+	);
+});
+
 test("create and comment synchronization never disclose Local workflow metadata", async () => {
 	const jiraAdapter = new FakeJiraAdapter();
 	const created = await runOperation({
@@ -365,6 +417,14 @@ test("durably journals each remote intent and returned version before the next m
 
 	await invoke({ action: "comment", localId: "local-durable", payload: { text: "Durable comment" } });
 	assert.equal(persistence.syncSnapshot().mappings["local-durable"].jiraVersion, 3);
+	assert.deepEqual(
+		persistence.localSnapshot()["local-durable"].comments,
+		jiraAdapter.existingData[jiraId].comments,
+	);
+	assert.equal(
+		persistence.syncSnapshot().mappings["local-durable"].fieldHashes.comments,
+		hashField(jiraAdapter.existingData[jiraId].comments),
+	);
 
 	await invoke({ action: "status", localId: "local-durable", payload: { status: "done" } });
 	assert.equal(persistence.syncSnapshot().mappings["local-durable"].jiraVersion, 4);

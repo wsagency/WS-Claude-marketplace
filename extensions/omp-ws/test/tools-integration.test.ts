@@ -113,9 +113,9 @@ describe("ws_ticket", () => {
 
 		const closed = await call(tool, { op: "close", slug: "add-dark-mode-toggle", share: "https://example.com/s/1" });
 		expect(closed.isError).toBeFalsy();
-		expect(await fs.readFile(path.join(cwd, "dev-docs", "tickets", "done", "add-dark-mode-toggle.md"), "utf8")).toContain(
-			"share: https://example.com/s/1",
-		);
+		const closedText = await fs.readFile(path.join(cwd, "dev-docs", "tickets", "done", "add-dark-mode-toggle.md"), "utf8");
+		expect(closedText).toContain("share: https://example.com/s/1");
+		expect(closedText).toContain("**Status:** done");
 		await expect(fs.stat(openPath)).rejects.toThrow();
 	});
 
@@ -124,7 +124,7 @@ describe("ws_ticket", () => {
 		await fs.writeFile(path.join(cwd, "dev-docs", "tickets", "done", "old.md"), "# Old\n", "utf8");
 		const result = await call(tool, { op: "move", slug: "old", to: "open" });
 		expect(result.isError).toBeFalsy();
-		expect(await fs.readFile(path.join(cwd, "dev-docs", "tickets", "open", "old.md"), "utf8")).toBe("# Old\n");
+		expect(await fs.readFile(path.join(cwd, "dev-docs", "tickets", "open", "old.md"), "utf8")).toContain("**Status:** ready-for-agent");
 	});
 
 	test("close of a missing slug errors", async () => {
@@ -292,8 +292,9 @@ describe("ws_ticket", () => {
 				payload: {
 					title: "Durable native",
 					description: "Use the shared boundary.",
-					acceptanceCriteria: "Persist intent",
+					acceptanceCriteria: "- [ ] Persist intent",
 					status: "ready-for-agent",
+					type: "Task",
 				},
 			},
 			{ action: "status", payload: { status: "done" } },

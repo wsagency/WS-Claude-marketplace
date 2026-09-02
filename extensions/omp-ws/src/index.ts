@@ -34,6 +34,7 @@ import { registerStopNudge } from "./stop-nudge";
 import { registerChangelogTool } from "./tools/changelog";
 import { registerAdrTool } from "./tools/adr";
 import { registerTicketTool } from "./tools/ticket";
+import { runSynchronizedOperation } from "./lib/ticket-sync";
 import { registerWikiFreshness } from "./wiki-freshness";
 
 export default function ompWs(pi: ExtensionAPI): void {
@@ -49,7 +50,7 @@ export default function ompWs(pi: ExtensionAPI): void {
 	registerCompaction(pi);
 
 	// Tier 2 — registered tools
-	registerTicketTool(pi);
+	registerTicketTool(pi, { runSynchronizedOperation });
 	registerChangelogTool(pi);
 	registerAdrTool(pi);
 }

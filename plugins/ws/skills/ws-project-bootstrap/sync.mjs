@@ -350,19 +350,33 @@ export async function runTrackerOperation({
 				}
 
 				if (pending.action === "comment") {
-					const comment = await adapter.addComment(mapping.jiraId, pending.payload.text);
-					if (!comment?.id || comment.version === undefined) {
-						throw new Error(`Jira did not return a comment identity and version for ${mapping.jiraId}`);
+					let updatedTicket;
+					if (pending.returnedId) {
+						updatedTicket = await adapter.getTicket(mapping.jiraId);
+						const returnedComment = updatedTicket?.comments?.some(comment => comment.id === pending.returnedId);
+						if (!returnedComment) {
+							throw new Error(`Returned Jira comment ${pending.returnedId} is unavailable on ${mapping.jiraId}`);
+						}
+					} else {
+						const comment = await adapter.addComment(mapping.jiraId, pending.payload.text);
+						if (!comment?.id || comment.version === undefined) {
+							throw new Error(`Jira did not return a comment identity and version for ${mapping.jiraId}`);
+						}
+						pending = await persistReturned(pending, comment.id, comment.version);
+						updatedTicket = await adapter.getTicket(mapping.jiraId);
 					}
-					pending = await persistReturned(pending, comment.id, comment.version);
-					const updatedTicket = await adapter.getTicket(mapping.jiraId);
 					if (!updatedTicket?.id || updatedTicket.version === undefined) {
 						throw new Error(`Jira did not return a version for ${mapping.jiraId}`);
 					}
+					const comments = updatedTicket.comments ?? [];
+					mergeLocalFields(pending.localId, { comments });
+					await persistLocalAndReadBack(store =>
+						hashField(store[pending.localId]?.comments) === hashField(comments)
+					);
 					await finishPending(pending, {
 						jiraId: mapping.jiraId,
 						jiraVersion: updatedTicket.version,
-					}, { comments: hashField(updatedTicket.comments) });
+					}, { comments: hashField(comments) });
 					continue;
 				}
 			} catch (error) {
