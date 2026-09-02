@@ -1,0 +1,11 @@
+{
+  "effects": [
+    { "phase": "migration", "target": ".wsagency/config.yaml", "classification": "BLOCKING_CONFLICT" },
+    { "phase": "migration", "target": "dev-docs/agents/issue-tracker.md", "classification": "PRESERVE" }
+  ],
+  "readiness": null,
+  "reportIncludes": ["Legacy migration blocked before writes"],
+  "externalCalls": [],
+  "preserved": ["dev-docs/agents/issue-tracker.md"],
+  "deleted": []
+}

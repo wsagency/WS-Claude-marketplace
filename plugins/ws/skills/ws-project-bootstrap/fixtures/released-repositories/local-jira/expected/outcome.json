@@ -1,0 +1,21 @@
+{
+  "effects": [
+    { "phase": "migration", "target": ".wsagency/config.yaml", "classification": "CREATE" },
+    { "phase": "migration", "target": "dev-docs/agents/issue-tracker.md", "classification": "PRESERVE" },
+    { "phase": "cleanup", "target": ".claude/ws-project.yaml", "classification": "UPDATE" }
+  ],
+  "readiness": {
+    "configValid": true,
+    "semanticReadBack": true,
+    "engineeringReady": true,
+    "contextReady": true,
+    "runtimeReady": true,
+    "fingerprintsReady": true,
+    "docsReady": true,
+    "jiraReady": true
+  },
+  "reportIncludes": ["Legacy migration verified", "WS setup verified"],
+  "externalCalls": ["verifyMigrationReadiness"],
+  "preserved": ["dev-docs/tickets/open/mirrored-ticket.md"],
+  "deleted": [".claude/ws-project.yaml"]
+}

@@ -1,0 +1,9 @@
+{
+  "files": [
+    {
+      "source": "pre-5-engineering/issue-tracker-local-jira.md",
+      "target": "dev-docs/agents/issue-tracker.md",
+      "replace": { "<PROJECT-KEY>": "WCM" }
+    }
+  ]
+}
