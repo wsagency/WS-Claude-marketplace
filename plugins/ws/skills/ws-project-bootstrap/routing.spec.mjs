@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { apply, plan, resume } from "./reconfigure.mjs";
+import { createMockReconfigureAdapters } from "./reconfigure.test-support.mjs";
 
 const CONFIG = Object.freeze({
 	schema_version: 1,
@@ -36,51 +37,6 @@ function domainChoices(routes, overrides = {}) {
 	};
 }
 
-function mockAdapters(overrides = {}) {
-	let journal = null;
-	let audit = null;
-	const applied = [];
-	const verified = [];
-	const history = [];
-	return {
-		writeJournal: async (hash, state) => {
-			journal = { hash, state };
-			history.push(`journal:${state.phase}`);
-		},
-		readJournal: async () => journal,
-		removeJournal: async () => {
-			journal = null;
-			history.push("removeJournal");
-		},
-		appendAudit: async record => {
-			audit = record;
-			history.push("appendAudit");
-		},
-		revalidateLocalFingerprints: async () => true,
-		revalidateMachineFingerprints: async () => true,
-		refetchRemoteFingerprint: async effect => effect.remoteFingerprint,
-		applyEffect: async effect => {
-			applied.push(effect.id);
-			history.push(`apply:${effect.id}`);
-			return effect.target.startsWith("remote:") ? { identity: { id: effect.target, version: 1 } } : undefined;
-		},
-		verifyEffect: async effect => {
-			verified.push(effect.id);
-			history.push(`verify:${effect.id}`);
-			return true;
-		},
-		verifyCutover: async () => true,
-		verifyCompletion: async () => true,
-		validatePartialState: async () => ({ valid: true }),
-		now: () => 1_693_612_800_000,
-		getJournal: () => journal,
-		getAudit: () => audit,
-		getApplied: () => applied,
-		getVerified: () => verified,
-		getHistory: () => history,
-		...overrides,
-	};
-}
 
 const TRIAGE_SNAPSHOT = Object.freeze({
 	shape: "standalone",
@@ -154,7 +110,7 @@ test("new labels are created or validated in prepare and verified before mapping
 	const configEffect = created.effects.find(effect => effect.target === "config:triage.labels.needs_triage");
 	assert.ok(configEffect.dependencies.includes(createLabel.id));
 
-	const adapters = mockAdapters();
+	const adapters = createMockReconfigureAdapters();
 	const result = await apply(CONFIG, TRIAGE_SNAPSHOT, {}, triageChoices(), created.hash, created.effects, adapters);
 	assert.equal(result.success, true, result.report);
 	const verifyLabel = adapters.getHistory().indexOf(`verify:${createLabel.id}`);
@@ -204,7 +160,7 @@ test("domain destinations preserve authored bytes and verify before active routi
 	assert.ok(deleteSource.dependencies.includes(layout.id));
 	assert.equal(result.effects.some(effect => effect.target === "dev-docs/decisions/0001-auth.md" && effect.classification === "DELETE"), false);
 
-	const adapters = mockAdapters();
+	const adapters = createMockReconfigureAdapters();
 	const applied = await apply(CONFIG, DOMAIN_SNAPSHOT, {}, domainChoices(DOMAIN_ROUTES), result.hash, result.effects, adapters);
 	assert.equal(applied.success, true);
 	assert.ok(adapters.getHistory().indexOf(`verify:${contextCopy.id}`) < adapters.getHistory().indexOf(`apply:${layout.id}`));
@@ -220,7 +176,7 @@ test("move intent without deletion authorization preserves the authored source",
 
 test("remote drift stops before relabel mutation and retains the journal for fresh authorization", async () => {
 	const result = plan(CONFIG, TRIAGE_SNAPSHOT, {}, triageChoices());
-	const adapters = mockAdapters({ refetchRemoteFingerprint: async () => "drifted" });
+	const adapters = createMockReconfigureAdapters({ refetchRemoteFingerprint: async () => "drifted" });
 	const applied = await apply(CONFIG, TRIAGE_SNAPSHOT, {}, triageChoices(), result.hash, result.effects, adapters);
 	assert.equal(applied.success, false);
 	assert.deepEqual(adapters.getApplied(), []);
@@ -228,16 +184,36 @@ test("remote drift stops before relabel mutation and retains the journal for fre
 	assert.match(applied.report, /Remote drift/);
 });
 
-test("interrupted domain cutover resumes the confirmed remainder without recopying verified destinations", async () => {
+test("interrupted domain copy is re-verified before dependent cutover without recopying", async () => {
 	const selectedChoices = domainChoices(DOMAIN_ROUTES);
 	const result = plan(CONFIG, DOMAIN_SNAPSHOT, {}, selectedChoices);
-	const adapters = mockAdapters();
-	const interrupted = await apply(CONFIG, DOMAIN_SNAPSHOT, {}, selectedChoices, result.hash, result.effects, adapters, { failAtPhase: "cutover" });
+	const destination = result.effects.find(effect => effect.target === "CONTEXT-MAP.md" && effect.classification === "CREATE");
+	const layout = result.effects.find(effect => effect.target === "config:domain.layout");
+	assert.ok(destination);
+	assert.ok(layout);
+	assert.ok(layout.dependencies.includes(destination.id));
+	const adapters = createMockReconfigureAdapters();
+	const interrupted = await apply(
+		CONFIG,
+		DOMAIN_SNAPSHOT,
+		{},
+		selectedChoices,
+		result.hash,
+		result.effects,
+		adapters,
+		{ failAfterApplyAtEffectId: destination.id },
+	);
 	assert.equal(interrupted.success, false);
-	const prepared = [...adapters.getApplied()];
+	assert.ok(adapters.getJournal().state.appliedIds.includes(destination.id));
+	assert.equal(adapters.getJournal().state.verifiedIds.includes(destination.id), false);
+	assert.equal(adapters.getApplied().includes(layout.id), false);
+
+	const resumeHistoryStart = adapters.getHistory().length;
 	const resumed = await resume(CONFIG, DOMAIN_SNAPSHOT, {}, selectedChoices, adapters);
 	assert.equal(resumed.success, true);
-	assert.deepEqual(adapters.getApplied().filter(id => prepared.includes(id)), prepared);
+	const resumeHistory = adapters.getHistory().slice(resumeHistoryStart);
+	assert.ok(resumeHistory.indexOf(`verify:${destination.id}`) < resumeHistory.indexOf(`apply:${layout.id}`));
+	assert.equal(adapters.getApplied().filter(id => id === destination.id).length, 1);
 	assert.equal(new Set(adapters.getApplied()).size, adapters.getApplied().length);
 });
 
@@ -251,7 +227,7 @@ test("aligned triage and domain routing are no-op plans requiring no confirmatio
 	const domainAlignedChoices = domainChoices([], { values: { "domain.layout": "single_context" } });
 	const domainAligned = plan(CONFIG, { shape: "standalone", repositoryId: "repo", entries: {} }, {}, domainAlignedChoices);
 	assert.equal(domainAligned.requiresConfirmation, false);
-	const adapters = mockAdapters();
+	const adapters = createMockReconfigureAdapters();
 	const applied = await apply(CONFIG, { shape: "standalone", repositoryId: "repo", entries: {} }, {}, domainAlignedChoices, domainAligned.hash, domainAligned.effects, adapters);
 	assert.equal(applied.success, true);
 	assert.deepEqual(adapters.getHistory(), []);

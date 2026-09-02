@@ -104,11 +104,18 @@ export interface ReconfigureFingerprints {
 	remote: Record<string, unknown>;
 }
 
+export interface ReconfigureConfigSectionRemoval {
+	section: string;
+	reason: string;
+	dependencies?: string[];
+}
+
 export interface ReconfigurePlanContribution {
 	effects?: Array<Partial<ReconfigureEffect> & Pick<ReconfigureEffect, "target" | "kind" | "classification" | "reason" | "diff" | "fingerprint">>;
 	blockers?: ReconfigureBlocker[];
 	dependencyClosure?: Array<string | ReconfigureDependency>;
 	fieldDependencies?: Record<string, string[]>;
+	configSectionRemovals?: ReconfigureConfigSectionRemoval[];
 }
 
 export interface ReconfigurePlanResult {
@@ -141,7 +148,7 @@ export interface ReconfigureJournalOperation {
 }
 
 export interface ReconfigureJournalState {
-	schemaVersion: 1;
+	schemaVersion: 2;
 	planHash: string;
 	choicesHash: string;
 	scope: string[];
@@ -149,7 +156,7 @@ export interface ReconfigureJournalState {
 	phase: ReconfigurePhase;
 	status: "in_progress" | "failed" | "completed";
 	operations: ReconfigureJournalOperation[];
-	completedIds: string[];
+	appliedIds: string[];
 	verifiedIds: string[];
 	returnedIdentities: Record<string, unknown>;
 	correlationTokens: string[];
@@ -191,6 +198,8 @@ export interface ReconfigureInjection {
 	failAtPhase?: Exclude<ReconfigurePhase, "done">;
 	failAtEffectIndex?: number;
 	failAtEffectId?: string;
+	failAfterApplyAtEffectIndex?: number;
+	failAfterApplyAtEffectId?: string;
 }
 
 export interface ReconfigureApplyResult {

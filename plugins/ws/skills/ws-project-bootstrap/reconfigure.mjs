@@ -270,6 +270,16 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 	const domains = normalizeDomains(choices);
 	const scope = selectedRepositories(snapshot, choices);
 	const selectedFields = [...new Set(choices.fields)].sort();
+	const configSectionRemovals = new Map();
+	for (const removal of contribution.configSectionRemovals || []) {
+		if (!removal || typeof removal.section !== "string" || !/^[a-z][a-z0-9_]*$/.test(removal.section) || removal.section === "schema_version") {
+			throw new ReconfigureError("Structural configuration removal requires a canonical top-level section.", "ERR_INVALID_SECTION_REMOVAL");
+		}
+		configSectionRemovals.set(removal.section, removal);
+	}
+	if (selectedFields.some(field => configSectionRemovals.has(field.split(".")[0]))) {
+		throw new ReconfigureError("A canonical section cannot be removed while one of its fields is selected.", "ERR_CONFLICTING_SECTION_CHANGE");
+	}
 	if (selectedFields.some(field => !domains.some(domain => fieldBelongsToDomain(field, domain)))) {
 		throw new ReconfigureError("Every selected field must belong to at least one selected domain.", "ERR_FIELD_OUTSIDE_DOMAINS");
 	}
@@ -284,6 +294,7 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 	}
 	const selectedValues = Object.fromEntries(selectedFields.map(field => [field, choices.values[field]]));
 	const proposedConfig = materializeProposedConfig(config, selectedFields, selectedValues);
+	for (const section of configSectionRemovals.keys()) delete proposedConfig[section];
 	const proposedValidation = validateCanonicalConfigObject(proposedConfig);
 	if (proposedValidation.status !== "valid") {
 		const details = (proposedValidation.errors || []).map(issue => issue.message).filter(Boolean).join(" ");
@@ -291,7 +302,32 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 	}
 
 	const effects = [];
+	for (const [section, removal] of configSectionRemovals) {
+		const target = `config:${section}`;
+		const aligned = !Object.hasOwn(config, section);
+		effects.push({
+			id: `cutover:${target}:remove`,
+			order: 20,
+			phase: "cutover",
+			target,
+			kind: "state",
+			classification: aligned ? "NO-OP" : "UPDATE",
+			reason: aligned ? `Canonical ${section} policy is already absent.` : removal.reason,
+			before: config[section],
+			diff: aligned ? "unchanged" : "selected section removed; surrounding bytes unchanged",
+			fingerprint: snapshot.entries?.[target]?.fingerprint ?? null,
+			dependencies: [...(removal.dependencies || [])],
+			payload: {
+				operation: "remove_config_section",
+				section,
+				preserveUnselected: true,
+				preserveCommentsAndOrder: true,
+			},
+		});
+	}
+
 	for (const field of [...knownFields].sort()) {
+		if (configSectionRemovals.has(field.split(".")[0])) continue;
 		const target = `config:${field}`;
 		const current = valueAtPath(config, field);
 		if (!selectedFields.includes(field)) {
@@ -444,7 +480,7 @@ function assertSecretFreeJournal(state) {
 
 function initialJournalState(planResult, now) {
 	const state = {
-		schemaVersion: 1,
+		schemaVersion: 2,
 		planHash: planResult.hash,
 		choicesHash: planResult.choicesHash,
 		scope: [...planResult.scope],
@@ -452,7 +488,7 @@ function initialJournalState(planResult, now) {
 		phase: "prepare",
 		status: "in_progress",
 		operations: planResult.effects.filter(isMutation).map(journalOperation),
-		completedIds: [],
+		appliedIds: [],
 		verifiedIds: [],
 		returnedIdentities: {},
 		correlationTokens: [...planResult.correlationTokens],
@@ -471,13 +507,13 @@ async function persistJournal(adapters, state) {
 }
 
 function actionableByPhase(planResult, state, phase) {
-	const completed = new Set(state.completedIds);
-	return planResult.effects.filter(effect => isMutation(effect) && effect.phase === phase && !completed.has(effect.id));
+	const verified = new Set(state.verifiedIds);
+	return planResult.effects.filter(effect => isMutation(effect) && effect.phase === phase && !verified.has(effect.id));
 }
 
 function pendingFingerprints(planResult, state, category) {
-	const completed = new Set(state.completedIds);
-	return Object.fromEntries(Object.entries(planResult.fingerprints[category] || {}).filter(([id]) => !completed.has(id)));
+	const applied = new Set(state.appliedIds);
+	return Object.fromEntries(Object.entries(planResult.fingerprints[category] || {}).filter(([id]) => !applied.has(id)));
 }
 
 async function revalidateConfirmedFingerprints(planResult, state, adapters) {
@@ -508,14 +544,14 @@ async function revalidateRemoteEffect(effect, adapters) {
 }
 
 function operationReport(planResult, state) {
-	const completed = new Set(state.completedIds);
+	const verified = new Set(state.verifiedIds);
 	const failedId = state.failed?.effectId || null;
 	return {
-		completed: state.operations.filter(operation => completed.has(operation.id)).map(operation => operation.id),
+		completed: state.operations.filter(operation => verified.has(operation.id)).map(operation => operation.id),
 		preserved: planResult.effects.filter(effect => effect.classification === "PRESERVE").map(effect => effect.id),
 		skipped: planResult.effects.filter(effect => effect.classification === "SKIP").map(effect => effect.id),
 		noOp: planResult.effects.filter(effect => effect.classification === "NO-OP").map(effect => effect.id),
-		pending: state.operations.filter(operation => !completed.has(operation.id) && operation.id !== failedId).map(operation => operation.id),
+		pending: state.operations.filter(operation => !verified.has(operation.id) && operation.id !== failedId).map(operation => operation.id),
 		failed: failedId ? [failedId] : [],
 	};
 }
@@ -532,10 +568,11 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 	let currentEffect = null;
 	try {
 		await revalidateConfirmedFingerprints(planResult, state, adapters);
-		let appliedIndex = state.completedIds.length;
+		let appliedIndex = state.appliedIds.length;
 		for (const phase of PHASES.slice(PHASES.indexOf(state.phase))) {
 			state.phase = phase;
 			state.status = "in_progress";
+			state.failed = null;
 			await persistJournal(adapters, state);
 			if (injection.failAtPhase === phase) throw new Error(`Injected failure at phase ${phase}`);
 			if (phase === "cleanup" && typeof adapters.verifyCutover === "function" && await adapters.verifyCutover(state, planResult) !== true) {
@@ -543,24 +580,34 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 			}
 			for (const effect of actionableByPhase(planResult, state, phase)) {
 				currentEffect = effect;
-				const completed = new Set(state.completedIds);
-				if ((effect.dependencies || []).some(id => !completed.has(id))) {
+				const verified = new Set(state.verifiedIds);
+				if ((effect.dependencies || []).some(id => !verified.has(id))) {
 					throw new ReconfigureError(`Effect ${effect.id} has an incomplete dependency.`, "ERR_INCOMPLETE_DEPENDENCY");
 				}
-				if (injection.failAtEffectIndex === appliedIndex || injection.failAtEffectId === effect.id) {
-					throw new Error(`Injected failure at effect ${effect.id}`);
+				let outcome;
+				if (state.appliedIds.includes(effect.id)) {
+					outcome = Object.hasOwn(state.returnedIdentities, effect.id)
+						? { identity: state.returnedIdentities[effect.id] }
+						: undefined;
+				} else {
+					if (injection.failAtEffectIndex === appliedIndex || injection.failAtEffectId === effect.id) {
+						throw new Error(`Injected failure at effect ${effect.id}`);
+					}
+					await revalidateRemoteEffect(effect, adapters);
+					outcome = await applyEffect(effect, { state: structuredClone(state), context });
+					state.appliedIds.push(effect.id);
+					if (outcome?.identity !== undefined) state.returnedIdentities[effect.id] = outcome.identity;
+					await persistJournal(adapters, state);
+					if (injection.failAfterApplyAtEffectIndex === appliedIndex || injection.failAfterApplyAtEffectId === effect.id) {
+						throw new Error(`Injected failure after applying effect ${effect.id}`);
+					}
+					appliedIndex += 1;
 				}
-				await revalidateRemoteEffect(effect, adapters);
-				const outcome = await applyEffect(effect, { state: structuredClone(state), context });
-				state.completedIds.push(effect.id);
-				if (outcome?.identity !== undefined) state.returnedIdentities[effect.id] = outcome.identity;
-				await persistJournal(adapters, state);
 				if (await verifyEffect(effect, outcome, { state: structuredClone(state), context }) !== true) {
 					throw new ReconfigureError(`Verification failed for ${effect.target}.`, "ERR_EFFECT_VERIFICATION");
 				}
 				state.verifiedIds.push(effect.id);
 				await persistJournal(adapters, state);
-				appliedIndex += 1;
 			}
 			if (typeof adapters.verifyPhase === "function" && await adapters.verifyPhase(phase, state, planResult) !== true) {
 				throw new ReconfigureError(`Verification failed after ${phase}.`, "ERR_PHASE_VERIFICATION");
@@ -580,7 +627,7 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 		return {
 			success: false,
 			phase: state.phase,
-			completedEffects: state.completedIds.length,
+			completedEffects: state.verifiedIds.length,
 			hash: state.planHash,
 			readiness: await derivedReadiness(adapters, state, planResult, false),
 			report: `Failed during ${state.phase}: ${error.message}. No rollback was performed.`,
@@ -620,7 +667,7 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 	return {
 		success: true,
 		phase: "done",
-		completedEffects: state.completedIds.length,
+		completedEffects: state.verifiedIds.length,
 		hash: state.planHash,
 		readiness,
 		report: "Prepare, cutover, and cleanup completed. Durable audit recorded before journal cleanup.",
@@ -634,12 +681,18 @@ function journalState(record) {
 }
 
 function assertPlanMatchesJournal(planResult, state) {
+	if (state.schemaVersion !== 2 || !Array.isArray(state.appliedIds) || !Array.isArray(state.verifiedIds)) {
+		throw new ReconfigureError("The interrupted journal uses an unsupported state schema.", "ERR_JOURNAL_SCHEMA");
+	}
 	if (state.planHash !== planResult.hash || state.choicesHash !== planResult.choicesHash || !sameValue(state.scope, planResult.scope) || !sameValue(state.domains, planResult.domains)) {
 		throw new ReconfigureError("The confirmed journal does not match the requested scope and choices.", "ERR_PLAN_MISMATCH");
 	}
 	const plannedIds = new Set(planResult.effects.filter(isMutation).map(effect => effect.id));
-	const missingPending = state.operations.filter(operation => !state.completedIds.includes(operation.id) && !plannedIds.has(operation.id));
-	if (missingPending.length > 0) throw new ReconfigureError("The confirmed remainder cannot be reconstructed safely.", "ERR_PLAN_MISMATCH");
+	const unknownApplied = state.appliedIds.filter(id => !plannedIds.has(id));
+	const missingPending = state.operations.filter(operation => !state.verifiedIds.includes(operation.id) && !plannedIds.has(operation.id));
+	if (unknownApplied.length > 0 || missingPending.length > 0) {
+		throw new ReconfigureError("The confirmed remainder cannot be reconstructed safely.", "ERR_PLAN_MISMATCH");
+	}
 }
 
 export async function applyConfirmedPlan(planResult, context, adapters, injection = {}) {
@@ -688,8 +741,8 @@ export async function acceptConfirmedPartial(config, planResult, context, adapte
 	if (!state) throw new ReconfigureError("No interrupted work found to accept.", "ERR_NO_JOURNAL");
 	assertSecretFreeJournal(state);
 	assertPlanMatchesJournal(planResult, state);
-	const cutoverCompleted = state.operations.some(operation => operation.phase === "cutover" && state.completedIds.includes(operation.id));
-	const destructiveCompleted = state.operations.some(operation => operation.destructive && state.completedIds.includes(operation.id));
+	const cutoverCompleted = state.operations.some(operation => operation.phase === "cutover" && state.verifiedIds.includes(operation.id));
+	const destructiveCompleted = state.operations.some(operation => operation.destructive && state.appliedIds.includes(operation.id));
 	if (!cutoverCompleted || destructiveCompleted) {
 		throw new ReconfigureError("Partial acceptance requires a verified cutover and cannot accept completed source or remote deletion.", "ERR_NOT_ELIGIBLE_PARTIAL");
 	}
@@ -726,7 +779,7 @@ export async function acceptConfirmedPartial(config, planResult, context, adapte
 	return {
 		success: true,
 		phase: state.phase,
-		completedEffects: state.completedIds.length,
+		completedEffects: state.verifiedIds.length,
 		hash: state.planHash,
 		readiness: validation.readiness || await derivedReadiness(adapters, state, planResult, true),
 		report: "Reviewed valid partial state accepted. Durable audit recorded; no rollback or deletion was performed.",

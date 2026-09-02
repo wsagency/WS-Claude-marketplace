@@ -31,6 +31,7 @@ export interface ReconfigureChoices {
 	repositories?: string[];
 	enableDocs?: boolean;
 	disableDocs?: boolean;
+	cancelDependent?: boolean;
 	pathTransitions?: DocsPathTransition[];
 }
 

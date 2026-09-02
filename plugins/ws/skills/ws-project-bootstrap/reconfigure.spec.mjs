@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { acceptPartial, apply, plan, resume } from "./reconfigure.mjs";
+import { createMockReconfigureAdapters, RECONFIGURE_NOW_FIXTURE } from "./reconfigure.test-support.mjs";
 
-const NOW_FIXTURE = 1_693_612_800_000;
 const BASE_CONFIG = Object.freeze({
 	schema_version: 1,
 	runtime: Object.freeze({ session_discipline: "required", dangerous_git_guard: "enabled" }),
@@ -61,51 +61,6 @@ function runtimeChoices(overrides = {}) {
 	};
 }
 
-function mockAdapters(overrides = {}) {
-	let journal = null;
-	let audit = null;
-	const applied = [];
-	const verified = [];
-	const history = [];
-	return {
-		writeJournal: async (hash, state) => {
-			journal = { hash, state };
-			history.push(`journal:${state.phase}:${state.status}`);
-		},
-		readJournal: async () => journal,
-		removeJournal: async () => {
-			journal = null;
-			history.push("removeJournal");
-		},
-		appendAudit: async record => {
-			audit = record;
-			history.push("appendAudit");
-		},
-		applyEffect: async effect => {
-			applied.push(effect.id);
-			history.push(`apply:${effect.id}`);
-			return { identity: { id: `result:${effect.id}`, version: 1 } };
-		},
-		verifyEffect: async effect => {
-			verified.push(effect.id);
-			history.push(`verify:${effect.id}`);
-			return true;
-		},
-		revalidateLocalFingerprints: async () => true,
-		revalidateMachineFingerprints: async () => true,
-		refetchRemoteFingerprint: async effect => effect.remoteFingerprint ?? effect.fingerprint ?? null,
-		verifyCutover: async () => true,
-		verifyCompletion: async () => true,
-		validatePartialState: async () => ({ valid: true, ownershipReport: { repo: "partial" } }),
-		now: () => NOW_FIXTURE,
-		getJournal: () => journal,
-		getAudit: () => audit,
-		getApplied: () => applied,
-		getVerified: () => verified,
-		getHistory: () => history,
-		...overrides,
-	};
-}
 
 function phasedMachine() {
 	return {
@@ -280,7 +235,7 @@ test("shared runtime protection is preserved unless cleanup is exact, repository
 test("aligned reconfiguration requires no confirmation and writes no journal or audit", async () => {
 	const choices = runtimeChoices({ values: { "runtime.dangerous_git_guard": "enabled" } });
 	const result = plan(BASE_CONFIG, { shape: "standalone", repositoryId: "repo-noop" }, {}, choices);
-	const adapters = mockAdapters();
+	const adapters = createMockReconfigureAdapters();
 	assert.equal(result.requiresConfirmation, false);
 	const applied = await apply(BASE_CONFIG, { shape: "standalone", repositoryId: "repo-noop" }, {}, choices, result.hash, result.effects, adapters);
 	assert.equal(applied.phase, "done");
@@ -292,7 +247,7 @@ test("journal is secret-free, typed by scope/fingerprints/items/correlation, and
 	const choices = phasedChoices();
 	const machine = phasedMachine();
 	const planned = plan(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices);
-	const adapters = mockAdapters();
+	const adapters = createMockReconfigureAdapters();
 	const interrupted = await apply(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, planned.hash, planned.effects, adapters, { failAtPhase: "prepare" });
 	assert.equal(interrupted.success, false);
 	const state = adapters.getJournal().state;
@@ -309,14 +264,14 @@ test("local and machine drift stop in prepare before the first mutation without 
 	const choices = phasedChoices();
 	const machine = phasedMachine();
 	const planned = plan(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices);
-	const local = mockAdapters({ revalidateLocalFingerprints: async () => false });
+	const local = createMockReconfigureAdapters({ revalidateLocalFingerprints: async () => false });
 	const localFailure = await apply(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, planned.hash, planned.effects, local);
 	assert.equal(localFailure.success, false);
 	assert.equal(localFailure.phase, "prepare");
 	assert.deepEqual(local.getApplied(), []);
 	assert.match(localFailure.report, /No rollback/);
 
-	const machineDrift = mockAdapters({ revalidateMachineFingerprints: async () => false });
+	const machineDrift = createMockReconfigureAdapters({ revalidateMachineFingerprints: async () => false });
 	const machineFailure = await apply(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, planned.hash, planned.effects, machineDrift);
 	assert.equal(machineFailure.success, false);
 	assert.deepEqual(machineDrift.getApplied(), []);
@@ -328,12 +283,12 @@ for (const phase of ["prepare", "cutover", "cleanup"]) {
 		const choices = phasedChoices();
 		const machine = phasedMachine();
 		const planned = plan(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices);
-		const adapters = mockAdapters();
+		const adapters = createMockReconfigureAdapters();
 		const interrupted = await apply(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, planned.hash, planned.effects, adapters, { failAtPhase: phase });
 		assert.equal(interrupted.success, false);
 		assert.equal(interrupted.phase, phase);
 		assert.ok(adapters.getJournal());
-		const completedBeforeResume = [...adapters.getJournal().state.completedIds];
+		const completedBeforeResume = [...adapters.getJournal().state.verifiedIds];
 		const resumed = await resume(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, adapters);
 		assert.equal(resumed.success, true);
 		assert.equal(resumed.phase, "done");
@@ -343,11 +298,81 @@ for (const phase of ["prepare", "cutover", "cleanup"]) {
 	});
 }
 
+test("resume re-verifies an applied effect before any dependent execution", async () => {
+	const choices = phasedChoices();
+	const machine = phasedMachine();
+	const planned = plan(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices);
+	const prepare = planned.effects.find(effect => effect.phase === "prepare" && ["CREATE", "UPDATE", "DELETE"].includes(effect.classification));
+	assert.ok(prepare);
+	const later = planned.effects.find(effect => effect.phase === "cutover" && ["CREATE", "UPDATE", "DELETE"].includes(effect.classification));
+	assert.ok(later);
+	const adapters = createMockReconfigureAdapters();
+
+	const interrupted = await apply(
+		BASE_CONFIG,
+		PHASED_SNAPSHOT,
+		machine,
+		choices,
+		planned.hash,
+		planned.effects,
+		adapters,
+		{ failAfterApplyAtEffectId: prepare.id },
+	);
+	assert.equal(interrupted.success, false);
+	const state = adapters.getJournal().state;
+	assert.equal(state.schemaVersion, 2);
+	assert.equal(state.planHash, planned.hash);
+	assert.deepEqual(state.appliedIds, [prepare.id]);
+	assert.deepEqual(state.verifiedIds, []);
+	assert.equal(adapters.getHistory().includes(`verify:${prepare.id}`), false);
+	assert.equal(adapters.getApplied().includes(later.id), false);
+
+	const resumeHistoryStart = adapters.getHistory().length;
+	const resumed = await resume(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, adapters);
+	assert.equal(resumed.success, true);
+	const resumeHistory = adapters.getHistory().slice(resumeHistoryStart);
+	assert.ok(resumeHistory.indexOf(`verify:${prepare.id}`) < resumeHistory.indexOf(`apply:${later.id}`));
+	assert.equal(adapters.getApplied().filter(id => id === prepare.id).length, 1);
+});
+
+test("verification failure leaves later work pending and prevents cleanup", async () => {
+	const choices = phasedChoices();
+	const machine = phasedMachine();
+	const planned = plan(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices);
+	const failedEffect = planned.effects.find(effect => effect.phase === "cutover" && ["CREATE", "UPDATE", "DELETE"].includes(effect.classification));
+	assert.ok(failedEffect);
+	const cleanupIds = planned.effects
+		.filter(effect => effect.phase === "cleanup" && ["CREATE", "UPDATE", "DELETE"].includes(effect.classification))
+		.map(effect => effect.id);
+	assert.ok(cleanupIds.length > 0);
+	let failVerification = true;
+	const adapters = createMockReconfigureAdapters({
+		verifyEffect: async effect => !failVerification || effect.id !== failedEffect.id,
+	});
+
+	const failed = await apply(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, planned.hash, planned.effects, adapters);
+	assert.equal(failed.success, false);
+	assert.deepEqual(failed.operationReport.failed, [failedEffect.id]);
+	assert.ok(cleanupIds.every(id => failed.operationReport.pending.includes(id)));
+	assert.ok(cleanupIds.every(id => !adapters.getApplied().includes(id)));
+	assert.ok(adapters.getJournal().state.appliedIds.includes(failedEffect.id));
+	assert.equal(adapters.getJournal().state.verifiedIds.includes(failedEffect.id), false);
+
+	failVerification = false;
+	const resumeHistoryStart = adapters.getHistory().length;
+	const resumed = await resume(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, adapters);
+	assert.equal(resumed.success, true);
+	const resumeHistory = adapters.getHistory().slice(resumeHistoryStart);
+	const firstCleanupApply = resumeHistory.findIndex(item => cleanupIds.some(id => item === `apply:${id}`));
+	assert.ok(resumeHistory.indexOf(`verify:${failedEffect.id}`) < firstCleanupApply);
+	assert.equal(adapters.getApplied().filter(id => id === failedEffect.id).length, 1);
+});
+
 test("returned identities are journaled before a dependent effect runs", async () => {
 	const choices = phasedChoices();
 	const machine = phasedMachine();
 	const planned = plan(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices);
-	const adapters = mockAdapters();
+	const adapters = createMockReconfigureAdapters();
 	await apply(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, planned.hash, planned.effects, adapters, { failAtPhase: "cutover" });
 	const prepareId = planned.effects.find(effect => effect.phase === "prepare" && effect.classification === "CREATE").id;
 	assert.deepEqual(adapters.getJournal().state.returnedIdentities[prepareId], { id: `result:${prepareId}`, version: 1 });
@@ -361,7 +386,7 @@ test("reviewed partial acceptance requires valid retained state, forbids complet
 	const choices = phasedChoices();
 	const machine = phasedMachine();
 	const planned = plan(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices);
-	const adapters = mockAdapters({ validatePartialState: async () => ({ valid: true, ownershipReport: { repo: "partial" } }) });
+	const adapters = createMockReconfigureAdapters({ validatePartialState: async () => ({ valid: true, ownershipReport: { repo: "partial" } }) });
 	await apply(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, planned.hash, planned.effects, adapters, { failAtPhase: "cleanup" });
 	const accepted = await acceptPartial(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, adapters);
 	assert.equal(accepted.ownershipReport.repo, "partial");
@@ -369,7 +394,7 @@ test("reviewed partial acceptance requires valid retained state, forbids complet
 	assert.equal(adapters.getJournal(), null);
 	assert.ok(adapters.getHistory().indexOf("appendAudit") < adapters.getHistory().indexOf("removeJournal"));
 
-	const invalid = mockAdapters({ validatePartialState: async () => ({ valid: false }) });
+	const invalid = createMockReconfigureAdapters({ validatePartialState: async () => ({ valid: false }) });
 	await apply(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, planned.hash, planned.effects, invalid, { failAtPhase: "cleanup" });
 	await assert.rejects(() => acceptPartial(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, invalid), error => error.code === "ERR_INVALID_PARTIAL_STATE");
 });
@@ -378,7 +403,7 @@ test("partial acceptance is unavailable before cutover progress", async () => {
 	const choices = phasedChoices();
 	const machine = phasedMachine();
 	const planned = plan(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices);
-	const adapters = mockAdapters();
+	const adapters = createMockReconfigureAdapters();
 	await apply(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, planned.hash, planned.effects, adapters, { failAtPhase: "prepare" });
 	await assert.rejects(() => acceptPartial(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, adapters), error => error.code === "ERR_NOT_ELIGIBLE_PARTIAL");
 });
@@ -387,11 +412,11 @@ test("successful transaction verifies every effect and writes durable audit befo
 	const choices = phasedChoices();
 	const machine = phasedMachine();
 	const planned = plan(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices);
-	const adapters = mockAdapters();
+	const adapters = createMockReconfigureAdapters();
 	const applied = await apply(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, planned.hash, planned.effects, adapters);
 	assert.equal(applied.success, true);
 	assert.deepEqual(adapters.getVerified(), adapters.getApplied());
-	assert.equal(adapters.getAudit().timestamp, NOW_FIXTURE);
+	assert.equal(adapters.getAudit().timestamp, RECONFIGURE_NOW_FIXTURE);
 	assert.deepEqual(adapters.getAudit().domains, ["runtime"]);
 	assert.equal(adapters.getAudit().noRollback, true);
 	assert.equal(adapters.getJournal(), null);

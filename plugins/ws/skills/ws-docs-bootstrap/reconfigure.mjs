@@ -38,6 +38,7 @@ function buildDocsContribution(config, discovery, choices) {
 	const dependencyClosure = [];
 	const fieldDependencies = {};
 	const contentManifest = [];
+	const configSectionRemovals = [];
 
 	if (choices.enableDocs) {
 		const bootstrap = planDocumentation(discovery);
@@ -60,6 +61,10 @@ function buildDocsContribution(config, discovery, choices) {
 	}
 
 	if (choices.disableDocs) {
+		configSectionRemovals.push({
+			section: "docs",
+			reason: "Remove only the selected canonical docs policy while preserving all authored documentation and surrounding configuration bytes.",
+		});
 		for (const [target, entry] of Object.entries(discovery.entries || {}).sort(([left], [right]) => left.localeCompare(right))) {
 			if (entry.kind === "missing" || entry.kind === "blocked") continue;
 			effects.push({
@@ -210,7 +215,7 @@ function buildDocsContribution(config, discovery, choices) {
 			});
 		}
 	}
-	return { effects, blockers, dependencyClosure, fieldDependencies, contentManifest };
+	return { effects, blockers, dependencyClosure, fieldDependencies, configSectionRemovals, contentManifest };
 }
 
 export function plan(config, discovery, choices) {

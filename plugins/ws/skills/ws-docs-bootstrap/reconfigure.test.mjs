@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { acceptPartial, apply, plan, resume } from "./reconfigure.mjs";
+import { createMockReconfigureAdapters } from "../ws-project-bootstrap/reconfigure.test-support.mjs";
 
 const BASE_CONFIG = Object.freeze({
 	schema_version: 1,
@@ -31,49 +32,6 @@ const DISCOVERY = Object.freeze({
 	},
 });
 
-function mockAdapters(overrides = {}) {
-	let journal = null;
-	let audit = null;
-	const applied = [];
-	const verified = [];
-	const history = [];
-	return {
-		writeJournal: async (hash, state) => {
-			journal = { hash, state };
-			history.push(`journal:${state.phase}`);
-		},
-		readJournal: async () => journal,
-		removeJournal: async () => {
-			journal = null;
-			history.push("removeJournal");
-		},
-		appendAudit: async record => {
-			audit = record;
-			history.push("appendAudit");
-		},
-		revalidateLocalFingerprints: async () => true,
-		revalidateMachineFingerprints: async () => true,
-		applyEffect: async effect => {
-			applied.push(effect.id);
-			history.push(`apply:${effect.id}`);
-		},
-		verifyEffect: async effect => {
-			verified.push(effect.id);
-			history.push(`verify:${effect.id}`);
-			return true;
-		},
-		verifyCutover: async () => true,
-		verifyCompletion: async () => true,
-		validatePartialState: async () => ({ valid: true, ownershipReport: { "/fake/repo": "partial" } }),
-		now: () => 1_693_612_800_000,
-		getJournal: () => journal,
-		getAudit: () => audit,
-		getApplied: () => applied,
-		getVerified: () => verified,
-		getHistory: () => history,
-		...overrides,
-	};
-}
 
 function changelogMove(overrides = {}) {
 	return {
@@ -135,18 +93,43 @@ test("documentation enablement composes the shared missing-only bootstrap and pr
 	assert.equal(result.requiresConfirmation, true);
 });
 
-test("documentation disablement preserves every existing document and authored directory", async () => {
+test("documentation disablement removes only canonical policy and preserves authored content", async () => {
 	const selected = { domains: ["documentation"], fields: [], disableDocs: true };
 	const result = plan(BASE_CONFIG, DISCOVERY, selected);
 	for (const target of ["CHANGELOG.md", "docs", "docs/index.md", "AGENTS.md"]) {
 		assert.equal(result.effects.find(effect => effect.target === target)?.classification, "PRESERVE");
 	}
+	const mutations = result.effects.filter(effect => ["CREATE", "UPDATE", "DELETE"].includes(effect.classification));
+	assert.deepEqual(mutations.map(effect => effect.target), ["config:docs"]);
+	assert.equal(mutations[0].classification, "UPDATE");
+	assert.deepEqual(mutations[0].payload, {
+		operation: "remove_config_section",
+		section: "docs",
+		preserveUnselected: true,
+		preserveCommentsAndOrder: true,
+	});
 	assert.equal(result.effects.some(effect => effect.classification === "DELETE"), false);
-	assert.equal(result.requiresConfirmation, false);
-	const adapters = mockAdapters();
+	assert.equal(result.requiresConfirmation, true);
+
+	const appliedConfig = structuredClone(BASE_CONFIG);
+	const adapters = createMockReconfigureAdapters({
+		applyEffect: async effect => {
+			if (effect.payload?.operation === "remove_config_section") delete appliedConfig[effect.payload.section];
+		},
+	});
 	const applied = await apply(BASE_CONFIG, DISCOVERY, selected, result.hash, result.effects, adapters);
 	assert.equal(applied.success, true);
-	assert.deepEqual(adapters.getHistory(), []);
+	assert.equal(Object.hasOwn(appliedConfig, "docs"), false);
+	assert.deepEqual(appliedConfig.changelog, BASE_CONFIG.changelog);
+	assert.deepEqual(adapters.getApplied(), [mutations[0].id]);
+	assert.equal(DISCOVERY.entries["docs/index.md"].content, "# Authored product docs\n");
+
+	const aligned = plan(appliedConfig, DISCOVERY, selected);
+	assert.equal(aligned.requiresConfirmation, false);
+	const alignedAdapters = createMockReconfigureAdapters();
+	const rerun = await apply(appliedConfig, DISCOVERY, selected, aligned.hash, aligned.effects, alignedAdapters);
+	assert.equal(rerun.report, "Aligned reconfiguration. No changes required.");
+	assert.deepEqual(alignedAdapters.getHistory(), []);
 });
 
 test("configured path changes expose content, collision, intent, reference, and verification manifests before confirmation", () => {
@@ -182,13 +165,18 @@ test("path collision and incomplete managed-reference manifests block before con
 	assert.match(incomplete.blockers[0].reason, /managed-reference effects/);
 });
 
-test("path inputs reject traversal and cancellation performs no mutation", () => {
+test("path inputs reject traversal and cancelled dependencies perform no mutation", () => {
 	assert.throws(() => plan(BASE_CONFIG, DISCOVERY, changelogMove({
 		pathTransitions: [{ source: "CHANGELOG.md", destination: "../outside.md", intent: "copy" }],
 	})), error => error.code === "ERR_INVALID_PATH_TRANSITION");
-	const reviewed = plan(BASE_CONFIG, DISCOVERY, changelogMove());
-	assert.equal(reviewed.requiresConfirmation, true);
-	assert.equal(DISCOVERY.entries["CHANGELOG.md"].content, "# Authored changelog\n\nKeep history.\n");
+	const configBefore = structuredClone(BASE_CONFIG);
+	const contentBefore = DISCOVERY.entries["CHANGELOG.md"].content;
+	assert.throws(
+		() => plan(BASE_CONFIG, DISCOVERY, changelogMove({ cancelDependent: true })),
+		error => error.code === "ERR_DEPENDENT_CANCELLED",
+	);
+	assert.deepEqual(BASE_CONFIG, configBefore);
+	assert.equal(DISCOVERY.entries["CHANGELOG.md"].content, contentBefore);
 });
 
 test("destination content and active references verify before cutover and source cleanup", async () => {
@@ -203,7 +191,7 @@ test("destination content and active references verify before cutover and source
 	assert.deepEqual(new Set(cleanup.dependencies), new Set([destination.id, reference.id, config.id]));
 	assert.equal(cleanup.phase, "cleanup");
 
-	const adapters = mockAdapters();
+	const adapters = createMockReconfigureAdapters();
 	const applied = await apply(BASE_CONFIG, DISCOVERY, selected, result.hash, result.effects, adapters);
 	assert.equal(applied.success, true, applied.report);
 	assert.ok(adapters.getHistory().indexOf(`verify:${destination.id}`) < adapters.getHistory().indexOf(`apply:${config.id}`));
@@ -214,7 +202,7 @@ test("destination content and active references verify before cutover and source
 test("interrupted move resumes without recopying the verified destination", async () => {
 	const selected = changelogMove();
 	const result = plan(BASE_CONFIG, DISCOVERY, selected);
-	const adapters = mockAdapters();
+	const adapters = createMockReconfigureAdapters();
 	const interrupted = await apply(BASE_CONFIG, DISCOVERY, selected, result.hash, result.effects, adapters, { failAtPhase: "cutover" });
 	assert.equal(interrupted.success, false);
 	const prepared = [...adapters.getApplied()];
@@ -227,7 +215,9 @@ test("interrupted move resumes without recopying the verified destination", asyn
 test("reviewed valid partial state can be accepted before source cleanup and records durable audit", async () => {
 	const selected = changelogMove();
 	const result = plan(BASE_CONFIG, DISCOVERY, selected);
-	const adapters = mockAdapters();
+	const adapters = createMockReconfigureAdapters({
+		validatePartialState: async () => ({ valid: true, ownershipReport: { "/fake/repo": "partial" } }),
+	});
 	await apply(BASE_CONFIG, DISCOVERY, selected, result.hash, result.effects, adapters, { failAtPhase: "cleanup" });
 	const accepted = await acceptPartial(BASE_CONFIG, DISCOVERY, selected, adapters);
 	assert.equal(accepted.success, true);
@@ -244,7 +234,7 @@ test("aligned documentation policy is prompt-free and writes nothing", async () 
 		values: { "docs.default_audience": "ask" },
 	};
 	const result = plan(BASE_CONFIG, DISCOVERY, selected);
-	const adapters = mockAdapters();
+	const adapters = createMockReconfigureAdapters();
 	assert.equal(result.requiresConfirmation, false);
 	const applied = await apply(BASE_CONFIG, DISCOVERY, selected, result.hash, result.effects, adapters);
 	assert.equal(applied.report, "Aligned reconfiguration. No changes required.");
