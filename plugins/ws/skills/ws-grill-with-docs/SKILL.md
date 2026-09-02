@@ -7,11 +7,20 @@ disableModelInvocation: true
 
 Run a `/ws-grilling` session, using the `/ws-domain-modeling` skill.
 
+Before changing the domain glossary or routing an ADR, resolve the installed ws
+plugin root and request only the `domain` capability through
+`skills/ws-project-bootstrap/consumer.mjs#inspectCanonicalCapability`. Read
+`domain.layout` from canonical policy and follow its domain adapter. If
+blocked, report the ownership line and exact blocker and stop the write;
+detected repository-local legacy state is named and directed to `/ws-setup`,
+never read as policy or defaulted. The interview itself may continue without
+probing any tracker integration.
+
 ## Graph node
 
 - **Tier:** user-invoked (entry)
-- **Reads:** the loose idea in the conversation; `CONTEXT.md`; ADRs in the area being discussed
-- **Emits:** a sharpened plan held in the conversation thread; `CONTEXT.md` glossary updates and ADRs written inline as decisions land (the paper trail)
+- **Reads:** the loose idea in the conversation; canonical domain policy/adapter; the applicable context glossary and ADRs
+- **Emits:** a sharpened plan held in the conversation thread; glossary updates and ADRs written at canonical domain locations as decisions land
 - **Edges:**
   - then → ws-grilling (drives the interview, one question at a time)
   - then → ws-domain-modeling (runs beneath every grilling turn, keeping the glossary and ADRs current)

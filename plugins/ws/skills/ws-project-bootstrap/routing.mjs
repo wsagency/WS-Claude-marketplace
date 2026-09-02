@@ -294,3 +294,39 @@ export function planDomain(config, snapshot, machine, choices) {
 		blocking: blockers.length > 0,
 	};
 }
+
+const CAPABILITY_SECTIONS = Object.freeze({
+    config: [],
+    engineering: ["tracker", "triage", "domain", "commit", "changelog", "ui", "runtime"],
+    tracker: ["tracker"],
+    triage: ["tracker", "triage"],
+    domain: ["domain"],
+    commit: ["commit"],
+    jira_commit: ["commit", "jira"],
+    changelog: ["changelog"],
+    dashboard: ["ui"],
+    pull_requests: ["tracker"]
+});
+
+/**
+ * Select only the canonical policy sections required by one consumer capability.
+ * Consumers must not fill missing sections with defaults.
+ */
+export function selectCapabilityPolicy(config, capability) {
+    const sections = CAPABILITY_SECTIONS[capability];
+    if (!sections) {
+        throw new TypeError(`Unknown WS capability: ${capability}`);
+    }
+
+    const policy = {};
+    const missingSections = [];
+    for (const section of sections) {
+        if (config?.[section] === undefined) {
+            missingSections.push(section);
+        } else {
+            policy[section] = config[section];
+        }
+    }
+
+    return { capability, sections: [...sections], missingSections, policy };
+}

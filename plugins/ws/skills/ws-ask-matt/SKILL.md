@@ -74,14 +74,23 @@ Off the main flow entirely.
 - **`/teach`** — learn a concept over multiple sessions, using the current directory as a stateful workspace.
 - **`/writing-great-skills`** — reference for writing and editing skills well.
 
-## Precondition
+## Canonical project readiness
 
-**`/ws-setup-matt-pocock-skills`** — run before your first engineering flow to configure the issue tracker, triage labels, and doc layout the other skills assume. Custom issue trackers also work.
+Before routing into a repository engineering flow, resolve the installed ws
+plugin root and use
+`skills/ws-project-bootstrap/consumer.mjs#inspectCanonicalCapability`. Request
+only the capability the selected route needs: `tracker` for issue work,
+`triage` for triage/publishing, or `domain` for domain/architecture work. A
+standalone flow needs none. If the named capability is blocked, report its
+canonical ownership line and exact blocker; detected legacy state must be
+named and sent to `/ws-setup`. Never read a repository-local adapter or
+user-global/repository legacy setup file as policy, and never substitute
+defaults.
 
 ## Graph node
 
 - **Tier:** user-invoked (entry) — the router
-- **Reads:** the user's described situation; the set of ws- skills installed; repo signals (codebase present, tracker configured, how close the session is to the smart zone)
+- **Reads:** the user's described situation; the set of ws- skills installed; repo signals (codebase present, named canonical capability readiness, how close the session is to the smart zone)
 - **Emits:** a routing decision — which node fits and why; no artifacts
 - **Edges:**
   - when you have an idea and a codebase → ws-grill-with-docs (start of the main flow)
@@ -91,7 +100,7 @@ Off the main flow entirely.
   - when bugs and requests you didn't create pile up → ws-triage
   - when a huge foggy effort exceeds one session → ws-wayfinder
   - when there's spare time for codebase upkeep → ws-improve-codebase-architecture
-  - when running the first engineering flow in a repo → ws-setup-matt-pocock-skills
+  - when a selected repository flow lacks its named canonical capability → `/ws-setup` (user-mediated; report the exact blocker and stop)
   - when the need is a single discipline → route straight to the matching worker node: ws-diagnosing-bugs (something's broken), ws-prototype (a runnable answer), ws-research (delegated reading), ws-tdd (build test-first), ws-code-review (review a diff), ws-resolving-merge-conflicts (a stuck merge), ws-domain-modeling (the words are the problem), ws-codebase-design (the module shape is the problem)
 - **Edge rule:** entry → worker only, never entry → entry — every edge above to another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
 - **Handoff protocol:** the routing decision is small and stays in conversation; anything produced downstream follows the target node's own handoff protocol.

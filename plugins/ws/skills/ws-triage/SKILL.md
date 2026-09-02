@@ -9,7 +9,29 @@ disableModelInvocation: true
 
 Move issues on the project issue tracker through a small state machine of triage roles.
 
-If this repo treats external pull requests as a request surface (see the issue-tracker config), triage covers them too: **a PR is an issue with attached code** — same roles, same states, same machine, with a few deltas marked "for a PR" below. Resolve a bare `#42` to an issue or PR per the tracker config.
+## Canonical tracker contract
+
+Resolve the installed ws plugin root and request the `triage` capability
+through `skills/ws-project-bootstrap/consumer.mjs#inspectCanonicalCapability`.
+Use only its canonical tracker, Jira, pull-request, and `triage.labels` values,
+then follow the generated operational adapters. If blocked, report the
+ownership line and exact blocker and stop; detected repository-local legacy
+state is named and directed to `/ws-setup`, never read as policy or defaulted.
+Probe only the selected tracker integration.
+
+If canonical `tracker.pull_requests` is `triage`, request the
+`pull_requests` capability and include external PRs only when it is ready. An
+issue-only triage operation never probes PR integrations. Request `domain`
+separately only before domain-aware codebase exploration.
+
+For each configured Local/Jira tracker mutation, use
+`runCanonicalSynchronizedTrackerOperation`, persist its mapping/pending state,
+and retry pending work before the operation. Jira outage preserves the Local
+change and records pending sync. Same-field conflict stops before overwrite
+and offers Local, Jira, or manual merge. Never synchronize claims, shares,
+Wayfinder pointers, agent state, or other local-only metadata.
+
+External pull requests enter triage only when canonical `tracker.pull_requests` is `triage`: **a PR is an issue with attached code** — same roles, same states, same machine, with a few deltas marked "for a PR" below. Resolve a bare `#42` through the selected operational adapter.
 
 Every comment or issue posted to the issue tracker during triage **must** start with this disclaimer:
 
@@ -41,7 +63,7 @@ For a PR, the same states read against the attached code: `ready-for-agent` mean
 
 Every triaged issue should carry exactly one category role and one state role. If state roles conflict, flag it and ask the maintainer before doing anything else.
 
-These are canonical role names — the actual label strings used in the issue tracker may differ. The mapping should have been provided to you - run `/ws-setup-matt-pocock-skills` if not.
+These are canonical role names. Read their actual tracker strings from `triage.labels`; never assume the displayed examples are configured label values.
 
 State transitions: an unlabeled issue normally goes to `needs-triage` first; from there it moves to `needs-info`, `ready-for-agent`, `ready-for-human`, or `wontfix`. `needs-info` returns to `needs-triage` once the reporter replies. The maintainer can override at any time — flag transitions that look unusual and ask before proceeding.
 
@@ -116,8 +138,8 @@ If prior triage notes exist on the issue or PR, read them, check whether the rep
 ## Graph node
 
 - **Tier:** user-invoked (entry)
-- **Reads:** the issue tracker (issues and external PRs, per `dev-docs/agents/issue-tracker.md`); prior triage notes; `.out-of-scope/*.md`; the codebase via the domain glossary and ADRs; the label vocabulary in `dev-docs/agents/triage-labels.md`
-- **Emits:** category/state roles applied, agent briefs ([AGENT-BRIEF.md](AGENT-BRIEF.md)), triage-notes comments, `.out-of-scope/` entries, closed issues — the state delta lives entirely on the tracker
+- **Reads:** the issue tracker and optional external PRs through named canonical capabilities; prior triage notes; `.out-of-scope/*.md`; the codebase via the canonical domain capability and ADRs; the five mappings in canonical `triage.labels`
+- **Emits:** configured category/state labels applied, agent briefs ([AGENT-BRIEF.md](AGENT-BRIEF.md)), triage-notes comments, `.out-of-scope/` entries, and closed issues through the selected adapter; Local/Jira sync state is persisted at each operation boundary
 - **Edges:**
   - when a request needs fleshing out → ws-grilling (step 4 — drives the interview one question at a time)
   - when a request needs fleshing out → ws-domain-modeling (grilled one question at a time, decisions captured inline)

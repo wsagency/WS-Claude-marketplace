@@ -17,13 +17,31 @@ Wayfinder is **planning** by default: each ticket resolves a decision, and the m
 
 Every map and ticket is an issue, so it has a **name** — its title. In everything the human reads — narration, the map's Decisions-so-far — refer to it by that name, never by a bare id, number, or slug. A wall of `#42, #43, #44` is illegible; names read at a glance. The id and URL don't vanish — a name wraps its link — but they ride *inside* the name, never stand in for it.
 
+## Canonical tracker contract
+
+Resolve the installed ws plugin root and request `triage` plus `domain` through
+`skills/ws-project-bootstrap/consumer.mjs#inspectCanonicalCapability`. Read
+tracker, Jira, triage-label, and domain-layout choices only from the returned
+canonical policy, then follow its operational adapters. If either capability
+is blocked, report its ownership line and exact blocker and stop; detected
+repository-local legacy state is named and directed to `/ws-setup`, never read
+as policy or replaced by a Local default. Probe only the selected tracker
+integration.
+
+Every Local mutation with `jira.sync: all_local_tickets` runs through
+`runCanonicalSynchronizedTrackerOperation`. Persist mappings and pending state,
+retry pending work first, keep the Local operation available through Jira
+outages, and stop before overwrite on same-field conflicts with Local, Jira,
+and manual-merge choices. Claims, shares, map pointers, and agent state remain
+local.
+
 ## The Map
 
-The map is a single issue on this repo's issue tracker, labelled `wayfinder:map` — the canonical artifact. Its tickets are child issues of the map. On a tracker without native sub-issue parentage (the local-markdown default), each child ticket carries a `Map: <map-slug>` line — mirroring `Part of #<map>` — so the frontier can be scoped to this map's children and the map file itself excluded.
+The map is a single issue on this repo's issue tracker, labelled `wayfinder:map` — the canonical artifact. Its tickets are child issues of the map. On a tracker without native sub-issue parentage (for example, Local Markdown), each child ticket carries a `Map: <map-slug>` line — mirroring `Part of #<map>` — so the frontier can be scoped to this map's children and the map file itself excluded.
 
 The map is an **index**, not a store. It lists the decisions made and points at the tickets that hold their detail; a decision lives in exactly one place — its ticket — so the map never restates it, only gists it and links.
 
-**Where the map, its child tickets, blocking, and frontier queries physically live is tracker-specific.** The issue tracker should have been provided to you — run `/ws-setup-matt-pocock-skills` if not. Consult the tracker doc's "Wayfinding operations" section for how _this_ repo expresses them. If no tracker has been provided, default to the local-markdown tracker.
+**Where the map, its child tickets, blocking, and frontier queries physically live is tracker-specific.** Consult the ready canonical tracker adapter's "Wayfinding operations" section; never infer a tracker from repository files.
 
 ### The map body
 
@@ -134,13 +152,13 @@ The user may run unblocked tickets in parallel, so expect other sessions to be e
 ## Graph node
 
 - **Tier:** user-invoked (entry)
-- **Reads:** charting — the loose idea; working — the map issue (`wayfinder:map`) at low resolution, the frontier of open, unblocked, unclaimed child tickets, and the tracker config's "Wayfinding operations"
-- **Emits:** the map issue; decision tickets as child issues with native blocking edges (plus a `Map: <map-slug>` pointer on trackers without native parentage); one resolution per session (resolution comment + close + a Decisions-so-far pointer on the map) — with the exception that charting resolves its own research tickets inline (step 5), so a charting session may resolve several; graduated fog; out-of-scope rulings
+- **Reads:** charting — the loose idea; working — the map issue (`wayfinder:map`) at low resolution, the frontier of open, unblocked, unclaimed child tickets, canonical tracker/triage/domain policy, and the selected operational adapter
+- **Emits:** the map issue; decision tickets as child issues with configured labels and adapter-specific blocking edges; one resolution per session (resolution comment + close + a Decisions-so-far pointer on the map); persisted Local/Jira pending or mapping state when configured; graduated fog; out-of-scope rulings
 - **Edges:**
   - fan-out (default at 2+ tickets): for each `research` ticket spawn ws-research via a `researcher` agent (schema: the researcher returns `DONE|{path}`; the charting session persists the findings into `dev-docs/research/`, writes that path onto the ticket, and resolves the ticket by the work-through step-4 ritual)
   - when ticket type = prototype → ws-prototype (HITL — a concrete artifact to react to)
   - when ticket type = grilling → ws-domain-modeling, driven with /ws-grilling (HITL, the default type)
   - when the map is clear → hand off to ws-to-spec, which collapses the linked decisions into a buildable plan (user-mediated — wayfinder hands off, it never builds)
 - **Edge rule:** entry → worker only, never entry → entry — a continuation that lands on another entry node is a user-mediated handoff (recommend it; never auto-invoke it).
-- **Handoff protocol:** the map and its tickets on the tracker are the shared state; assets are linked from issues, never pasted; claim a ticket by assignment before working it (DONE|{map link}).
+- **Handoff protocol:** the map and its tickets on the canonical tracker are shared state; assets are linked from issues, never pasted; claim a ticket by assignment before working it (DONE|{map link}).
 - **Exit report:** select the single most-likely next move: map clear (no open child tickets **and** an empty **Not yet specified**) → ws-to-spec (collapse the linked decisions into a buildable plan; user-mediated — wayfinder hands off, never builds); no open child tickets but **Not yet specified** still carries fog → re-run the charting step 2 breadth-first grill to graduate it into fresh tickets, then re-invoke ws-wayfinder; frontier empty but open children remain (claimed elsewhere or blocked) → stop and report the frontier is occupied; re-claim only a stale claim; otherwise re-invoke ws-wayfinder on the next frontier ticket. The user invokes the next entry; never auto-invoke it. (Format: `ws-graph-engineering`.)

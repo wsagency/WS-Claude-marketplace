@@ -7,7 +7,22 @@ disableModelInvocation: true
 
 This skill takes the current conversation context and codebase understanding and produces a spec (you may know this document as a PRD). Do NOT interview the user — just synthesize what you already know.
 
-The issue tracker and triage label vocabulary should have been provided to you — run `/ws-setup-matt-pocock-skills` if not.
+Before fetching or publishing tracker state, resolve the installed ws plugin
+root and request the `triage` capability through
+`skills/ws-project-bootstrap/consumer.mjs#inspectCanonicalCapability`; request
+`domain` separately before reading the domain layout. Read tracker, Jira,
+pull-request, triage-label, and domain choices only from the returned canonical
+policy, then follow its operational adapters. A blocked capability reports the
+canonical ownership line and exact blocker and stops that operation; detected
+repository-local legacy state is named and directed to `/ws-setup`, never read
+or defaulted. Do not probe integrations unrelated to the selected tracker.
+
+When publishing to Local with `jira.sync: all_local_tickets`, use
+`runCanonicalSynchronizedTrackerOperation` for the create/status operation and
+persist returned mappings and pending state. Jira outage leaves the Local spec
+published with pending sync. A same-field conflict stops before overwrite and
+offers Local, Jira, or manual merge. Local-only workflow metadata is never sent
+to Jira.
 
 ## Process
 
@@ -82,8 +97,8 @@ Any further notes about the feature.
 ## Graph node
 
 - **Tier:** user-invoked (entry)
-- **Reads:** the current conversation (the already-grilled idea — no interviewing) or a passed reference (spec path / issue / `wayfinder:map` issue, read with its body and the resolution comments of the closed children its **Decisions so far** links — out-of-scope children feed only the spec's Out of Scope), codebase state, the domain glossary in `CONTEXT.md`, ADRs, the tracker config in `dev-docs/agents/issue-tracker.md`
-- **Emits:** a spec (Problem / Solution / User Stories / Implementation Decisions / Testing Decisions / Out of Scope) published to the issue tracker — with the `ready-for-agent` label only when the build fits a single session (a multi-session spec gets no state role — ws-to-tickets stamps its slices `ready-for-agent` and strips the parent); test seams confirmed with the user before publishing
+- **Reads:** the current conversation (the already-grilled idea — no interviewing) or a passed reference (spec path / canonical tracker issue / `wayfinder:map` issue, read with its body and the resolution comments of the closed children its **Decisions so far** links — out-of-scope children feed only the spec's Out of Scope), codebase state, domain policy and glossary, ADRs, and the canonical tracker/triage capability
+- **Emits:** a spec (Problem / Solution / User Stories / Implementation Decisions / Testing Decisions / Out of Scope) published through the configured canonical tracker adapter — with the configured `triage.labels.ready_for_agent` value only when the build fits a single session
 - **Edges:**
   - when an ADR-worthy decision crystallises during synthesis → ws-domain-modeling (ADR routed to hub, repo root, or bounded context by scope)
   - multi-session spec (no state role) → ws-to-tickets (user-mediated: the published spec is its input; keep the same context window through the split)

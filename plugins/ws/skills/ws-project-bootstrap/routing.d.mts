@@ -46,3 +46,27 @@ export function planDomain(
 	machine: ReconfigureMachineCapabilities,
 	choices: ReconfigureChoices,
 ): RoutingPlanResult;
+
+export type ConsumerCapability =
+    | "config"
+    | "engineering"
+    | "tracker"
+    | "triage"
+    | "domain"
+    | "commit"
+    | "jira_commit"
+    | "changelog"
+    | "dashboard"
+    | "pull_requests";
+
+export interface CapabilityPolicySelection {
+    capability: ConsumerCapability;
+    sections: string[];
+    missingSections: string[];
+    policy: Record<string, unknown>;
+}
+
+export function selectCapabilityPolicy(
+    config: Record<string, unknown>,
+    capability: ConsumerCapability
+): CapabilityPolicySelection;
