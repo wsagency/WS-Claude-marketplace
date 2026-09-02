@@ -12,6 +12,7 @@ import { createMockReconfigureAdapters } from "./reconfigure.test-support.mjs";
 import { discoverLegacySetup } from "./migration.mjs";
 import { CANONICAL_CONFIG_YAML, discoverStandaloneRepository, RECOMMENDED_LOCAL_CHOICES } from "./transaction.mjs";
 import { FakeJiraAdapter } from "./test-support/fake-jira-adapter.mjs";
+import { hashField } from "./sync.mjs";
 
 const SKILL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_ROOT = path.join(SKILL_ROOT, "fixtures");
@@ -317,6 +318,62 @@ test("hub scope plans and applies every selected repository through the facade",
 	}
 });
 
+test("hub manifest binds and persists repository-qualified Local Jira backfills", async () => {
+	const { parent, root } = await createHub();
+	const hubConfig = parseCanonicalConfigYaml(CANONICAL_CONFIG_YAML);
+	hubConfig.jira = { project: "WCM", default_issue_type: "Task", sync: "all_local_tickets" };
+	await mkdir(path.join(root, ".wsagency"), { recursive: true });
+	await writeFile(path.join(root, ".wsagency", "config.yaml"), serializeCanonicalConfig(hubConfig), "utf8");
+	git(root, "add", ".wsagency/config.yaml");
+	git(root, "commit", "--quiet", "-m", "test: enable Local Jira backfill");
+	const hubBackfill = createBackfillHarness({
+		localTickets: {
+			"hub-ticket": { title: "Hub ticket", description: "Hub-owned", status: "open", type: "Task" },
+		},
+	});
+	const serviceBackfill = createBackfillHarness({
+		localTickets: {
+			"service-ticket": { title: "Service ticket", description: "Service-owned", status: "open", type: "Task" },
+		},
+	});
+	try {
+		const request = {
+			mode: "hub",
+			root,
+			snapshot: await discoverHubTransaction(root, MACHINE),
+			choices: {
+				documentation: false,
+				hub: { jiraValidation: { ready: true } },
+				working: { service: { jiraValidation: { ready: true } } },
+			},
+			adapters: {
+				backfillFactory: async target => target.repository === "hub"
+					? hubBackfill.adapter()
+					: serviceBackfill.adapter(),
+			},
+		};
+		const planned = await runManifestTransaction(request);
+		const backfillCreates = planned.manifest.categories.CREATE.filter(effect => effect.phase === "backfill");
+		assert.deepEqual(
+			backfillCreates.map(effect => `${effect.scope}:${effect.target}`).sort(),
+			["hub:jira:WCM:hub-ticket", "service:jira:WCM:service-ticket"],
+		);
+		assert.equal(JSON.stringify(planned.manifest).includes("\"input\""), false);
+
+		const applied = await runManifestTransaction({ ...request, authorization: planned.manifest.hash });
+
+		assert.equal(applied.applied, true, `${applied.report}\n${JSON.stringify(applied.outcomes ?? [])}`);
+		assert.match(hubBackfill.snapshot().mappings["hub-ticket"].jiraId, /^PROJ-/);
+		assert.equal(hubBackfill.snapshot().mappings["service-ticket"], undefined);
+		assert.match(serviceBackfill.snapshot().mappings["service-ticket"].jiraId, /^PROJ-/);
+		assert.equal(serviceBackfill.snapshot().mappings["hub-ticket"], undefined);
+		assert.deepEqual(hubBackfill.snapshot().pendingOperations, []);
+		assert.deepEqual(serviceBackfill.snapshot().pendingOperations, []);
+	} finally {
+		await rm(parent, { recursive: true, force: true });
+	}
+});
+
 function runtimeReconfiguration() {
 	return {
 		snapshot: {
@@ -521,6 +578,52 @@ test("Local Jira backfill fails on execution if local tickets drift after author
 		assert.equal(failed.applied, false);
 		assert.match(failed.failure.error, /Local tickets changed after manifest authorization/);
 		assert.equal(backfill.jiraAdapter.getCallLog().filter(call => call.method === "createTicket").length, 0);
+	} finally {
+		await rm(parent, { recursive: true, force: true });
+	}
+});
+
+test("Local Jira backfill rejects remote mapping drift before core or remote writes", async () => {
+	const { parent, root } = await createStandaloneRepository("ws-manifest-backfill-remote-drift-");
+	const localTicket = {
+		title: "Original Title",
+		description: "Original Description",
+		status: "open",
+		priority: "medium",
+		type: "Task",
+	};
+	const backfill = createBackfillHarness({
+		localTickets: { "local-1": localTicket },
+		syncState: {
+			mappings: { "local-1": { jiraId: "PROJ-1", fieldHashes: { title: hashField(localTicket.title) } } },
+			pendingOperations: [],
+		},
+		jiraTickets: { "PROJ-1": { id: "PROJ-1", ...localTicket } },
+	});
+	try {
+		const choices = materializedSetupChoices(config => {
+			config.jira = { project: "WCM", default_issue_type: "Task", sync: "all_local_tickets" };
+		});
+		const request = {
+			mode: "setup",
+			root,
+			snapshot: await discoverStandaloneRepository(root, MACHINE),
+			choices,
+			adapters: { jiraBackfill: backfill.adapter() },
+		};
+		const planned = await runManifestTransaction(request);
+		delete backfill.jiraAdapter.existingData["PROJ-1"];
+
+		const failed = await runManifestTransaction({ ...request, authorization: planned.manifest.hash });
+
+		assert.equal(failed.applied, false, `${failed.report}\n${JSON.stringify(failed.outcomes ?? [])}`);
+		assert.match(failed.report, /Resolve Local\/Jira mapping audit failures/);
+		assert.deepEqual(failed.manifest.delegated.backfill.audit.stale, [{ localId: "local-1", jiraId: "PROJ-1" }]);
+		assert.equal(await exists(path.join(root, ".wsagency", "config.yaml")), false);
+		assert.equal(
+			backfill.jiraAdapter.getCallLog().some(call => ["createTicket", "updateTicket", "updateStatus", "addComment"].includes(call.method)),
+			false,
+		);
 	} finally {
 		await rm(parent, { recursive: true, force: true });
 	}

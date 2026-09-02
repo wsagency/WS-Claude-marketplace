@@ -8,6 +8,36 @@ import type {
 	SetupReadiness,
 } from "./transaction.mjs";
 import type { DocsPlan } from "../ws-docs-bootstrap/transaction.mjs";
+import type {
+	BackfillAudit,
+	BackfillJiraAdapter,
+	BackfillPersistence,
+	BackfillPlan,
+	BackfillResult,
+} from "./backfill-jira.d.mts";
+import type { CanonicalProjectConfig } from "./config.d.mts";
+import type { LegacyMigrationPlan } from "./migration.d.mts";
+import type { LocalTicket, SyncState } from "./sync.d.mts";
+
+export interface PublicBackfillPlan {
+	audit: BackfillAudit | null;
+	plan: BackfillPlan | null;
+	effects: SetupEffect[];
+	localTicketsFingerprint: string | null;
+	syncFingerprint: string | null;
+}
+
+export interface InternalBackfillPlan extends PublicBackfillPlan {
+	blockers: string[];
+	input?: {
+		localTickets: Record<string, LocalTicket>;
+		syncState: SyncState;
+		jiraAdapter: BackfillJiraAdapter;
+		persistence: BackfillPersistence & {
+			readLocalTickets(): Promise<Record<string, LocalTicket>>;
+		};
+	};
+}
 
 export interface RegistryRepository {
 	name: string;
@@ -50,7 +80,7 @@ export interface HubChoices {
 	documentation?: boolean;
 }
 
-export type HubPhase = "authorization" | "machine" | "preflight" | "core" | "docs";
+export type HubPhase = "authorization" | "machine" | "preflight" | "core" | "backfill" | "docs" | "cleanup";
 export type HubOutcomeStatus = "completed" | "failed" | "pending" | "preserved" | "skipped" | "excluded" | "no-op";
 
 export interface HubBlocker {
@@ -76,6 +106,8 @@ export interface HubTargetPlan {
 	fingerprint: string;
 	core?: SetupPlan;
 	docs?: DocsPlan;
+	legacy?: LegacyMigrationPlan;
+	backfill?: PublicBackfillPlan | null;
 	plannedPaths: PlannedPath[];
 	dirtyPaths: string[];
 	blockers: HubBlocker[];
@@ -86,15 +118,23 @@ export interface HubPlan {
 	scope: { root: string; projectShape: "hub_root" };
 	registryFingerprint: string | null;
 	hub?: SetupPlan;
-	working: Array<{ name: string; plan?: SetupPlan; docs?: DocsPlan }>;
+	working: Array<{
+		name: string;
+		plan?: SetupPlan;
+		docs?: DocsPlan;
+		legacy?: LegacyMigrationPlan;
+		backfill?: PublicBackfillPlan | null;
+	}>;
 	targets: HubTargetPlan[];
 	excluded: ExcludedRepository[];
 }
 
-export interface HubOperation extends SetupOperation {
+export interface HubOperation extends Omit<SetupOperation, "action"> {
+	action: SetupOperation["action"] | "pending";
+	remoteId?: string | null;
 	repository: string;
 	root: string | null;
-	phase: "machine" | "core" | "docs";
+	phase: "machine" | "core" | "backfill" | "docs" | "cleanup";
 }
 
 export interface HubOutcome {
@@ -116,7 +156,22 @@ export interface HubTransactionRequest {
 		target: string;
 	};
 	machinePrerequisite?: () => void | Promise<void>;
-	beforePhase?: (boundary: { repository: string; root: string; phase: "core" | "docs" }) => void | Promise<void>;
+	beforePhase?: (boundary: { repository: string; root: string; phase: "core" | "docs" | "backfill" }) => void | Promise<void>;
+	backfill?: {
+		usesLocalJiraBackfill: (config: CanonicalProjectConfig) => boolean;
+		plan: (config: CanonicalProjectConfig, target: { repository: string; root: string }) => Promise<InternalBackfillPlan | null>;
+		publicPlan: (backfill: InternalBackfillPlan | null) => PublicBackfillPlan | null;
+		execute: (backfill: InternalBackfillPlan) => Promise<BackfillResult>;
+		refresh: (backfill: InternalBackfillPlan) => Promise<InternalBackfillPlan>;
+		withReadiness: (readiness: SetupReadiness | undefined, backfill: InternalBackfillPlan, execution: BackfillResult) => SetupReadiness | undefined;
+		operations: (execution: BackfillResult) => Array<Pick<HubOperation, "action" | "target" | "remoteId">>;
+		failure: (execution: BackfillResult | undefined, error: Error) => {
+			target: string;
+			completed: string[];
+			pending: string[];
+			error: string;
+		};
+	};
 }
 
 export interface HubTransactionResult {

@@ -148,7 +148,8 @@ export interface HubManifestRequest {
 	injection?: ManifestInjection;
 	adapters?: {
 		machinePrerequisite?: () => void | Promise<void>;
-		beforePhase?: (boundary: { repository: string; root: string; phase: "core" | "docs" }) => void | Promise<void>;
+		beforePhase?: (boundary: { repository: string; root: string; phase: "core" | "docs" | "backfill" }) => void | Promise<void>;
+		backfillFactory?: (boundary: { repository: string; root: string }) => ManifestBackfillAdapters | Promise<ManifestBackfillAdapters>;
 	};
 }
 

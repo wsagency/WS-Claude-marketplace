@@ -408,7 +408,10 @@ function plannedPaths(corePlan, docsPlan, legacyPlan) {
 	}));
 }
 
-async function buildComposite(discovery, choices) {
+async function buildComposite(request) {
+	const discovery = request.discovery;
+	const choices = request.choices ?? {};
+	const backfillFactory = request.backfill;
 	const removed = new Set(choices.removedRepositories ?? []);
 	const selected = [discovery.hub, ...discovery.working.filter(repository => !removed.has(repository.name))];
 	const excluded = [
@@ -482,6 +485,13 @@ async function buildComposite(discovery, choices) {
 		}
 		const plannedRepository = { ...repository, preflightErrors: localErrors };
 		const repositoryBlockers = transactionBlockers(plannedRepository, transaction, docsPlan);
+
+		let backfill = null;
+		if (backfillFactory && backfillFactory.usesLocalJiraBackfill(parseCanonicalConfigYaml(targetConfig))) {
+			backfill = await backfillFactory.plan(parseCanonicalConfigYaml(targetConfig), { repository: repository.name, root: repository.root });
+			if (backfill?.blockers?.length > 0) repositoryBlockers.push(...backfill.blockers.map(reason => ({ repository: repository.name, root: repository.root, reason })));
+		}
+
 		blockers.push(...repositoryBlockers);
 		let paths = [];
 		try {
@@ -501,6 +511,8 @@ async function buildComposite(discovery, choices) {
 			core: corePlan,
 			docs: docsPlan,
 			legacy: legacyPlan,
+			backfill,
+			publicBackfill: backfillFactory?.publicPlan(backfill) ?? null,
 			plannedPaths: paths,
 			dirtyPaths: [...repository.git.dirty],
 			blockers: repositoryBlockers,
@@ -519,6 +531,7 @@ async function buildComposite(discovery, choices) {
 			core: target.core?.hash ?? null,
 			docs: target.docs?.hash ?? null,
 			legacy: target.legacy?.hash ?? null,
+			backfill: target.publicBackfill ? sha256(JSON.stringify(target.publicBackfill)) : null,
 		})),
 		excluded: excluded.map(repository => ({ name: repository.name, type: repository.type, purpose: repository.purpose })),
 	};
@@ -529,8 +542,8 @@ async function buildComposite(discovery, choices) {
 			scope: { root: discovery.root, projectShape: "hub_root" },
 			registryFingerprint: discovery.registryFingerprint,
 			hub: targets[0]?.core,
-			working: targets.slice(1).map(target => ({ name: target.name, plan: target.core, docs: target.docs, legacy: target.legacy })),
-			targets: targets.map(({ transaction, coreChoices, ...target }) => target),
+			working: targets.slice(1).map(target => ({ name: target.name, plan: target.core, docs: target.docs, legacy: target.legacy, backfill: target.publicBackfill })),
+			targets: targets.map(({ transaction, coreChoices, backfill, publicBackfill, ...target }) => ({ ...target, backfill: publicBackfill })),
 			excluded,
 		},
 		targets,
@@ -603,6 +616,7 @@ function recordReadiness(readiness, target, targetReadiness) {
 function writeEffects(target, phase) {
 	if (phase === "core") return target.core?.effects.filter(isWriteEffect) ?? [];
 	if (phase === "docs") return target.docs?.effects.filter(isWriteEffect) ?? [];
+	if (phase === "backfill") return target.backfill?.effects?.filter(isWriteEffect) ?? [];
 	return target.legacy?.effects.filter(effect => effect.order >= 900 && isWriteEffect(effect)) ?? [];
 }
 
@@ -629,7 +643,7 @@ function coreFailureInjection(request, target, injectedFailureRoot) {
 
 export async function runHubTransaction(request) {
 	const choices = request.choices ?? {};
-	const composite = await buildComposite(request.discovery, choices);
+	const composite = await buildComposite(request);
 	const injectedFailureRoot = request.injectedFailure?.targetRoot
 		? await fs.realpath(path.resolve(request.injectedFailure.targetRoot)).catch(() => path.resolve(request.injectedFailure.targetRoot))
 		: null;
@@ -639,7 +653,7 @@ export async function runHubTransaction(request) {
 		return result(request.discovery, composite.plan, [], composite.blockers, outcomes, "Hub setup is blocked before authorization.");
 	}
 	const requiresConfirmation = composite.targets.some(target =>
-		["core", "docs", "cleanup"].some(phase => writeEffects(target, phase).length > 0),
+		["core", "backfill", "docs", "cleanup"].some(phase => writeEffects(target, phase).length > 0),
 	);
 	if (!requiresConfirmation) {
 		return result(request.discovery, composite.plan, [], [], outcomes, "No changes required", compositeReadiness(composite));
@@ -653,7 +667,8 @@ export async function runHubTransaction(request) {
 	if (request.authorization !== composite.plan.hash) throw new Error("Authorization hash does not match the planned cross-repository manifest.");
 
 	const freshDiscovery = await discoverHubTransaction(request.root, request.discovery.machine);
-	const freshComposite = await buildComposite(freshDiscovery, choices);
+	const freshComposite = await buildComposite({ ...request, discovery: freshDiscovery });
+	const backfillTargets = freshComposite.targets.filter(target => target.backfill);
 	const documentationTargets = [
 		...freshComposite.targets.filter(target => target.role === "working" && target.docs),
 		...freshComposite.targets.filter(target => target.role === "hub" && target.docs),
@@ -666,6 +681,7 @@ export async function runHubTransaction(request) {
 		outcomes = staticOutcomes(freshComposite.plan);
 		outcomes.push({ repository: "hub", phase: "authorization", status: "failed", detail: "Composite manifest drifted before apply." });
 		addPending(outcomes, freshComposite.targets, 0, "core");
+		addPending(outcomes, backfillTargets, 0, "backfill");
 		addPending(outcomes, documentationTargets, 0, "docs");
 		addPending(outcomes, cleanupTargets, 0, "cleanup");
 		return result(freshDiscovery, freshComposite.plan, [], [], outcomes, "Authorization is stale; no cross-repository writes were performed.", compositeReadiness(freshComposite));
@@ -673,11 +689,13 @@ export async function runHubTransaction(request) {
 
 	try {
 		for (const target of freshComposite.targets) await preflightPlan(target.root, target.core);
+		for (const target of backfillTargets) await request.backfill.refresh(target.backfill);
 		for (const target of documentationTargets) await preflightDocumentation(target.root, target.docs);
 	} catch (error) {
 		outcomes = staticOutcomes(freshComposite.plan);
 		outcomes.push({ repository: "hub", phase: "preflight", status: "failed", detail: error.message });
 		addPending(outcomes, freshComposite.targets, 0, "core");
+		addPending(outcomes, backfillTargets, 0, "backfill");
 		addPending(outcomes, documentationTargets, 0, "docs");
 		addPending(outcomes, cleanupTargets, 0, "cleanup");
 		return result(freshDiscovery, freshComposite.plan, [], [], outcomes, "Global composite preflight failed; no mutations were performed.", compositeReadiness(freshComposite));
@@ -692,6 +710,7 @@ export async function runHubTransaction(request) {
 	} catch (error) {
 		outcomes.push({ repository: "machine", phase: "machine", status: "failed", detail: error.message });
 		addPending(outcomes, freshComposite.targets, 0, "core");
+		addPending(outcomes, backfillTargets, 0, "backfill");
 		addPending(outcomes, documentationTargets, 0, "docs");
 		addPending(outcomes, cleanupTargets, 0, "cleanup");
 		return result(freshDiscovery, freshComposite.plan, operations, [], outcomes, "Machine prerequisites failed; repositories were not touched.", readiness);
@@ -724,12 +743,41 @@ export async function runHubTransaction(request) {
 				addEffectOutcomes(outcomes, target.name, "core", "pending", applyResult.failure.pending.filter(pendingTarget => pendingTarget !== applyResult.failure.target));
 			} else addEffectOutcomes(outcomes, target.name, "core", "pending", writeEffects(target, "core"));
 			addPending(outcomes, freshComposite.targets, index + 1, "core");
+			addPending(outcomes, backfillTargets, 0, "backfill");
 			addPending(outcomes, documentationTargets, 0, "docs");
 			addPending(outcomes, cleanupTargets, 0, "cleanup");
 			return result(freshDiscovery, freshComposite.plan, operations, [], outcomes, "Core setup stopped at the first failure; no rollback was performed.", readiness);
 		}
 	}
 
+	for (let index = 0; index < backfillTargets.length; index += 1) {
+		const target = backfillTargets[index];
+		let execution;
+		try {
+			if (request.beforePhase) await request.beforePhase({ repository: target.name, root: target.root, phase: "backfill" });
+			const refreshedBackfill = await request.backfill.refresh(target.backfill);
+			execution = await request.backfill.execute(refreshedBackfill);
+			operations.push(...request.backfill.operations(execution).map(operation => ({ ...operation, repository: target.name, root: target.root, phase: "backfill" })));
+			if (execution.errors?.length > 0) throw new Error(execution.errors[0].error);
+			
+			const currentReadiness = target === freshComposite.targets[0] ? readiness.hub : readiness.working[target.name];
+			const updatedReadiness = request.backfill.withReadiness(currentReadiness, target.backfill, execution);
+			recordReadiness(readiness, target, updatedReadiness);
+
+			outcomes.push({ repository: target.name, phase: "backfill", status: execution.completed.length > 0 ? "completed" : "no-op" });
+			addEffectOutcomes(outcomes, target.name, "backfill", "completed", execution.completed.map(id => `jira:backfill:${id}`));
+		} catch (error) {
+			const failure = request.backfill.failure(execution, error);
+			outcomes.push({ repository: target.name, phase: "backfill", status: "failed", detail: error.message });
+			addEffectOutcomes(outcomes, target.name, "backfill", "completed", failure.completed.map(id => `jira:backfill:${id}`));
+			outcomes.push({ repository: target.name, phase: "backfill", status: "failed", target: failure.target, detail: error.message });
+			addEffectOutcomes(outcomes, target.name, "backfill", "pending", failure.pending.filter(id => `jira:backfill:${id}` !== failure.target).map(id => `jira:backfill:${id}`));
+			addPending(outcomes, backfillTargets, index + 1, "backfill");
+			addPending(outcomes, documentationTargets, 0, "docs");
+			addPending(outcomes, cleanupTargets, 0, "cleanup");
+			return result(freshDiscovery, freshComposite.plan, operations, [], outcomes, "Local/Jira backfill stopped at the first failure.", readiness);
+		}
+	}
 	for (let index = 0; index < documentationTargets.length; index += 1) {
 		const target = documentationTargets[index];
 		try {

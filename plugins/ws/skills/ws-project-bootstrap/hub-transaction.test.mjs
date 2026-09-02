@@ -467,7 +467,6 @@ describe("drift and first-failure recovery", () => {
 		}
 	});
 });
-
 describe("documentation failure recovery", () => {
 	test("stops at a docs failure at every repository boundary and preserves authored content on missing-only recovery", async t => {
 		for (const failingName of ["hub", "work-a", "work-b"]) {
@@ -543,5 +542,262 @@ describe("documentation failure recovery", () => {
 		assert.equal(aligned.blockers.length, 0);
 		assert.match(aligned.report, /No changes required/);
 		assert.equal(aligned.outcomes.some(outcome => outcome.status === "no-op"), true);
+	});
+});
+
+describe("hub backfill integration", () => {
+	test("orchestrates per-target backfill plans, prevents bleeding, and executes in exact order", async () => {
+		const { hubRoot } = await createHub(
+			[registryEntry({ name: "work-a" }), registryEntry({ name: "work-b" })],
+			{ create: [{ name: "work-a" }, { name: "work-b" }] },
+		);
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const choices = { documentation: true };
+
+		const logs = [];
+		const factoryCalls = new Set();
+
+		const createMockBackfill = (repoName, driftAt = null, failExecute = false) => {
+			return {
+				audit: { missing: [], stale: [], duplicated: [], conflicting: [], valid: [] },
+				plan: { unmapped: [{ localId: `local-1-${repoName}`, proposedProject: "PROJ", proposedType: "Task", mappedFields: {}, unsupportedFields: [], sourceLink: "link", correlationToken: `token-${repoName}` }], project: "PROJ", defaultType: "Task" },
+				effects: [{ order: 201, target: `jira:PROJ:local-1-${repoName}`, kind: "external", classification: "CREATE", reason: "Create", diff: "diff", fingerprint: "token" }],
+				localTicketsFingerprint: `local-hash-${repoName}`,
+				syncFingerprint: `sync-hash-${repoName}`,
+				blockers: [],
+				input: { repoName, isDrifted: false },
+				driftAt,
+				failExecute
+			};
+		};
+
+		const backfillFactory = {
+			usesLocalJiraBackfill: () => true,
+			plan: async (config, target) => {
+				factoryCalls.add(target.repository);
+				return createMockBackfill(target.repository);
+			},
+			publicPlan: (backfill) => ({ audit: backfill.audit, plan: backfill.plan, effects: backfill.effects, localTicketsFingerprint: backfill.localTicketsFingerprint, syncFingerprint: backfill.syncFingerprint }),
+			execute: async (backfill) => {
+				logs.push(`execute-backfill:${backfill.input.repoName}`);
+				if (backfill.failExecute) throw new Error(`simulated-failure:${backfill.input.repoName}`);
+				return { completed: [`local-1-${backfill.input.repoName}`], pending: [], errors: [], nextSyncState: {} };
+			},
+			refresh: async (backfill) => {
+				logs.push(`refresh-backfill:${backfill.input.repoName}`);
+				if (backfill.driftAt === logs.length) throw new Error(`Drift detected in ${backfill.input.repoName}`);
+				return backfill;
+			},
+			withReadiness: (readiness) => readiness,
+			operations: () => [{ action: "verify", target: "mock" }],
+			failure: (exec, err) => ({ target: "mock", completed: [], pending: [] })
+		};
+
+		const beforePhase = async ({ repository, phase }) => {
+			logs.push(`beforePhase:${phase}:${repository}`);
+		};
+
+		// 1. Success Path & Ordering
+		const planned = await runHubTransaction({ root: hubRoot, discovery, choices, backfill: backfillFactory });
+
+		assert.equal(factoryCalls.has("hub"), true);
+		assert.equal(factoryCalls.has("work-a"), true);
+		assert.equal(factoryCalls.has("work-b"), true);
+
+		const backfillEffectsHub = planned.plan.targets.find(t => t.name === "hub").backfill.effects;
+		assert.equal(backfillEffectsHub.length, 1);
+		assert.equal(backfillEffectsHub[0].classification, "CREATE");
+
+		const applied = await runHubTransaction({ root: hubRoot, discovery, choices, authorization: planned.plan.hash, backfill: backfillFactory, beforePhase });
+
+		// Verify Exact Execution Order
+		const expectedOrder = [
+			// Preflight (all)
+			"refresh-backfill:hub", "refresh-backfill:work-a", "refresh-backfill:work-b",
+			// Core (all)
+			"beforePhase:core:hub", "beforePhase:core:work-a", "beforePhase:core:work-b",
+			// Backfill (all)
+			"beforePhase:backfill:hub", "refresh-backfill:hub", "execute-backfill:hub",
+			"beforePhase:backfill:work-a", "refresh-backfill:work-a", "execute-backfill:work-a",
+			"beforePhase:backfill:work-b", "refresh-backfill:work-b", "execute-backfill:work-b",
+			// Docs (working repositories before the hub)
+			"beforePhase:docs:work-a", "beforePhase:docs:work-b", "beforePhase:docs:hub"
+		];
+		assert.deepEqual(logs.filter(l => !l.startsWith("beforePhase:cleanup")), expectedOrder);
+
+		// Verify target adapters didn't bleed (each execute got its own repoName)
+		const executeLogs = logs.filter(l => l.startsWith("execute-backfill"));
+		assert.deepEqual(executeLogs, ["execute-backfill:hub", "execute-backfill:work-a", "execute-backfill:work-b"]);
+	});
+
+	test("stops completely on preflight drift, writing nothing", async () => {
+		const { hubRoot } = await createHub([registryEntry({ name: "work-a" })], { create: [{ name: "work-a" }] });
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const backfillFactory = {
+			usesLocalJiraBackfill: () => true,
+			plan: async (config, target) => ({
+				audit: { missing: [], stale: [], duplicated: [], conflicting: [], valid: [] },
+				plan: { unmapped: [] },
+				effects: [],
+				localTicketsFingerprint: "hash",
+				syncFingerprint: "hash",
+				input: { repoName: target.repository }
+			}),
+			publicPlan: (backfill) => backfill,
+			refresh: async (backfill) => { throw new Error("Drift detected during preflight"); },
+			execute: async () => assert.fail("Should not execute"),
+			operations: () => [],
+			failure: () => ({ target: "mock", completed: [], pending: [] })
+		};
+
+		const planned = await runHubTransaction({ root: hubRoot, discovery, backfill: backfillFactory });
+		const applied = await runHubTransaction({ root: hubRoot, discovery, authorization: planned.plan.hash, backfill: backfillFactory });
+
+		assert.match(applied.report, /Global composite preflight failed; no mutations were performed/);
+		assert.equal(applied.operations.length, 0);
+		assert.ok(applied.outcomes.some(o => o.phase === "preflight" && o.status === "failed"));
+	});
+
+	test("stops immediately before backfill execution on drift, leaving docs pending", async () => {
+		const { hubRoot } = await createHub([registryEntry({ name: "work-a" })], { create: [{ name: "work-a" }] });
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const choices = { documentation: true };
+
+		let refreshCount = 0;
+		const backfillFactory = {
+			usesLocalJiraBackfill: () => true,
+			plan: async (config, target) => ({
+				audit: { missing: [], stale: [], duplicated: [], conflicting: [], valid: [] },
+				plan: { unmapped: [{ localId: "1", proposedProject: "P", proposedType: "T", mappedFields: {}, unsupportedFields: [], sourceLink: "l", correlationToken: "t" }] },
+				effects: [{ order: 201, target: "jira", kind: "ext", classification: "CREATE", reason: "", diff: "", fingerprint: "" }],
+				localTicketsFingerprint: "hash",
+				syncFingerprint: "hash",
+				input: { repoName: target.repository }
+			}),
+			publicPlan: (backfill) => backfill,
+			refresh: async (backfill) => {
+				refreshCount++;
+				// Preflight passes (refreshCount 1 and 2 for hub and work-a)
+				// Hub execution passes (refreshCount 3)
+				// Work-a execution fails (refreshCount 4)
+				if (refreshCount === 4) throw new Error("Drift detected before execution");
+				return backfill;
+			},
+			execute: async (backfill) => {
+				if (backfill.input.repoName === "work-a") assert.fail("Should not execute drifted backfill");
+				return { completed: ["1"], pending: [], errors: [], nextSyncState: {} };
+			},
+			withReadiness: (r) => r,
+			operations: () => [{ action: "verify", target: "mock" }],
+			failure: (exec, err) => ({ target: "mock", completed: [], pending: ["1"] })
+		};
+
+		const planned = await runHubTransaction({ root: hubRoot, discovery, choices, backfill: backfillFactory });
+		const applied = await runHubTransaction({ root: hubRoot, discovery, choices, authorization: planned.plan.hash, backfill: backfillFactory });
+
+		assert.match(applied.report, /Local\/Jira backfill stopped at the first failure/);
+		assert.ok(applied.outcomes.some(o => o.repository === "work-a" && o.phase === "backfill" && o.status === "failed"));
+		assert.ok(applied.outcomes.some(o => o.repository === "work-a" && o.phase === "docs" && o.status === "pending"));
+	});
+
+	test("stops on the first backfill failure and marks every later target pending", async () => {
+		const { hubRoot } = await createHub(
+			[registryEntry({ name: "work-a" }), registryEntry({ name: "work-b" })],
+			{ create: [{ name: "work-a" }, { name: "work-b" }] },
+		);
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const choices = { documentation: true };
+		const executed = [];
+		const backfillFactory = {
+			usesLocalJiraBackfill: () => true,
+			plan: async (config, target) => ({
+				audit: { missing: [], stale: [], duplicated: [], conflicting: [], valid: [] },
+				plan: {
+					unmapped: [{
+						localId: `local-${target.repository}`,
+						proposedProject: "P",
+						proposedType: "Task",
+						mappedFields: {},
+						unsupportedFields: [],
+						sourceLink: "link",
+						correlationToken: `token-${target.repository}`,
+					}],
+				},
+				effects: [{
+					order: 201,
+					target: `jira:${target.repository}`,
+					kind: "external",
+					classification: "CREATE",
+					reason: "Create",
+					diff: "diff",
+					fingerprint: `token-${target.repository}`,
+				}],
+				localTicketsFingerprint: `local-${target.repository}`,
+				syncFingerprint: `sync-${target.repository}`,
+				blockers: [],
+				input: { repository: target.repository },
+			}),
+			publicPlan: backfill => ({
+				audit: backfill.audit,
+				plan: backfill.plan,
+				effects: backfill.effects,
+				localTicketsFingerprint: backfill.localTicketsFingerprint,
+				syncFingerprint: backfill.syncFingerprint,
+			}),
+			refresh: async backfill => backfill,
+			execute: async backfill => {
+				executed.push(backfill.input.repository);
+				if (backfill.input.repository === "work-a") throw new Error("simulated work-a failure");
+				return { completed: [`local-${backfill.input.repository}`], pending: [], errors: [], nextSyncState: {} };
+			},
+			withReadiness: readiness => readiness,
+			operations: () => [{ action: "verify", target: "mock" }],
+			failure: (execution, error) => ({
+				target: "mock",
+				completed: [],
+				pending: [],
+				error: error.message,
+			}),
+		};
+		const planned = await runHubTransaction({ root: hubRoot, discovery, choices, backfill: backfillFactory });
+
+		const applied = await runHubTransaction({
+			root: hubRoot,
+			discovery,
+			choices,
+			authorization: planned.plan.hash,
+			backfill: backfillFactory,
+		});
+
+		assert.deepEqual(executed, ["hub", "work-a"]);
+		assert.equal(applied.outcomes.some(outcome =>
+			outcome.repository === "work-a" && outcome.phase === "backfill" && outcome.status === "failed"
+		), true);
+		assert.equal(applied.outcomes.some(outcome =>
+			outcome.repository === "work-b" && outcome.phase === "backfill" && outcome.status === "pending"
+		), true);
+		assert.equal(applied.outcomes.some(outcome =>
+			outcome.repository === "work-b" && outcome.phase === "docs" && outcome.status === "pending"
+		), true);
+	});
+
+	test("manifest payload is sanitized of local metadata", async () => {
+		const { hubRoot } = await createHub([registryEntry({ name: "work-a" })], { create: [{ name: "work-a" }] });
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const backfillFactory = {
+			usesLocalJiraBackfill: () => true,
+			plan: async (config, target) => ({
+				audit: { missing: [], stale: [], duplicated: [], conflicting: [], valid: [] },
+				plan: { unmapped: [] },
+				effects: [],
+				localTicketsFingerprint: "hash",
+				syncFingerprint: "hash",
+				input: { localMetadata: "SECRET" }
+			}),
+			publicPlan: (backfill) => ({ ...backfill, input: undefined }),
+		};
+
+		const planned = await runHubTransaction({ root: hubRoot, discovery, backfill: backfillFactory });
+		assert.equal(JSON.stringify(planned.plan).includes("SECRET"), false);
 	});
 });

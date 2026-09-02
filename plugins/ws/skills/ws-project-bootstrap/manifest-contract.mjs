@@ -73,6 +73,9 @@ function hubItems(plan) {
 		for (const [index, effect] of (target.core?.effects ?? []).entries()) {
 			items.push(item(effect, index, { phase: "core", scope: target.name }));
 		}
+		for (const [index, effect] of (target.backfill?.effects ?? []).entries()) {
+			items.push(item(effect, index, { phase: "backfill", scope: target.name }));
+		}
 		for (const [index, effect] of (target.docs?.effects ?? []).entries()) {
 			items.push(item(effect, index, { phase: "docs", scope: target.name }));
 		}
@@ -192,6 +195,7 @@ function publicBackfillPlan(backfill) {
 	return {
 		audit: backfill.audit,
 		plan: backfill.plan,
+		effects: backfill.effects,
 		localTicketsFingerprint: backfill.localTicketsFingerprint,
 		syncFingerprint: backfill.syncFingerprint,
 	};
@@ -233,8 +237,13 @@ async function refreshPlannedBackfill(backfill) {
 	if (hash(durableSyncState) !== backfill.syncFingerprint) {
 		throw new Error("Local/Jira sync state changed after manifest authorization.");
 	}
+	const durableAudit = await auditBackfill(durableLocalTickets, durableSyncState, backfill.input.jiraAdapter);
+	if (hash(durableAudit) !== hash(backfill.audit)) {
+		throw new Error("Jira mappings changed after manifest authorization.");
+	}
 	return {
 		...backfill,
+		audit: durableAudit,
 		input: {
 			...backfill.input,
 			localTickets: durableLocalTickets,
@@ -242,18 +251,16 @@ async function refreshPlannedBackfill(backfill) {
 		},
 	};
 }
-
 async function executePlannedBackfill(backfill) {
 	if (!backfill) return { completed: [], pending: [], errors: [], nextSyncState: undefined };
-	const refreshed = await refreshPlannedBackfill(backfill);
-	if (!refreshed.plan || refreshed.plan.unmapped.length === 0) {
-		return { completed: [], pending: [], errors: [], nextSyncState: refreshed.input.syncState };
+	if (!backfill.plan || backfill.plan.unmapped.length === 0) {
+		return { completed: [], pending: [], errors: [], nextSyncState: backfill.input.syncState };
 	}
 	return executeBackfill({
-		plan: refreshed.plan,
-		syncState: refreshed.input.syncState,
-		jiraAdapter: refreshed.input.jiraAdapter,
-		persistence: refreshed.input.persistence,
+		plan: backfill.plan,
+		syncState: backfill.input.syncState,
+		jiraAdapter: backfill.input.jiraAdapter,
+		persistence: backfill.input.persistence,
 	});
 }
 
@@ -387,7 +394,7 @@ async function runSetup(request) {
 		await preflightPlan(request.root, planned.plan);
 		if (docsPlan) await preflightDocumentation(request.root, docsPlan);
 	} catch (error) {
-		if (!/^Local(?: tickets|\/Jira sync state) changed after manifest authorization\.$/.test(error.message)) throw error;
+		if (!/^(?:Local(?: tickets|\/Jira sync state)|Jira mappings) changed after manifest authorization\.$/.test(error.message)) throw error;
 		const failure = backfillFailure(undefined, error);
 		return {
 			manifest: complete,
@@ -501,6 +508,16 @@ async function runHub(request) {
 		choices: request.choices,
 		machinePrerequisite: request.adapters?.machinePrerequisite,
 		beforePhase: request.adapters?.beforePhase,
+		backfill: {
+			usesLocalJiraBackfill,
+			plan: async (config, target) => planLocalJiraBackfill(config, { jiraBackfill: await request.adapters?.backfillFactory?.(target) }),
+			publicPlan: publicBackfillPlan,
+			execute: executePlannedBackfill,
+			refresh: refreshPlannedBackfill,
+			withReadiness: withBackfillReadiness,
+			operations: backfillOperations,
+			failure: backfillFailure,
+		},
 	};
 	const planned = await runHubTransaction(base);
 	const items = hubItems(planned.plan);
@@ -623,7 +640,7 @@ async function runMigration(request) {
 		await preflightPlan(request.root, corePlan);
 		if (docsPlan) await preflightDocumentation(request.root, docsPlan);
 	} catch (error) {
-		if (!/^Local(?: tickets|\/Jira sync state) changed after manifest authorization\.$/.test(error.message)) throw error;
+		if (!/^(?:Local(?: tickets|\/Jira sync state)|Jira mappings) changed after manifest authorization\.$/.test(error.message)) throw error;
 		const failure = backfillFailure(undefined, error);
 		return {
 			manifest: complete,
