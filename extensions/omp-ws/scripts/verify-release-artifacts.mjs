@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { access, cp, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, cp, mkdir, mkdtemp, realpath, rm, stat, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -111,13 +112,17 @@ function defaultRunCommand(step) {
 	return { stdout: result.stdout, stderr: result.stderr, status: result.status };
 }
 
-async function resolveClaudePluginRoot(claudeConfig) {
+async function resolveClaudePluginInstallation(claudeConfig) {
 	const registryPath = path.join(claudeConfig, "plugins", "installed_plugins.json");
 	const registry = JSON.parse(await readFile(registryPath, "utf8"));
 	const entries = registry?.plugins?.[PLUGIN_ID];
 	const entry = Array.isArray(entries) ? entries.find(candidate => candidate?.enabled !== false && candidate?.installPath) : null;
 	if (!entry) throw new Error(`Claude registry does not contain an enabled ${PLUGIN_ID} installation.`);
-	return realpath(entry.installPath);
+	return {
+		root: await realpath(entry.installPath),
+		version: entry.version,
+		gitCommitSha: entry.gitCommitSha,
+	};
 }
 
 async function initializeFixtureRepository(root, env, runCommand) {
@@ -175,22 +180,84 @@ async function exerciseInstalledTransaction(pluginRoot, workspaceRoot, label, ru
 	return { label, plannedItems: planned.manifest.items.length, operations: applied.operations.length, aligned: true };
 }
 
-async function validateInputs(marketplaceRoot, tarballPath) {
-	const root = await realpath(path.resolve(marketplaceRoot));
-	const tarball = await realpath(path.resolve(tarballPath));
-	const marketplace = await stat(path.join(root, ".claude-plugin", "marketplace.json")).catch(() => null);
+async function validateInputs(options) {
+	const root = await realpath(path.resolve(options.marketplaceRoot));
+	const tarball = await realpath(path.resolve(options.tarballPath));
+	const marketplacePath = path.join(root, ".claude-plugin", "marketplace.json");
+	const marketplaceFile = await stat(marketplacePath).catch(() => null);
 	const archive = await stat(tarball).catch(() => null);
-	if (!marketplace?.isFile()) throw new Error("Marketplace root does not contain .claude-plugin/marketplace.json.");
+	if (!marketplaceFile?.isFile()) throw new Error("Marketplace root does not contain .claude-plugin/marketplace.json.");
 	if (!archive?.isFile() || path.extname(tarball) !== ".tgz") throw new Error("Retained native package must be an existing .tgz file.");
-	return { marketplaceRoot: root, tarballPath: tarball };
+
+	const marketplace = JSON.parse(await readFile(marketplacePath, "utf8"));
+	const plugin = marketplace?.plugins?.find(candidate => candidate?.name === "ws");
+	if (!plugin) throw new Error("Marketplace manifest does not contain the ws plugin.");
+	if (plugin.version !== options.expectedMarketplaceVersion) {
+		throw new Error(`Marketplace manifest version mismatch. Expected ${options.expectedMarketplaceVersion}, got ${plugin.version}`);
+	}
+	return {
+		marketplaceRoot: root,
+		tarballPath: tarball,
+		marketplaceVersion: plugin.version,
+		tarballSize: archive.size,
+	};
+}
+
+function assertCommandResult(step, result) {
+	if (result?.status !== 0) {
+		throw new Error(`${step.label} failed (${result?.status ?? "no status"}): ${(result?.stderr || result?.stdout || "no output").trim()}`);
+	}
+	return result;
 }
 
 export async function verifyReleaseArtifacts(options, dependencies = {}) {
-	if (!options?.marketplaceRoot || !options?.tarballPath) throw new Error("Explicit marketplaceRoot and tarballPath are required.");
-	const inputs = await validateInputs(options.marketplaceRoot, options.tarballPath);
+	const requiredOptions = [
+		"marketplaceRoot",
+		"tarballPath",
+		"expectedMarketplaceVersion",
+		"expectedPackageName",
+		"expectedPackageVersion",
+		"expectedMarketplaceCommit",
+		"expectedTarballSha256",
+	];
+	for (const name of requiredOptions) {
+		if (!options?.[name]) throw new Error(`Explicit ${name} is required.`);
+	}
+	const inputs = await validateInputs(options);
+	const runCommand = dependencies.runCommand ?? defaultRunCommand;
+	const identityEnv = isolatedEnvironment(inputs.marketplaceRoot);
+
+	const gitStatusStep = {
+		label: "git-status",
+		command: "git",
+		args: ["status", "--porcelain", "--untracked-files=all"],
+		cwd: inputs.marketplaceRoot,
+		env: identityEnv,
+	};
+	const gitStatus = assertCommandResult(gitStatusStep, await runCommand(gitStatusStep));
+	if (gitStatus.stdout.trim() !== "") throw new Error("Marketplace repository has uncommitted changes.");
+
+	const gitCommitStep = {
+		label: "git-commit",
+		command: "git",
+		args: ["rev-parse", "HEAD"],
+		cwd: inputs.marketplaceRoot,
+		env: identityEnv,
+	};
+	const gitCommit = assertCommandResult(gitCommitStep, await runCommand(gitCommitStep));
+	const actualCommit = gitCommit.stdout.trim();
+	if (actualCommit !== options.expectedMarketplaceCommit) {
+		throw new Error(`Marketplace commit mismatch. Expected ${options.expectedMarketplaceCommit}, got ${actualCommit}`);
+	}
+
+	const tarballData = await readFile(inputs.tarballPath);
+	const tarballSha256 = createHash("sha256").update(tarballData).digest("hex");
+	if (tarballSha256 !== options.expectedTarballSha256) {
+		throw new Error(`Tarball SHA256 mismatch. Expected ${options.expectedTarballSha256}, got ${tarballSha256}`);
+	}
+
 	const tempRoot = await mkdtemp(path.join(tmpdir(), "ws-release-artifacts-"));
 	const paths = verificationPaths(tempRoot);
-	const runCommand = dependencies.runCommand ?? defaultRunCommand;
 	const inspectSurface = dependencies.inspectSurface ?? assertInstalledSurface;
 	const exerciseTransaction = dependencies.exerciseTransaction ?? exerciseInstalledTransaction;
 	try {
@@ -199,19 +266,78 @@ export async function verifyReleaseArtifacts(options, dependencies = {}) {
 		}
 		const steps = buildVerificationSteps({ ...inputs, paths });
 		const commandResults = [];
-		for (const step of steps) commandResults.push({ label: step.label, ...await runCommand(step) });
+		for (const step of steps) {
+			const result = assertCommandResult(step, await runCommand(step));
+			commandResults.push({ label: step.label, ...result });
+		}
 
-		const claudeRoot = await (dependencies.resolveClaudePluginRoot ?? resolveClaudePluginRoot)(paths.claudeConfig);
+		const claudeDetails = commandResults.find(result => result.label === "claude-plugin-details")?.stdout ?? "";
+		if (!claudeDetails.includes("Component inventory") || !/(^|\n)ws(\n|$)/.test(claudeDetails)) {
+			throw new Error("Claude plugin details did not identify the installed ws plugin.");
+		}
+
+		const claudeInstallation = await (
+			dependencies.resolveClaudePluginInstallation ?? resolveClaudePluginInstallation
+		)(paths.claudeConfig);
+		if (claudeInstallation.version !== options.expectedMarketplaceVersion) {
+			throw new Error(`Claude marketplace version mismatch. Expected ${options.expectedMarketplaceVersion}, got ${claudeInstallation.version}`);
+		}
+		if (claudeInstallation.gitCommitSha !== options.expectedMarketplaceCommit) {
+			throw new Error(`Claude marketplace commit mismatch. Expected ${options.expectedMarketplaceCommit}, got ${claudeInstallation.gitCommitSha}`);
+		}
+
+		const ompListResult = commandResults.find(result => result.label === "omp-plugin-list");
+		let ompList;
+		try {
+			ompList = JSON.parse(ompListResult.stdout);
+		} catch {
+			throw new Error("Failed to parse omp plugin list JSON.");
+		}
+		const ompNpmPlugin = ompList.npm?.find(plugin => plugin.name === options.expectedPackageName);
+		if (!ompNpmPlugin) throw new Error("omp plugin list is missing the expected npm package.");
+		if (ompNpmPlugin.version !== options.expectedPackageVersion) {
+			throw new Error(`omp package version mismatch. Expected ${options.expectedPackageVersion}, got ${ompNpmPlugin.version}`);
+		}
+
+		const ompDoctorResult = commandResults.find(result => result.label === "omp-plugin-doctor");
+		let ompDoctor;
+		try {
+			ompDoctor = JSON.parse(ompDoctorResult.stdout);
+		} catch {
+			throw new Error("Failed to parse omp plugin doctor JSON.");
+		}
+		if (!Array.isArray(ompDoctor)) throw new Error("omp plugin doctor returned an unexpected JSON shape.");
+		const unhealthy = ompDoctor.filter(item => item.status !== "ok");
+		if (unhealthy.length > 0) {
+			throw new Error(`omp plugin doctor reports unhealthy status: ${unhealthy.map(item => item.name).join(", ")}`);
+		}
+
 		const [claudeSurface, ompSurface] = await Promise.all([
-			inspectSurface(claudeRoot),
+			inspectSurface(claudeInstallation.root),
 			inspectSurface(paths.nativeRoot),
 		]);
+		const nativePackageJson = JSON.parse(await readFile(path.join(ompSurface.root, "package.json"), "utf8"));
+		if (nativePackageJson.name !== options.expectedPackageName) {
+			throw new Error(`Native package name mismatch. Expected ${options.expectedPackageName}, got ${nativePackageJson.name}`);
+		}
+		if (nativePackageJson.version !== options.expectedPackageVersion) {
+			throw new Error(`Native package version mismatch. Expected ${options.expectedPackageVersion}, got ${nativePackageJson.version}`);
+		}
+
 		const ompEnv = steps.find(step => step.label === "omp-plugin-list").env;
 		const [claudeMigration, ompMigration] = await Promise.all([
-			exerciseTransaction(claudeRoot, paths.workspace, "claude", runCommand, ompEnv),
+			exerciseTransaction(claudeInstallation.root, paths.workspace, "claude", runCommand, ompEnv),
 			exerciseTransaction(paths.nativeRoot, paths.workspace, "omp", runCommand, ompEnv),
 		]);
 		return {
+			identities: {
+				marketplaceVersion: inputs.marketplaceVersion,
+				packageName: nativePackageJson.name,
+				packageVersion: nativePackageJson.version,
+				marketplaceCommit: actualCommit,
+				tarballSha256,
+				tarballSize: inputs.tarballSize,
+			},
 			commands: commandResults.map(result => result.label),
 			claude: { root: claudeSurface.root, migration: claudeMigration },
 			omp: { root: ompSurface.root, migration: ompMigration },
@@ -229,10 +355,33 @@ function option(name) {
 async function main() {
 	const marketplaceRoot = option("--marketplace-root");
 	const tarballPath = option("--tarball");
-	const allowed = new Set(["--marketplace-root", marketplaceRoot, "--tarball", tarballPath]);
+	const expectedMarketplaceVersion = option("--expected-marketplace-version");
+	const expectedPackageName = option("--expected-package-name");
+	const expectedPackageVersion = option("--expected-package-version");
+	const expectedMarketplaceCommit = option("--expected-marketplace-commit");
+	const expectedTarballSha256 = option("--expected-tarball-sha256");
+
+	const allowed = new Set([
+		"--marketplace-root", marketplaceRoot,
+		"--tarball", tarballPath,
+		"--expected-marketplace-version", expectedMarketplaceVersion,
+		"--expected-package-name", expectedPackageName,
+		"--expected-package-version", expectedPackageVersion,
+		"--expected-marketplace-commit", expectedMarketplaceCommit,
+		"--expected-tarball-sha256", expectedTarballSha256
+	]);
 	const unexpected = process.argv.slice(2).filter(argument => !allowed.has(argument));
 	if (unexpected.length > 0) throw new Error(`Unknown verifier arguments: ${unexpected.join(", ")}`);
-	const result = await verifyReleaseArtifacts({ marketplaceRoot, tarballPath });
+
+	const result = await verifyReleaseArtifacts({
+		marketplaceRoot,
+		tarballPath,
+		expectedMarketplaceVersion,
+		expectedPackageName,
+		expectedPackageVersion,
+		expectedMarketplaceCommit,
+		expectedTarballSha256
+	});
 	console.log(JSON.stringify(result, null, 2));
 }
 

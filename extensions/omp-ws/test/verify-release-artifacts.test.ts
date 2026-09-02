@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -25,14 +26,32 @@ afterEach(async () => {
 	await Promise.all(temporaryRoots.splice(0).map(root => fs.rm(root, { recursive: true, force: true })));
 });
 
+
 async function fakeReleaseInputs() {
 	const root = await temporaryRoot("ws-verifier-inputs-");
 	const marketplaceRoot = path.join(root, "marketplace");
 	const tarballPath = path.join(root, "wsagency-omp-ws-0.7.0.tgz");
 	await fs.mkdir(path.join(marketplaceRoot, ".claude-plugin"), { recursive: true });
-	await fs.writeFile(path.join(marketplaceRoot, ".claude-plugin", "marketplace.json"), "{}\n");
-	await fs.writeFile(tarballPath, "retained artifact fixture\n");
-	return { marketplaceRoot, tarballPath };
+	await fs.writeFile(
+		path.join(marketplaceRoot, ".claude-plugin", "marketplace.json"),
+		`${JSON.stringify({ plugins: [{ name: "ws", version: "5.0.0" }] }, null, 2)}\n`,
+	);
+	const tarballContent = "retained artifact fixture\n";
+	await fs.writeFile(tarballPath, tarballContent);
+
+	return {
+		marketplaceRoot,
+		tarballPath,
+		options: {
+			marketplaceRoot,
+			tarballPath,
+			expectedMarketplaceVersion: "5.0.0",
+			expectedPackageName: "@wsagency/omp-ws",
+			expectedPackageVersion: "0.7.0",
+			expectedMarketplaceCommit: "fakedc0mmit",
+			expectedTarballSha256: createHash("sha256").update(tarballContent).digest("hex"),
+		},
+	};
 }
 
 describe("release verification command contract", () => {
@@ -89,23 +108,51 @@ describe("installed surface inspection", () => {
 		await expect(assertInstalledSurface(root)).rejects.toThrow("removed surface");
 	});
 });
-
 describe("release verifier orchestration", () => {
-	test("runs every gate with fakes and always removes its temporary state", async () => {
+	function successfulCommandRunner(overrides: Record<string, string> = {}) {
+		return async (step: { label: string; env: Record<string, string> }) => {
+			const outputs: Record<string, string> = {
+				"git-status": "\n",
+				"git-commit": "fakedc0mmit\n",
+				"claude-plugin-details": "ws\n  Installed plugin\n\nComponent inventory\n",
+				"omp-plugin-list": JSON.stringify({
+					npm: [{ name: "@wsagency/omp-ws", version: "0.7.0" }],
+					marketplace: [],
+				}),
+				"omp-plugin-doctor": JSON.stringify([{ name: "test", status: "ok" }]),
+			};
+			return { status: 0, stdout: overrides[step.label] ?? outputs[step.label] ?? `${step.label}\n`, stderr: "" };
+		};
+	}
+
+	function installedClaude(root: string, overrides = {}) {
+		return {
+			root,
+			version: "5.0.0",
+			gitCommitSha: "fakedc0mmit",
+			...overrides,
+		};
+	}
+
+	test("runs every identity and behavior gate and always removes its temporary state", async () => {
 		const inputs = await fakeReleaseInputs();
 		const calls: Array<{ label: string; env: Record<string, string> }> = [];
 		const inspected: string[] = [];
 		const exercised: string[] = [];
 		let verifierRoot = "";
-		const result = await verifyReleaseArtifacts(inputs, {
+		const claudeRoot = await temporaryRoot("fake-claude-root-");
+		const baseRunner = successfulCommandRunner();
+		const result = await verifyReleaseArtifacts(inputs.options, {
 			runCommand: async step => {
 				calls.push({ label: step.label, env: step.env });
-				verifierRoot ||= path.dirname(step.env.HOME);
-				return { status: 0, stdout: `${step.label}\n`, stderr: "" };
+				if (step.env?.HOME && step.label.startsWith("claude-")) verifierRoot ||= path.dirname(step.env.HOME);
+				return baseRunner(step);
 			},
-			resolveClaudePluginRoot: async () => "/installed/claude/ws",
+			resolveClaudePluginInstallation: async () => installedClaude(claudeRoot),
 			inspectSurface: async root => {
 				inspected.push(root);
+				await fs.mkdir(root, { recursive: true });
+				await fs.writeFile(path.join(root, "package.json"), JSON.stringify({ name: "@wsagency/omp-ws", version: "0.7.0" }));
 				return { root, required: [...REQUIRED_INSTALLED_ASSETS], removed: [...REMOVED_INSTALLED_ASSETS] };
 			},
 			exerciseTransaction: async (_root, _workspace, label) => {
@@ -113,23 +160,111 @@ describe("release verifier orchestration", () => {
 				return { label, plannedItems: 12, operations: 8, aligned: true };
 			},
 		});
-		expect(calls.map(call => call.label)).toEqual(result.commands);
-		expect(inspected).toEqual(["/installed/claude/ws", expect.stringContaining("/omp-package/node_modules/@wsagency/omp-ws")]);
+		expect(calls.map(call => call.label)).toEqual([
+			"git-status",
+			"git-commit",
+			"claude-marketplace-add",
+			"claude-plugin-install",
+			"claude-plugin-details",
+			"npm-tarball-install",
+			"omp-plugin-link",
+			"omp-plugin-list",
+			"omp-plugin-doctor",
+		]);
+		expect(inspected).toEqual([claudeRoot, expect.stringContaining("/omp-package/node_modules/@wsagency/omp-ws")]);
 		expect(exercised.sort()).toEqual(["claude", "omp"]);
 		expect(result.claude.migration.aligned).toBe(true);
+		expect(result.identities).toMatchObject({
+			marketplaceVersion: "5.0.0",
+			packageName: "@wsagency/omp-ws",
+			packageVersion: "0.7.0",
+			marketplaceCommit: "fakedc0mmit",
+		});
 		await expect(fs.access(verifierRoot)).rejects.toMatchObject({ code: "ENOENT" });
 	});
 
 	test("cleans temporary homes after a command failure", async () => {
 		const inputs = await fakeReleaseInputs();
 		let verifierRoot = "";
-		await expect(verifyReleaseArtifacts(inputs, {
+		await expect(verifyReleaseArtifacts(inputs.options, {
 			runCommand: async step => {
+				if (step.label === "git-status" || step.label === "git-commit") return successfulCommandRunner()(step);
 				verifierRoot = path.dirname(step.env.HOME);
 				throw new Error("injected command failure");
 			},
 		})).rejects.toThrow("injected command failure");
 		await expect(fs.access(verifierRoot)).rejects.toMatchObject({ code: "ENOENT" });
+	});
+
+	test("blocks any dirty marketplace repository state", async () => {
+		const inputs = await fakeReleaseInputs();
+		await expect(verifyReleaseArtifacts(inputs.options, {
+			runCommand: successfulCommandRunner({ "git-status": "?? unrelated-release-input\n" }),
+		})).rejects.toThrow("Marketplace repository has uncommitted changes");
+	});
+
+	test("blocks marketplace commit mismatch", async () => {
+		const inputs = await fakeReleaseInputs();
+		await expect(verifyReleaseArtifacts(inputs.options, {
+			runCommand: successfulCommandRunner({ "git-commit": "wrongcommit\n" }),
+		})).rejects.toThrow("Marketplace commit mismatch");
+	});
+
+	test("blocks retained tarball substitution via SHA256 mismatch", async () => {
+		const inputs = await fakeReleaseInputs();
+		await expect(verifyReleaseArtifacts(
+			{ ...inputs.options, expectedTarballSha256: "wronghash" },
+			{ runCommand: successfulCommandRunner() },
+		)).rejects.toThrow("Tarball SHA256 mismatch");
+	});
+
+	test("blocks marketplace manifest version mismatch before installation", async () => {
+		const inputs = await fakeReleaseInputs();
+		await fs.writeFile(
+			path.join(inputs.marketplaceRoot, ".claude-plugin", "marketplace.json"),
+			`${JSON.stringify({ plugins: [{ name: "ws", version: "5.0.1" }] }, null, 2)}\n`,
+		);
+		await expect(verifyReleaseArtifacts(inputs.options)).rejects.toThrow("Marketplace manifest version mismatch");
+	});
+
+	test("blocks Claude installation version mismatch", async () => {
+		const inputs = await fakeReleaseInputs();
+		const claudeRoot = await temporaryRoot("fake-claude-root-");
+		await expect(verifyReleaseArtifacts(inputs.options, {
+			runCommand: successfulCommandRunner(),
+			resolveClaudePluginInstallation: async () => installedClaude(claudeRoot, { version: "4.9.0" }),
+		})).rejects.toThrow("Claude marketplace version mismatch");
+	});
+
+	test("blocks Claude installation commit mismatch", async () => {
+		const inputs = await fakeReleaseInputs();
+		const claudeRoot = await temporaryRoot("fake-claude-root-");
+		await expect(verifyReleaseArtifacts(inputs.options, {
+			runCommand: successfulCommandRunner(),
+			resolveClaudePluginInstallation: async () => installedClaude(claudeRoot, { gitCommitSha: "wrongcommit" }),
+		})).rejects.toThrow("Claude marketplace commit mismatch");
+	});
+
+	test("blocks omp package version mismatch", async () => {
+		const inputs = await fakeReleaseInputs();
+		const claudeRoot = await temporaryRoot("fake-claude-root-");
+		await expect(verifyReleaseArtifacts(inputs.options, {
+			runCommand: successfulCommandRunner({
+				"omp-plugin-list": JSON.stringify({ npm: [{ name: "@wsagency/omp-ws", version: "0.8.0" }] }),
+			}),
+			resolveClaudePluginInstallation: async () => installedClaude(claudeRoot),
+		})).rejects.toThrow("omp package version mismatch");
+	});
+
+	test("blocks unhealthy omp plugin doctor status", async () => {
+		const inputs = await fakeReleaseInputs();
+		const claudeRoot = await temporaryRoot("fake-claude-root-");
+		await expect(verifyReleaseArtifacts(inputs.options, {
+			runCommand: successfulCommandRunner({
+				"omp-plugin-doctor": JSON.stringify([{ name: "test", status: "error" }]),
+			}),
+			resolveClaudePluginInstallation: async () => installedClaude(claudeRoot),
+		})).rejects.toThrow("omp plugin doctor reports unhealthy status: test");
 	});
 });
 

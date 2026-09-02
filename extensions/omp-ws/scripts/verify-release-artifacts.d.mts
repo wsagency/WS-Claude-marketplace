@@ -34,6 +34,12 @@ export interface InstalledSurface {
 	removed: string[];
 }
 
+export interface ClaudePluginInstallation {
+	root: string;
+	version: string;
+	gitCommitSha: string;
+}
+
 export interface MigrationExercise {
 	label: string;
 	plannedItems: number;
@@ -43,7 +49,7 @@ export interface MigrationExercise {
 
 export interface VerificationDependencies {
 	runCommand?: (step: VerificationStep) => CommandResult | Promise<CommandResult>;
-	resolveClaudePluginRoot?: (claudeConfig: string) => string | Promise<string>;
+	resolveClaudePluginInstallation?: (claudeConfig: string) => ClaudePluginInstallation | Promise<ClaudePluginInstallation>;
 	inspectSurface?: (root: string) => InstalledSurface | Promise<InstalledSurface>;
 	exerciseTransaction?: (
 		pluginRoot: string,
@@ -54,10 +60,30 @@ export interface VerificationDependencies {
 	) => MigrationExercise | Promise<MigrationExercise>;
 }
 
+export interface ReleaseIdentities {
+	marketplaceVersion: string;
+	packageName: string;
+	packageVersion: string;
+	marketplaceCommit: string;
+	tarballSha256: string;
+	tarballSize: number;
+}
+
 export interface ReleaseVerificationResult {
+	identities: ReleaseIdentities;
 	commands: string[];
 	claude: { root: string; migration: MigrationExercise };
 	omp: { root: string; migration: MigrationExercise };
+}
+
+export interface VerifyReleaseArtifactsOptions {
+	marketplaceRoot: string;
+	tarballPath: string;
+	expectedMarketplaceVersion: string;
+	expectedPackageName: string;
+	expectedPackageVersion: string;
+	expectedMarketplaceCommit: string;
+	expectedTarballSha256: string;
 }
 
 export const REQUIRED_INSTALLED_ASSETS: readonly [string, ...string[]];
@@ -70,6 +96,6 @@ export function buildVerificationSteps(input: {
 }): VerificationStep[];
 export function assertInstalledSurface(pluginRoot: string): Promise<InstalledSurface>;
 export function verifyReleaseArtifacts(
-	options: { marketplaceRoot: string; tarballPath: string },
+	options: VerifyReleaseArtifactsOptions,
 	dependencies?: VerificationDependencies,
 ): Promise<ReleaseVerificationResult>;
