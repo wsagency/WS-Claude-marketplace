@@ -200,7 +200,7 @@ export async function apply(config, snapshot, machine, choices, planHash, effect
     return await executePhases(state, snapshot, adapters, injection);
 }
 
-async function executePhases(state, snapshot, adapters, injection) {
+export async function executePhases(state, snapshot, adapters, injection) {
     const phases = ["prepare", "cutover", "cleanup", "done"];
     let currentPhaseIdx = phases.indexOf(state.phase);
     
