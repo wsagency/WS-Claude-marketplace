@@ -1,0 +1,5 @@
+docs:
+  default_audience: ask
+  default_scope: ask
+  user_track: docs
+  dev_track: dev-docs
