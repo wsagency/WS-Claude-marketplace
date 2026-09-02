@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
+import { access, cp, mkdir, mkdtemp, realpath, readdir, rm, stat, readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, realpath, readdir, rm, stat, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -137,6 +137,61 @@ function defaultRunCommand(step) {
 		throw new Error(`${step.label} failed (${result.status}): ${(result.stderr || result.stdout || "no output").trim()}`);
 	}
 	return { stdout: result.stdout, stderr: result.stderr, status: result.status };
+}
+
+async function initializeFixtureRepository(root, env, runCommand) {
+	for (const [label, args] of [
+		["git-init", ["init", "--quiet"]],
+		["git-user-name", ["config", "user.name", "WS Release Verifier"]],
+		["git-user-email", ["config", "user.email", "release-verifier@example.invalid"]],
+		["git-add", ["add", "."]],
+		["git-commit", ["commit", "--quiet", "--allow-empty", "-m", "test: installed migration fixture"]],
+	]) {
+		await runCommand({ label, command: "git", args, cwd: root, env });
+	}
+}
+
+export async function exerciseInstalledTransaction(pluginRoot, workspaceRoot, label, runCommand, env) {
+	const skillRoot = path.join(pluginRoot, "skills", "ws-project-bootstrap");
+	const fixtureRepository = path.join(skillRoot, "fixtures", "released-repositories", "ws-init-only", "repository");
+	const root = path.join(workspaceRoot, `migration-${label}`);
+	await cp(fixtureRepository, root, { recursive: true });
+	await initializeFixtureRepository(root, env, runCommand);
+
+	const nonce = `${Date.now()}-${label}`;
+	const [{ runManifestTransaction }, { discoverLegacySetup }, { discoverStandaloneRepository }] = await Promise.all([
+		import(`${pathToFileURL(path.join(skillRoot, "manifest-contract.mjs")).href}?verify=${nonce}`),
+		import(`${pathToFileURL(path.join(skillRoot, "migration.mjs")).href}?verify=${nonce}`),
+		import(`${pathToFileURL(path.join(skillRoot, "transaction.mjs")).href}?verify=${nonce}`),
+	]);
+	const machine = { activeHarness: "omp", sessionDiscipline: true, dangerousGitGuard: true, jiraCli: true };
+	const request = {
+		mode: "migration",
+		root,
+		snapshot: {
+			legacy: await discoverLegacySetup(root, machine),
+			core: await discoverStandaloneRepository(root, machine),
+		},
+		choices: { core: { jiraValidation: { ready: true }, docsReadiness: { ready: true } } },
+		adapters: { verifyMigrationReadiness: async () => ({ jiraReady: true, docsReady: true }) },
+	};
+	const planned = await runManifestTransaction(request);
+	if (!planned.requiresAuthorization || planned.operations.length !== 0) throw new Error(`${label} installed migration did not stop at authorization.`);
+	const applied = await runManifestTransaction({ ...request, authorization: planned.manifest.hash });
+	if (!applied.applied || applied.readiness?.configValid !== true) throw new Error(`${label} installed migration did not verify readiness.`);
+
+	const alignedRequest = {
+		...request,
+		snapshot: {
+			legacy: await discoverLegacySetup(root, machine),
+			core: await discoverStandaloneRepository(root, machine),
+		},
+	};
+	const aligned = await runManifestTransaction(alignedRequest);
+	if (aligned.requiresAuthorization || !/No migration changes required|Valid canonical configuration wins/.test(aligned.report)) {
+		throw new Error(`${label} installed aligned rerun was not a prompt-free no-op.`);
+	}
+	return { label, plannedItems: planned.manifest.items.length, operations: applied.operations.length, aligned: true };
 }
 
 async function resolveClaudePluginInstallation(claudeConfig) {
@@ -473,6 +528,7 @@ export async function verifyReleaseArtifacts(options, dependencies = {}) {
 	const verifyParity = dependencies.verifySharedGeneratedSurface ?? verifySharedGeneratedSurface;
 	const inspectClaudeRuntime = dependencies.probeClaudeRuntime ?? probeClaudeRuntime;
 	const inspectOmpRuntime = dependencies.probeOmpRuntime ?? probeOmpRuntime;
+	const exerciseTransaction = dependencies.exerciseTransaction ?? exerciseInstalledTransaction;
 	try {
 		for (const target of [paths.claudeHome, paths.claudeConfig, paths.ompHome, paths.ompXdgConfig, paths.ompXdgData, paths.npmPrefix, paths.workspace]) {
 			await mkdir(target, { recursive: true });
@@ -537,11 +593,13 @@ export async function verifyReleaseArtifacts(options, dependencies = {}) {
 		if (nativePackageJson.version !== options.expectedPackageVersion) {
 			throw new Error(`Native package version mismatch. Expected ${options.expectedPackageVersion}, got ${nativePackageJson.version}`);
 		}
-
-		const [parity, claudeRuntime, ompRuntime] = await Promise.all([
+		const ompEnv = steps.find(step => step.label === "omp-plugin-list").env;
+		const [parity, claudeRuntime, ompRuntime, claudeMigration, ompMigration] = await Promise.all([
 			verifyParity(claudeSurface.root, ompSurface.root, options.expectedMarketplaceCommit),
 			inspectClaudeRuntime(claudeSurface.root),
 			inspectOmpRuntime(ompSurface.root),
+			exerciseTransaction(claudeInstallation.root, paths.workspace, "claude", runCommand, ompEnv),
+			exerciseTransaction(paths.nativeRoot, paths.workspace, "omp", runCommand, ompEnv),
 		]);
 		return {
 			identities: {
@@ -554,7 +612,7 @@ export async function verifyReleaseArtifacts(options, dependencies = {}) {
 			},
 			commands: commandResults.map(result => result.label),
 			parity,
-			claude: { root: claudeSurface.root, runtime: claudeRuntime },
+			claude: { root: claudeSurface.root, runtime: claudeRuntime, migration: claudeMigration },
 			omp: {
 				root: ompSurface.root,
 				runtime: {
@@ -562,6 +620,7 @@ export async function verifyReleaseArtifacts(options, dependencies = {}) {
 					linkedPlugin: ompNpmPlugin,
 					doctor: ompDoctor,
 				},
+				migration: ompMigration,
 			},
 		};
 	} finally {

@@ -273,12 +273,13 @@ describe("release verifier orchestration", () => {
 		};
 	}
 
-	test("runs every identity, parity, and runtime gate and always removes its temporary state", async () => {
+	test("runs every identity, parity, runtime, and migration gate and always removes its temporary state", async () => {
 		const inputs = await fakeReleaseInputs();
 		const calls: Array<{ label: string; env: Record<string, string> }> = [];
 		const inspected: string[] = [];
 		const parityRoots: string[] = [];
 		const runtimeRoots: string[] = [];
+		const migrationRoots: string[] = [];
 		let verifierRoot = "";
 		const claudeRoot = await temporaryRoot("fake-claude-root-");
 		const baseRunner = successfulCommandRunner();
@@ -324,6 +325,10 @@ describe("release verifier orchestration", () => {
 					rules: ["ws-guard-git.md"],
 				};
 			},
+			exerciseTransaction: async (root, _workspace, label) => {
+				migrationRoots.push(root);
+				return { label, plannedItems: 4, operations: 4, aligned: true };
+			},
 		});
 		expect(calls.map(call => call.label)).toEqual([
 			"git-status",
@@ -339,10 +344,13 @@ describe("release verifier orchestration", () => {
 		expect(inspected).toEqual([claudeRoot, expect.stringContaining("/omp-package/node_modules/@wsagency/omp-ws")]);
 		expect(parityRoots).toEqual(inspected);
 		expect(runtimeRoots).toEqual(inspected);
+		expect(migrationRoots).toEqual(inspected);
 		expect(result.parity.marketplaceCommit).toBe(MARKETPLACE_COMMIT);
 		expect(result.claude.runtime.plugin).toBe("ws");
 		expect(result.omp.runtime.linkedPlugin).toMatchObject({ name: "@wsagency/omp-ws", version: "0.7.0" });
 		expect(result.omp.runtime.doctor).toContainEqual({ name: "plugin:@wsagency/omp-ws", status: "ok" });
+		expect(result.claude.migration).toMatchObject({ label: "claude", plannedItems: 4, operations: 4, aligned: true });
+		expect(result.omp.migration).toMatchObject({ label: "omp", plannedItems: 4, operations: 4, aligned: true });
 		expect(result.identities).toMatchObject({
 			marketplaceVersion: "5.0.0",
 			packageName: "@wsagency/omp-ws",
