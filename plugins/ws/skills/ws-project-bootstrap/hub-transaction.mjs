@@ -4,7 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import {
 	applyPlan,
-	buildPlan,
+	composeLegacyContextPlan,
 	CANONICAL_CONFIG_YAML,
 	deriveReadiness,
 	discoverStandaloneRepository,
@@ -325,27 +325,6 @@ function normalizeMigrationConfig(source) {
 	return serializeCanonicalConfig(config);
 }
 
-function materializeReviewedMigrationPlan(corePlan, legacyPlan) {
-	const reviewedReplacements = new Map(
-		(legacyPlan?.effects ?? [])
-			.filter(effect => effect.classification === "UPDATE" && typeof effect.after === "string")
-			.map(effect => [effect.target, effect]),
-	);
-	let changed = false;
-	const effects = corePlan.effects.map(effect => {
-		const replacement = reviewedReplacements.get(effect.target);
-		if (!replacement || effect.classification !== "BLOCKING_CONFLICT") return effect;
-		changed = true;
-		return {
-			...effect,
-			classification: "UPDATE",
-			reason: "Apply the reviewed semantic legacy migration while preserving authored content.",
-			after: replacement.after,
-			diff: replacement.diff,
-		};
-	});
-	return changed ? { ...corePlan, effects, hash: sha256(JSON.stringify({ delegated: corePlan.hash, effects })) } : corePlan;
-}
 
 function hasSemanticRepositoryState(legacy) {
 	if (!legacy) return false;
@@ -378,6 +357,34 @@ function projectDocumentationDiscovery(discovery, corePlan) {
 		}
 	}
 	return { ...discovery, entries };
+}
+
+function documentationReadiness(plan) {
+	if (!plan) return { ready: false, reason: "Documentation is not configured." };
+	const pending = plan.effects.filter(effect =>
+		isWriteEffect(effect) || effect.classification === "BLOCKING_CONFLICT"
+	);
+	return {
+		ready: pending.length === 0,
+		reason: pending.length === 0
+			? undefined
+			: pending.map(effect => `${effect.target}: ${effect.reason}`).join(" "),
+	};
+}
+
+async function rediscoverTargetReadiness(root, machine, coreChoices) {
+	const discovery = await discoverStandaloneRepository(root, machine);
+	const config = parseCanonicalConfigYaml(coreChoices.targetConfig);
+	let docsReadiness;
+	if (config.docs) {
+		const docsDiscovery = await discoverDocumentation(
+			root,
+			discovery.projectShape,
+			{ docs: config.docs, changelog: config.changelog },
+		);
+		docsReadiness = documentationReadiness(planDocumentation(docsDiscovery));
+	}
+	return deriveReadiness(discovery, { ...coreChoices, docsReadiness });
 }
 
 function plannedPaths(corePlan, docsPlan, legacyPlan) {
@@ -469,7 +476,7 @@ async function buildComposite(request) {
 		const coreChoices = { ...RECOMMENDED_LOCAL_CHOICES, ...targetChoices, targetConfig };
 		let corePlan;
 		if (localErrors.length === 0) {
-			corePlan = materializeReviewedMigrationPlan(buildPlan(repository, coreChoices), legacyPlan);
+			corePlan = composeLegacyContextPlan(repository, coreChoices, legacyPlan);
 		}
 		const transaction = {
 			plan: corePlan,
@@ -482,6 +489,13 @@ async function buildComposite(request) {
 		if (documentation && corePlan) {
 			const docsDiscovery = await discoverDocumentation(repository.root, repository.projectShape, parseCanonicalConfigYaml(targetConfig));
 			docsPlan = planDocumentation(projectDocumentationDiscovery(docsDiscovery, corePlan));
+		}
+		if (localErrors.length === 0) {
+			transaction.readiness = await rediscoverTargetReadiness(
+				repository.root,
+				discovery.machine,
+				coreChoices,
+			);
 		}
 		const plannedRepository = { ...repository, preflightErrors: localErrors };
 		const repositoryBlockers = transactionBlockers(plannedRepository, transaction, docsPlan);
@@ -722,7 +736,7 @@ export async function runHubTransaction(request) {
 		try {
 			if (request.beforePhase) await request.beforePhase({ repository: target.name, root: target.root, phase: "core" });
 			const boundaryDiscovery = await discoverStandaloneRepository(target.root, freshDiscovery.machine);
-			const boundaryCore = materializeReviewedMigrationPlan(buildPlan(boundaryDiscovery, target.coreChoices), target.legacy);
+			const boundaryCore = composeLegacyContextPlan(boundaryDiscovery, target.coreChoices, target.legacy);
 			if (boundaryCore.hash !== target.core.hash) throw new Error("Root fingerprint drifted immediately before its first write.");
 			applyResult = await applyPlan(
 				target.root,
@@ -730,8 +744,11 @@ export async function runHubTransaction(request) {
 				coreFailureInjection(request, target, injectedFailureRoot),
 			);
 			operations.push(...applyResult.operations.map(operation => ({ ...operation, repository: target.name, root: target.root, phase: "core" })));
-			const verifiedDiscovery = await discoverStandaloneRepository(target.root, freshDiscovery.machine);
-			recordReadiness(readiness, target, deriveReadiness(verifiedDiscovery, target.coreChoices));
+			recordReadiness(
+				readiness,
+				target,
+				await rediscoverTargetReadiness(target.root, freshDiscovery.machine, target.coreChoices),
+			);
 			if (applyResult.failure) throw applyResult.failure.error;
 			outcomes.push({ repository: target.name, phase: "core", status: target.core.effects.some(isWriteEffect) ? "completed" : "no-op" });
 			addEffectOutcomes(outcomes, target.name, "core", "completed", writeEffects(target, "core"));
@@ -790,6 +807,11 @@ export async function runHubTransaction(request) {
 				: undefined;
 			const docsOperations = await applyDocumentation(target.root, docsPlan, docsPlan.hash, docsFailure);
 			operations.push(...docsOperations.map(operation => ({ ...operation, repository: target.name, root: target.root, phase: "docs" })));
+			recordReadiness(
+				readiness,
+				target,
+				await rediscoverTargetReadiness(target.root, freshDiscovery.machine, target.coreChoices),
+			);
 			outcomes.push({ repository: target.name, phase: "docs", status: docsPlan.effects.some(isWriteEffect) ? "completed" : "no-op" });
 			addEffectOutcomes(outcomes, target.name, "docs", "completed", writeEffects(target, "docs"));
 		} catch (error) {

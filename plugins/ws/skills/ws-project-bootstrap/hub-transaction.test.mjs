@@ -354,6 +354,9 @@ describe("ordered hub apply", () => {
 		assert.equal(await readFile(path.join(hubRoot, "work-b", "dev-docs/index.md"), "utf8"), "# Internal Documentation\n\nWelcome to the dev-docs.\n");
 		assert.equal(await readFile(path.join(hubRoot, "work-a", "docs/index.md"), "utf8"), "# Documentation\n\nWelcome to the documentation.\n");
 		assert.equal(await exists(path.join(hubRoot, "docs", "index.md")), false);
+		assert.equal(applied.readiness.hub.docsReady, true);
+		assert.equal(applied.readiness.working["work-a"].docsReady, true);
+		assert.equal(applied.readiness.working["work-b"].docsReady, true);
 		assert.deepEqual(
 			new Set(applied.outcomes.map(outcome => outcome.status)),
 			new Set(["completed", "preserved", "skipped", "excluded", "no-op"]),
@@ -542,6 +545,8 @@ describe("documentation failure recovery", () => {
 		assert.equal(aligned.blockers.length, 0);
 		assert.match(aligned.report, /No changes required/);
 		assert.equal(aligned.outcomes.some(outcome => outcome.status === "no-op"), true);
+		assert.equal(aligned.readiness.hub.docsReady, true);
+		assert.equal(aligned.readiness.working.work.docsReady, true);
 	});
 });
 

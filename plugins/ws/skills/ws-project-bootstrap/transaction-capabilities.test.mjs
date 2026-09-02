@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseCanonicalConfigYaml, serializeCanonicalConfig } from "./config.mjs";
-import { buildPlan, CANONICAL_CONFIG_YAML, deriveReadiness } from "./transaction.mjs";
+import { buildPlan, CANONICAL_CONFIG_YAML, composeLegacyContextPlan, deriveReadiness } from "./transaction.mjs";
 
 function discovery(origin, machine = {}) {
-	const fileTargets = [".wsagency/config.yaml", "dev-docs/agents/issue-tracker.md", "dev-docs/agents/triage-labels.md", "dev-docs/agents/domain.md", "CONTEXT.md", "AGENTS.md", "CLAUDE.md"];
+	const fileTargets = [".wsagency/config.yaml", "dev-docs/agents/issue-tracker.md", "dev-docs/agents/triage-labels.md", "dev-docs/agents/domain.md", "CONTEXT.md", "CONTEXT-MAP.md", "AGENTS.md", "CLAUDE.md"];
 	const entries = Object.fromEntries(fileTargets.map(target => [target, { kind: "missing", fingerprint: null }]));
 	entries["dev-docs/tickets/open"] = { kind: "missing", fingerprint: null };
 	entries["dev-docs/tickets/done"] = { kind: "missing", fingerprint: null };
@@ -56,6 +56,35 @@ test("docs selection remains an explicitly delegated worker effect", () => {
 		config.docs = { user_track: "docs", dev_track: "dev-docs", default_audience: "ask", default_scope: "repo", adr_for_arch_changes: true };
 	}));
 	assert.equal(plan.effects.find(effect => effect.target === "documentation:bootstrap").classification, "PRESERVE");
+});
+
+test("multi-context setup selects only the context map artifact", () => {
+	const plan = buildPlan(discovery(null), choices(config => {
+		config.domain.layout = "multi_context";
+	}));
+	assert.equal(plan.effects.find(effect => effect.target === "CONTEXT-MAP.md").classification, "CREATE");
+	assert.equal(plan.effects.some(effect => effect.target === "CONTEXT.md"), false);
+});
+
+test("legacy context composition blocks duplicate authorized writes", () => {
+	const snapshot = discovery(null);
+	snapshot.entries["AGENTS.md"] = { kind: "file", content: "# Authored\n", fingerprint: "agents-v1" };
+	const effect = {
+		order: 45,
+		target: "AGENTS.md",
+		kind: "file",
+		classification: "UPDATE",
+		reason: "Reviewed context migration.",
+		after: "# Migrated\n",
+		fingerprint: "agents-v1",
+	};
+	const plan = composeLegacyContextPlan(snapshot, choices(() => {}), {
+		hash: "legacy",
+		effects: [effect, { ...effect, after: "# Competing migration\n" }],
+	});
+	const collision = plan.effects.find(item => item.target === "AGENTS.md");
+	assert.equal(collision.classification, "BLOCKING_CONFLICT");
+	assert.match(collision.reason, /collide/);
 });
 
 test("engineering readiness requires changelog and UI policy sections", () => {

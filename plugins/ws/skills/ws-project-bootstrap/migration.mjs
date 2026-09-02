@@ -520,7 +520,11 @@ async function verifyAuthorizedEffects(root, plan) {
 			continue;
 		}
 		if (["CREATE", "UPDATE", "NO-OP"].includes(item.classification) && item.after != null && item.target !== ".wsagency/config.yaml") {
-			if (current.kind !== "file" || current.content !== item.after) {
+			const exact = current.kind === "file" && current.content === item.after;
+			const embeddedOnce = current.kind === "file"
+				&& item.after.length > 0
+				&& current.content.split(item.after).length === 2;
+			if (!exact && !embeddedOnce) {
 				throw new Error(`Legacy cleanup drift detected for ${item.target}.`);
 			}
 		}

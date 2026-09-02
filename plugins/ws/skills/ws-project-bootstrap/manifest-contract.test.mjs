@@ -251,6 +251,8 @@ test("first run stops on injected failure and resumes through the same manifest 
 		assert.equal(interrupted.applied, false);
 		assert.equal(interrupted.failure.target, ".wsagency/config.yaml");
 		assert.match(interrupted.report, /No rollback was performed/);
+		assert.match(interrupted.report, /To resume, run exactly:\n  \/ws-setup/);
+		assert.doesNotMatch(interrupted.report, /omp ws-setup/);
 
 		const resumedRequest = { ...request, snapshot: await discoverStandaloneRepository(root, MACHINE) };
 		const resumedPlan = await runManifestTransaction(resumedRequest);
@@ -313,6 +315,52 @@ test("hub scope plans and applies every selected repository through the facade",
 		assert.deepEqual(calls, ["machine"]);
 		assert.equal(await exists(path.join(root, ".wsagency/config.yaml")), true);
 		assert.equal(await exists(path.join(child, ".wsagency/config.yaml")), true);
+	} finally {
+		await rm(parent, { recursive: true, force: true });
+	}
+});
+
+test("hub migration composes authored context before thinning Claude context", async () => {
+	const { parent, root, child } = await createHub();
+	try {
+		const agentsSource = "# Service agent context\n\nPreserve service invariants.\n";
+		const claudeSource = "# Service Claude context\n\nPreserve deployment guidance.\n";
+		await writeFile(path.join(child, "AGENTS.md"), agentsSource);
+		await writeFile(path.join(child, "CLAUDE.md"), claudeSource);
+		git(child, "add", "AGENTS.md", "CLAUDE.md");
+		git(child, "commit", "--quiet", "-m", "test: add legacy context");
+
+		const request = {
+			mode: "hub",
+			root,
+			snapshot: await discoverHubTransaction(root, MACHINE),
+			choices: {
+				documentation: false,
+				working: {
+					service: {
+						migration: { resolutions: { "context.source": "merge" } },
+					},
+				},
+			},
+		};
+		const planned = await runManifestTransaction(request);
+		assert.equal(planned.requiresAuthorization, true, planned.report);
+		const servicePlan = planned.manifest.delegated.targets.find(target => target.name === "service").core;
+		assert.match(servicePlan.effects.find(effect => effect.target === "AGENTS.md").after, /Preserve deployment guidance/);
+		assert.deepEqual(
+			servicePlan.effects.find(effect => effect.target === "CLAUDE.md").preservationChecks,
+			[{ target: "AGENTS.md", content: claudeSource }],
+		);
+
+		const applied = await runManifestTransaction({ ...request, authorization: planned.manifest.hash });
+		assert.equal(applied.applied, true, applied.report);
+		const agents = await readFile(path.join(child, "AGENTS.md"), "utf8");
+		assert.match(agents, /Preserve service invariants/);
+		assert.match(agents, /Preserve deployment guidance/);
+		assert.equal(
+			await readFile(path.join(child, "CLAUDE.md"), "utf8"),
+			"<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n",
+		);
 	} finally {
 		await rm(parent, { recursive: true, force: true });
 	}
@@ -486,6 +534,67 @@ test("all tracker modes plan and apply through the manifest facade", async t => 
 				await rm(parent, { recursive: true, force: true });
 			}
 		});
+	}
+});
+
+test("multi-context setup materializes and verifies only CONTEXT-MAP.md", async () => {
+	const { parent, root } = await createStandaloneRepository("ws-manifest-multi-context-");
+	try {
+		const choices = materializedSetupChoices(config => {
+			config.domain.layout = "multi_context";
+		});
+		const request = {
+			mode: "setup",
+			root,
+			snapshot: await discoverStandaloneRepository(root, MACHINE),
+			choices,
+		};
+		const planned = await runManifestTransaction(request);
+		assert.equal(planned.manifest.items.some(item => item.phase === "core" && item.target === "CONTEXT-MAP.md" && item.classification === "CREATE"), true);
+		assert.equal(planned.manifest.items.some(item => item.phase === "core" && item.target === "CONTEXT.md"), false);
+
+		const applied = await runManifestTransaction({ ...request, authorization: planned.manifest.hash });
+		assert.equal(applied.applied, true);
+		assert.equal(applied.readiness.engineeringReady, true);
+		assert.match(await readFile(path.join(root, "CONTEXT-MAP.md"), "utf8"), /multi-context domain layout/);
+		assert.equal(await exists(path.join(root, "CONTEXT.md")), false);
+	} finally {
+		await rm(parent, { recursive: true, force: true });
+	}
+});
+
+test("standalone migration composes authored context before thinning Claude context", async () => {
+	const { parent, root } = await temporaryRepository("customized-combined");
+	try {
+		const agentsSource = "# Agent context\n\nPreserve product vocabulary.\n";
+		const claudeSource = "# Claude context\n\nPreserve release constraints.\n";
+		await writeFile(path.join(root, "AGENTS.md"), agentsSource);
+		await writeFile(path.join(root, "CLAUDE.md"), claudeSource);
+		git(root, "add", "AGENTS.md", "CLAUDE.md");
+		git(root, "commit", "--quiet", "-m", "test: add legacy context");
+		const request = await migrationRequest(root);
+		request.choices.migration = { resolutions: { "context.source": "merge" } };
+
+		const planned = await runManifestTransaction(request);
+		assert.equal(planned.requiresAuthorization, true, planned.report);
+		const corePlan = planned.manifest.delegated.core;
+		assert.match(corePlan.effects.find(effect => effect.target === "AGENTS.md").after, /Preserve release constraints/);
+		assert.deepEqual(
+			corePlan.effects.find(effect => effect.target === "CLAUDE.md").preservationChecks,
+			[{ target: "AGENTS.md", content: claudeSource }],
+		);
+
+		const applied = await runManifestTransaction({ ...request, authorization: planned.manifest.hash });
+		assert.equal(applied.applied, true, applied.report);
+		const agents = await readFile(path.join(root, "AGENTS.md"), "utf8");
+		assert.match(agents, /Preserve product vocabulary/);
+		assert.match(agents, /Preserve release constraints/);
+		assert.equal(
+			await readFile(path.join(root, "CLAUDE.md"), "utf8"),
+			"<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n",
+		);
+	} finally {
+		await rm(parent, { recursive: true, force: true });
 	}
 });
 
@@ -698,6 +807,7 @@ test("documentation failure preserves completed core work and a fresh manifest r
 			authorization: planned.manifest.hash,
 			injection: { docsFailure: firstDocumentationWrite.target },
 		});
+		assert.equal(interrupted.readiness.docsReady, false);
 		assert.equal(interrupted.applied, false);
 		assert.equal(await exists(path.join(root, ".wsagency/config.yaml")), true);
 		assert.match(interrupted.report, /No rollback was performed/);
@@ -706,6 +816,7 @@ test("documentation failure preserves completed core work and a fresh manifest r
 		const resumedPlan = await runManifestTransaction(resumedRequest);
 		const resumed = await runManifestTransaction({ ...resumedRequest, authorization: resumedPlan.manifest.hash });
 		assert.equal(resumed.applied, true);
+		assert.equal(resumed.readiness.docsReady, true);
 		assert.equal(await exists(path.join(root, "guides")), true);
 		assert.equal(await exists(path.join(root, "engineering")), true);
 		const agentsContent = await readFile(path.join(root, "AGENTS.md"), "utf8");

@@ -72,6 +72,7 @@ export interface SetupEffect {
 	after?: string;
 	diff: string;
 	fingerprint: string | null;
+	preservationChecks?: Array<{ target: string; content: string }>;
 }
 
 export interface SetupPlan {
@@ -131,6 +132,11 @@ export function verifyOriginWithGit(request: OriginVerificationRequest): Promise
 export function runSetupTransaction(request: SetupTransactionRequest): Promise<SetupTransactionResult>;
 export function discoveryIsAligned(discovery: SetupDiscovery, targetConfig?: string, choices?: Partial<SetupChoices>): boolean;
 export function buildPlan(discovery: SetupDiscovery, choices: SetupChoices, originVerification?: OriginVerification | null): SetupPlan;
+export function composeLegacyContextPlan(
+	discovery: SetupDiscovery,
+	choices: SetupChoices,
+	legacyPlan?: { hash: string; effects: SetupEffect[] } | null,
+): SetupPlan;
 export function deriveReadiness(discovery: SetupDiscovery, choices?: Partial<SetupChoices>): SetupReadiness;
 export function applyPlan(root: string, plan: SetupPlan, injectedFailure?: SetupTransactionRequest["injectedFailure"]): Promise<{
 	operations: SetupOperation[];

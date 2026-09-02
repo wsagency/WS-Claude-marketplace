@@ -67,6 +67,10 @@ function createRepository(config, options = {}) {
 		writeFileSync(path.join(root, "dev-docs/agents/domain.md"), DOMAIN_ADAPTER);
 		writeFileSync(path.join(root, "AGENTS.md"), "canonical agents\n");
 		writeFileSync(path.join(root, "CLAUDE.md"), "@AGENTS.md\n");
+		writeFileSync(
+			path.join(root, config?.domain?.layout === "multi_context" ? "CONTEXT-MAP.md" : "CONTEXT.md"),
+			"# Domain context\n",
+		);
 	}
 	if (options.local !== false) {
 		mkdirSync(path.join(root, "dev-docs/tickets/open"), { recursive: true });
@@ -133,6 +137,20 @@ describe("canonical capability inspection", () => {
 		assert.deepEqual(detectRepositoryLegacyPolicy(root), []);
 		const result = inspectCanonicalCapability({ root, capability: "engineering" });
 		assert.deepEqual(result.detectedLegacySources, []);
+	});
+
+	test("engineering readiness validates the context artifact selected by domain layout", () => {
+		const config = baseConfig();
+		config.domain.layout = "multi_context";
+		const root = createRepository(config, { engineeringAdapters: true });
+		const ready = inspectCanonicalCapability({ root, capability: "engineering" });
+		assert.equal(ready.setupReadiness.engineeringReady, true);
+
+		rmSync(path.join(root, "CONTEXT-MAP.md"));
+		writeFileSync(path.join(root, "CONTEXT.md"), "# Wrong layout artifact\n");
+		const wrongArtifact = inspectCanonicalCapability({ root, capability: "engineering" });
+		assert.equal(wrongArtifact.setupReadiness.engineeringReady, false);
+		assert.match(wrongArtifact.blockers.join("\n"), /engineering artifacts are incomplete/i);
 	});
 
 	test("customized adapters remain legacy blockers even when callers report artifacts ready", () => {

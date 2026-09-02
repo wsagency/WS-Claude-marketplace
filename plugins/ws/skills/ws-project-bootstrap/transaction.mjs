@@ -131,6 +131,7 @@ const TEMPLATE_CONTENT = Object.freeze({
 	"dev-docs/agents/triage-labels.md": readTemplate("triage-labels.md"),
 	"dev-docs/agents/domain.md": readTemplate("domain.md"),
 	"CONTEXT.md": readTemplate("context.md"),
+	"CONTEXT-MAP.md": readTemplate("context-map.md"),
 });
 
 const DIRECTORY_TARGETS = Object.freeze(["dev-docs/tickets/open", "dev-docs/tickets/done"]);
@@ -140,6 +141,7 @@ const FILE_TARGETS = Object.freeze([
 	"dev-docs/agents/triage-labels.md",
 	"dev-docs/agents/domain.md",
 	"CONTEXT.md",
+	"CONTEXT-MAP.md",
 	"AGENTS.md",
 	"CLAUDE.md",
 ]);
@@ -240,6 +242,10 @@ function runtimeCapabilitiesAligned(config, machine) {
 	return true;
 }
 
+function domainContextTarget(config) {
+	return config?.domain?.layout === "multi_context" ? "CONTEXT-MAP.md" : "CONTEXT.md";
+}
+
 export function discoveryIsAligned(discovery, targetConfig = CANONICAL_CONFIG_YAML, choices = {}) {
 	if (discovery.projectShape !== "standalone" && discovery.projectShape !== "hub_root" && discovery.projectShape !== "hub_subrepository") return false;
 	const config = parseTargetConfig(targetConfig);
@@ -259,7 +265,7 @@ export function discoveryIsAligned(discovery, targetConfig = CANONICAL_CONFIG_YA
 		const markers = MANAGED_MARKERS[target];
 		if (!entry || entry.kind !== "file" || !managedRegionAligned(entry.content ?? "", TEMPLATE_CONTENT[target], markers[0], markers[1])) return false;
 	}
-	if (discovery.entries["CONTEXT.md"]?.kind !== "file") return false;
+	if (discovery.entries[domainContextTarget(config)]?.kind !== "file") return false;
 	const agents = discovery.entries["AGENTS.md"];
 	const desiredAgents = desiredAgentSkillsBlock(config);
 	if (!agents || agents.kind !== "file" || !managedRegionAligned(agents.content ?? "", desiredAgents, AGENT_BLOCK_START, AGENT_BLOCK_END)) return false;
@@ -387,13 +393,13 @@ function managedFileEffect(order, target, desired, discovery, allowAppend) {
 	return baseEffect(order, target, "file", "BLOCKING_CONFLICT", "Existing unmanaged content requires a reviewed migration before setup can write.", entry);
 }
 
-function contextEffect(order, discovery) {
-	const target = "CONTEXT.md";
+function contextEffect(order, discovery, config) {
+	const target = domainContextTarget(config);
 	const entry = discovery.entries[target];
 	const desired = TEMPLATE_CONTENT[target];
-	if (entry.kind === "missing") return baseEffect(order, target, "file", "CREATE", "Create the single-context domain record.", entry, desired);
-	if (entry.kind !== "file") return baseEffect(order, target, "file", "BLOCKING_CONFLICT", "A non-file entry occupies the domain context path.", entry);
-	if (entry.content === desired) return baseEffect(order, target, "file", "NO-OP", "Domain context is already aligned.", entry, desired);
+	if (entry.kind === "missing") return baseEffect(order, target, "file", "CREATE", `Create the ${config.domain.layout === "multi_context" ? "multi-context map" : "single-context domain record"}.`, entry, desired);
+	if (entry.kind !== "file") return baseEffect(order, target, "file", "BLOCKING_CONFLICT", "A non-file entry occupies the selected domain context path.", entry);
+	if (entry.content === desired) return baseEffect(order, target, "file", "NO-OP", "Selected domain context artifact is already aligned.", entry, desired);
 	return baseEffect(order, target, "file", "PRESERVE", "Preserve existing authored domain context.", entry, entry.content);
 }
 
@@ -576,7 +582,7 @@ export function buildPlan(discovery, choices, originVerification) {
 		effects.push(managedFileEffect(30, "dev-docs/agents/issue-tracker.md", getAdapterContent(config.tracker.primary), discovery, false));
 		effects.push(managedFileEffect(31, "dev-docs/agents/triage-labels.md", TEMPLATE_CONTENT["dev-docs/agents/triage-labels.md"], discovery, false));
 		effects.push(managedFileEffect(32, "dev-docs/agents/domain.md", TEMPLATE_CONTENT["dev-docs/agents/domain.md"], discovery, false));
-		effects.push(contextEffect(40, discovery));
+		effects.push(contextEffect(40, discovery, config));
 		effects.push(managedFileEffect(50, "AGENTS.md", desiredAgentSkillsBlock(config), discovery, true));
 		effects.push(claudeEffect(60, discovery, desiredClaudeImport(config)));
 		const disciplineReady = discovery.machine.sessionDiscipline || config.runtime.session_discipline !== "required";
@@ -584,7 +590,7 @@ export function buildPlan(discovery, choices, originVerification) {
 		const guardReady = discovery.machine.dangerousGitGuard || config.runtime.dangerous_git_guard !== "enabled";
 		effects.push(baseEffect(71, "runtime:dangerous_git_guard", "state", guardReady ? "NO-OP" : "BLOCKING_CONFLICT", guardReady ? "Active harness satisfies repository dangerous-git policy." : "Active harness does not deliver the required dangerous-git guard.", null));
 	} else {
-		for (const [order, target, kind] of [[20, "dev-docs/tickets/open", "directory"], [21, "dev-docs/tickets/done", "directory"], [30, "dev-docs/agents/issue-tracker.md", "file"], [31, "dev-docs/agents/triage-labels.md", "file"], [32, "dev-docs/agents/domain.md", "file"], [40, "CONTEXT.md", "file"], [50, "AGENTS.md", "file"], [60, "CLAUDE.md", "file"]]) {
+		for (const [order, target, kind] of [[20, "dev-docs/tickets/open", "directory"], [21, "dev-docs/tickets/done", "directory"], [30, "dev-docs/agents/issue-tracker.md", "file"], [31, "dev-docs/agents/triage-labels.md", "file"], [32, "dev-docs/agents/domain.md", "file"], [40, "CONTEXT.md", "file"], [41, "CONTEXT-MAP.md", "file"], [50, "AGENTS.md", "file"], [60, "CLAUDE.md", "file"]]) {
 			effects.push(baseEffect(order, target, kind, "SKIP", "Engineering setup is not selected by this partial canonical policy.", discovery.entries[target]));
 		}
 		effects.push(baseEffect(70, "runtime:session_discipline", "state", "SKIP", "Engineering runtime policy is not selected.", null));
@@ -628,6 +634,110 @@ export function buildPlan(discovery, choices, originVerification) {
 		})),
 	};
 	return { hash: sha256(JSON.stringify(hashPayload)), scope, originIdentity, effects };
+}
+
+function compositionConflict(plan, target, reason, entry) {
+	let found = false;
+	const effects = plan.effects.map(effect => {
+		if (effect.target !== target) return effect;
+		found = true;
+		return { ...effect, classification: "BLOCKING_CONFLICT", reason, after: undefined, diff: "" };
+	});
+	if (!found) effects.push(baseEffect(49, target, entry?.kind === "directory" ? "directory" : "file", "BLOCKING_CONFLICT", reason, entry));
+	effects.sort((left, right) => left.order - right.order || left.target.localeCompare(right.target));
+	return { ...plan, effects, hash: sha256(JSON.stringify({ delegated: plan.hash, effects })) };
+}
+
+/**
+ * Materialize authorized pre-cleanup legacy writes into one executable core plan.
+ * Each target is written at most once from its originally authorized fingerprint.
+ */
+export function composeLegacyContextPlan(discovery, choices, legacyPlan) {
+	const initialPlan = buildPlan(discovery, choices);
+	const legacyWrites = (legacyPlan?.effects ?? []).filter(effect =>
+		effect.order < 900
+		&& isWriteEffect(effect)
+		&& effect.kind !== "state"
+	);
+	if (legacyWrites.length === 0) return initialPlan;
+
+	const legacyByTarget = new Map();
+	for (const effect of legacyWrites) {
+		const entry = discovery.entries[effect.target] ?? { kind: "missing", fingerprint: null };
+		if (legacyByTarget.has(effect.target)) {
+			return compositionConflict(initialPlan, effect.target, `Multiple authorized legacy writes collide at ${effect.target}.`, entry);
+		}
+		if (effect.kind !== "file" || typeof effect.after !== "string") {
+			return compositionConflict(initialPlan, effect.target, `Legacy write at ${effect.target} cannot be composed as a regular file.`, entry);
+		}
+		if (discovery.git.dirty.includes(effect.target)) {
+			return compositionConflict(initialPlan, effect.target, `Dirty overlap: ${effect.target} has uncommitted changes.`, entry);
+		}
+		const expectedKind = effect.classification === "CREATE" ? "missing" : "file";
+		if (entry.kind !== expectedKind || entry.fingerprint !== effect.fingerprint) {
+			return compositionConflict(initialPlan, effect.target, `Legacy write collision: ${effect.target} no longer matches its authorized source.`, entry);
+		}
+		legacyByTarget.set(effect.target, effect);
+	}
+
+	const entries = Object.fromEntries(Object.entries(discovery.entries).map(([target, entry]) => [target, { ...entry }]));
+	for (const effect of legacyWrites) {
+		entries[effect.target] = { kind: "file", content: effect.after, fingerprint: sha256(effect.after) };
+	}
+	const virtualPlan = buildPlan({ ...discovery, entries }, choices);
+	const effects = virtualPlan.effects.map(effect => {
+		const legacy = legacyByTarget.get(effect.target);
+		if (!legacy) return effect;
+		if (effect.classification === "BLOCKING_CONFLICT") return effect;
+		if (effect.classification === "SKIP") {
+			return {
+				...effect,
+				classification: "BLOCKING_CONFLICT",
+				reason: `Legacy write at ${effect.target} collides with an unselected core capability.`,
+				after: undefined,
+				diff: "",
+			};
+		}
+		const original = discovery.entries[effect.target] ?? { kind: "missing", fingerprint: null };
+		const after = isWriteEffect(effect) ? effect.after : legacy.after;
+		return {
+			...effect,
+			classification: original.kind === "missing" ? "CREATE" : "UPDATE",
+			reason: `Compose the authorized legacy context migration with canonical setup: ${effect.reason}`,
+			...(original.kind === "file" ? { before: original.content } : {}),
+			after,
+			diff: renderDiff(effect.target, original.kind === "file" ? original.content : "", after),
+			fingerprint: original.fingerprint,
+		};
+	});
+	for (const legacy of legacyWrites) {
+		if (effects.some(effect => effect.target === legacy.target)) continue;
+		effects.push(legacy);
+	}
+
+	const legacyClaude = legacyByTarget.get("CLAUDE.md");
+	const legacyAgents = legacyByTarget.get("AGENTS.md");
+	const claudeSource = discovery.entries["CLAUDE.md"];
+	if (
+		legacyClaude
+		&& legacyAgents
+		&& claudeSource?.kind === "file"
+		&& claudeSource.content.length > 0
+		&& legacyAgents.after.includes(claudeSource.content)
+		&& !legacyClaude.after.includes(claudeSource.content)
+	) {
+		const claudeEffect = effects.find(effect => effect.target === "CLAUDE.md");
+		if (claudeEffect && isWriteEffect(claudeEffect)) {
+			claudeEffect.preservationChecks = [{ target: "AGENTS.md", content: claudeSource.content }];
+		}
+	}
+
+	effects.sort((left, right) => left.order - right.order || left.target.localeCompare(right.target));
+	return {
+		...virtualPlan,
+		effects,
+		hash: sha256(JSON.stringify({ delegated: [virtualPlan.hash, legacyPlan.hash], effects })),
+	};
 }
 
 export function deriveReadiness(discovery, choices = {}) {
@@ -726,6 +836,14 @@ export async function applyPlan(root, plan, injectedFailure) {
 			}
 			if (effect.kind !== "state") {
 				await validateContainment(resolvedRoot, effect.target);
+			}
+			for (const check of effect.preservationChecks ?? []) {
+				await validateContainment(resolvedRoot, check.target);
+				const preserved = await readSnapshotEntry(resolvedRoot, check.target, "file");
+				const occurrences = preserved.kind === "file" ? preserved.content.split(check.content).length - 1 : 0;
+				if (occurrences !== 1) {
+					throw new Error(`Preserved authored bytes were not verified in ${check.target} before writing ${effect.target}.`);
+				}
 			}
 			const absolute = path.resolve(resolvedRoot, effect.target);
 			operations.push({ action: "write", target: effect.target });
@@ -874,7 +992,7 @@ export async function runSetupTransaction(request) {
 				`Completed: ${transactionFailure.completed.length === 0 ? "none" : transactionFailure.completed.join(", ")}`,
 				`Pending: ${transactionFailure.pending.join(", ")}`,
 				"To resume, run exactly:",
-				"  omp ws-setup",
+				"  /ws-setup",
 			].join("\n"),
 		};
 	}

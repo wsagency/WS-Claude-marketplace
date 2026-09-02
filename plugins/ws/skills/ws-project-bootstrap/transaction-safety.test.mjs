@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { access, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -49,6 +50,30 @@ test("apply validates every target before the first write", async () => {
 		await assert.rejects(() => applyPlan(root, plan), /stale/i);
 		assert.equal(await readFile(path.join(root, "later.txt"), "utf8"), "authored\n");
 		await assert.rejects(() => access(path.join(root, "first.txt")), /ENOENT/);
+	});
+});
+
+test("apply verifies authored context preservation before thinning CLAUDE.md", async () => {
+	await withTemporaryRoot("ws-setup-context-preservation-", async root => {
+		const claudeSource = "# Authored Claude context\n";
+		await writeFile(path.join(root, "AGENTS.md"), "# Different agent context\n", "utf8");
+		await writeFile(path.join(root, "CLAUDE.md"), claudeSource, "utf8");
+		const plan = {
+			effects: [{
+				order: 60,
+				target: "CLAUDE.md",
+				kind: "file",
+				classification: "UPDATE",
+				reason: "Thin the legacy context.",
+				fingerprint: createHash("sha256").update(claudeSource).digest("hex"),
+				after: "@AGENTS.md\n",
+				preservationChecks: [{ target: "AGENTS.md", content: claudeSource }],
+			}],
+		};
+		const result = await applyPlan(root, plan);
+		assert.equal(result.failure.target, "CLAUDE.md");
+		assert.match(result.failure.error.message, /Preserved authored bytes were not verified/);
+		assert.equal(await readFile(path.join(root, "CLAUDE.md"), "utf8"), claudeSource);
 	});
 });
 

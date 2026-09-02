@@ -425,7 +425,7 @@ export function deriveSetupReadiness(validation, snapshot = {}) {
 	const integrations = snapshot.integrations ?? {};
 	const runtime = snapshot.runtime ?? {};
 	const engineeringSections = ["tracker", "triage", "domain", "commit", "changelog", "ui", "runtime"];
-	const engineeringReady = Boolean(config && engineeringSections.every(section => config[section]) && allTrue(artifacts, ["issueTracker", "triageLabels", "domain", "agents", "claude"]));
+	const engineeringReady = Boolean(config && engineeringSections.every(section => config[section]) && allTrue(artifacts, ["issueTracker", "triageLabels", "domain", "context", "agents", "claude"]));
 	let trackerReady = false;
 	if (engineeringReady) {
 		if (config.tracker.primary === "local") trackerReady = artifacts.localTracker === true;

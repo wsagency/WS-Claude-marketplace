@@ -96,12 +96,14 @@ function legacyDirective(sources) {
 	return `Detected repository-local legacy ${noun}: ${sources.join(", ")}. Run /ws-setup.`;
 }
 
-function artifactSnapshot(root, supplied = {}) {
+function artifactSnapshot(root, config, supplied = {}) {
+	const contextTarget = config?.domain?.layout === "multi_context" ? "CONTEXT-MAP.md" : "CONTEXT.md";
 	return {
 		...supplied,
 		issueTracker: isManagedOperationalAdapter(root, TRACKER_ADAPTER_PATH),
 		triageLabels: isManagedOperationalAdapter(root, TRIAGE_ADAPTER_PATH),
 		domain: isManagedOperationalAdapter(root, DOMAIN_ADAPTER_PATH),
+		context: isFile(root, contextTarget),
 		agents: isFile(root, "AGENTS.md"),
 		claude: isFile(root, "CLAUDE.md"),
 		localTracker: isDirectory(root, "dev-docs/tickets/open") && isDirectory(root, "dev-docs/tickets/done"),
@@ -302,7 +304,7 @@ export function inspectCanonicalCapability({ root = process.cwd(), capability, s
 	}
 
 	result.config = validation.config;
-	const artifacts = artifactSnapshot(resolvedRoot, snapshot.artifacts);
+	const artifacts = artifactSnapshot(resolvedRoot, validation.config, snapshot.artifacts);
 	result.setupReadiness = deriveSetupReadiness(validation, {
 		artifacts,
 		integrations: snapshot.integrations,

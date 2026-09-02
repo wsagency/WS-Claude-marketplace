@@ -3,7 +3,7 @@ import { serializeCanonicalConfig, validateCanonicalConfig } from "./config.mjs"
 import { runHubTransaction } from "./hub-transaction.mjs";
 import { applyLegacyCleanup, planLegacyMigration } from "./migration.mjs";
 import { acceptConfirmedPartial, applyConfirmedPlan, createReconfigurePlan, resumeConfirmedPlan } from "./reconfigure.mjs";
-import { applyPlan, buildPlan, deriveReadiness, discoverStandaloneRepository, preflightPlan, runSetupTransaction } from "./transaction.mjs";
+import { applyPlan, composeLegacyContextPlan, deriveReadiness, discoverStandaloneRepository, preflightPlan, runSetupTransaction } from "./transaction.mjs";
 import { applyDocumentation, discoverDocumentation, planDocumentation, preflightDocumentation } from "../ws-docs-bootstrap/transaction.mjs";
 import { auditBackfill, executeBackfill, planBackfill } from "./backfill-jira.mjs";
 
@@ -312,17 +312,44 @@ async function planConfiguredDocumentation(root, projectShape, config, corePlan)
 	return planDocumentation(projectDocumentationDiscovery(discovery, corePlan));
 }
 
-function withDocumentationReadiness(readiness, docsPlan) {
-	if (!readiness || !docsPlan) return readiness;
-	const docsReady = !docsPlan.effects.some(effect => effect.classification === "BLOCKING_CONFLICT");
+async function discoverDocumentationReadiness(root, projectShape, config) {
+	if (!config?.docs) return { docsConfigured: false, docsReady: false, blockers: [] };
+	const discovery = await discoverDocumentation(
+		root,
+		projectShape,
+		{ docs: config.docs, changelog: config.changelog },
+	);
+	const plan = planDocumentation(discovery);
+	const pending = plan.effects.filter(effect =>
+		effect.classification === "CREATE"
+		|| effect.classification === "UPDATE"
+		|| effect.classification === "BLOCKING_CONFLICT"
+	);
+	return {
+		docsConfigured: true,
+		docsReady: pending.length === 0,
+		blockers: pending.map(effect => `${effect.target}: ${effect.reason}`),
+	};
+}
+
+function withDocumentationReadiness(readiness, docsReadiness) {
+	if (!readiness || !docsReadiness) return readiness;
 	return {
 		...readiness,
-		docsConfigured: true,
-		docsReady,
+		docsConfigured: docsReadiness.docsConfigured,
+		docsReady: docsReadiness.docsReady,
 		blockers: {
 			...readiness.blockers,
-			docs: docsReady ? [] : readiness.blockers?.docs ?? ["Documentation bootstrap is blocked."],
+			docs: docsReadiness.blockers,
 		},
+	};
+}
+
+function withMigrationDocumentationReadiness(readiness, docsReadiness) {
+	if (!readiness || !docsReadiness) return readiness;
+	return {
+		...readiness,
+		docsReady: !docsReadiness.docsConfigured || docsReadiness.docsReady,
 	};
 }
 
@@ -343,6 +370,11 @@ async function runSetup(request) {
 		? await planConfiguredDocumentation(request.root, request.snapshot.projectShape, config, planned.plan)
 		: null;
 	const backfill = await planLocalJiraBackfill(config, request.adapters);
+	const currentDocsReadiness = await discoverDocumentationReadiness(
+		request.root,
+		request.snapshot.projectShape,
+		config,
+	);
 	const items = [
 		...setupItems(planned.plan),
 		...(backfill?.effects ?? []).map((effect, index) => item(effect, index, { phase: "backfill", scope: "repository" })),
@@ -368,7 +400,7 @@ async function runSetup(request) {
 	const requiresAuthorization = blockers.length === 0 && hasMutation(items);
 	if (!request.authorization || !requiresAuthorization) {
 		const readiness = withBackfillReadiness(
-			withDocumentationReadiness(planned.readiness, docsPlan),
+			withDocumentationReadiness(planned.readiness, currentDocsReadiness),
 			backfill,
 		undefined,
 		);
@@ -402,7 +434,7 @@ async function runSetup(request) {
 			applied: false,
 			operations: [],
 			readiness: withBackfillReadiness(
-				withDocumentationReadiness(planned.readiness, docsPlan),
+				withDocumentationReadiness(planned.readiness, currentDocsReadiness),
 				backfill,
 				{ completed: [], pending: backfill?.plan?.unmapped.map(entry => entry.localId) ?? [], errors: [{ localId: "backfill", error: error.message }] },
 			),
@@ -424,7 +456,7 @@ async function runSetup(request) {
 			requiresAuthorization: false,
 			applied: false,
 			operations: applied.operations,
-			readiness: withBackfillReadiness(applied.readiness, backfill, undefined),
+			readiness: withBackfillReadiness(withDocumentationReadiness(applied.readiness, currentDocsReadiness), backfill, undefined),
 			report: applied.report,
 			failure: applied.failure,
 		};
@@ -440,7 +472,7 @@ async function runSetup(request) {
 			requiresAuthorization: false,
 			applied: false,
 			operations: applied.operations,
-			readiness: withBackfillReadiness(applied.readiness, backfill, { completed: [], pending: backfill?.plan?.unmapped.map(entry => entry.localId) ?? [], errors: [{ localId: "backfill", error: error.message }] }),
+			readiness: withBackfillReadiness(withDocumentationReadiness(applied.readiness, currentDocsReadiness), backfill, { completed: [], pending: backfill?.plan?.unmapped.map(entry => entry.localId) ?? [], errors: [{ localId: "backfill", error: error.message }] }),
 			report: `Setup stopped at ${failure.target}: ${failure.error}. No rollback was performed.`,
 			failure,
 		};
@@ -453,7 +485,7 @@ async function runSetup(request) {
 			requiresAuthorization: false,
 			applied: false,
 			operations: [...applied.operations, ...externalOperations],
-			readiness: withBackfillReadiness(applied.readiness, backfill, backfillResult),
+			readiness: withBackfillReadiness(withDocumentationReadiness(applied.readiness, currentDocsReadiness), backfill, backfillResult),
 			report: `Setup stopped at ${failure.target}: ${failure.error}. No rollback was performed.`,
 			failure,
 		};
@@ -469,6 +501,11 @@ async function runSetup(request) {
 				request.injection?.docsFailure,
 			);
 		} catch (error) {
+			const failedDocsReadiness = await discoverDocumentationReadiness(
+				request.root,
+				request.snapshot.projectShape,
+				config,
+			);
 			const completed = (error.completed ?? []).map(effect => effect.target);
 			const pending = (error.pending ?? []).map(effect => effect.target);
 			return {
@@ -476,7 +513,7 @@ async function runSetup(request) {
 				requiresAuthorization: false,
 				applied: false,
 				operations: [...applied.operations, ...externalOperations, ...(error.operations ?? [])],
-				readiness: withBackfillReadiness(applied.readiness, backfill, backfillResult),
+				readiness: withBackfillReadiness(withDocumentationReadiness(applied.readiness, failedDocsReadiness), backfill, backfillResult),
 				report: `Setup documentation stopped at ${pending[0] ?? "documentation:bootstrap"}: ${error.message}. No rollback was performed.`,
 				failure: {
 					target: pending[0] ?? "documentation:bootstrap",
@@ -487,13 +524,18 @@ async function runSetup(request) {
 			};
 		}
 	}
+	const verifiedDocsReadiness = await discoverDocumentationReadiness(
+		request.root,
+		request.snapshot.projectShape,
+		config,
+	);
 	return {
 		manifest: complete,
 		requiresAuthorization: false,
 		applied: true,
 		operations: [...applied.operations, ...externalOperations, ...docsOperations],
 		readiness: withBackfillReadiness(
-			withDocumentationReadiness(applied.readiness, docsPlan),
+			withDocumentationReadiness(applied.readiness, verifiedDocsReadiness),
 			backfill,
 			backfillResult,
 		),
@@ -550,33 +592,12 @@ async function runHub(request) {
 	};
 }
 
-function materializeReviewedMigrationPlan(corePlan, legacyPlan) {
-	const reviewedReplacements = new Map(
-		legacyPlan.effects
-			.filter(effect => effect.classification === "UPDATE" && typeof effect.after === "string")
-			.map(effect => [effect.target, effect]),
-	);
-	let changed = false;
-	const effects = corePlan.effects.map(effect => {
-		const replacement = reviewedReplacements.get(effect.target);
-		if (!replacement || effect.classification !== "BLOCKING_CONFLICT") return effect;
-		changed = true;
-		return {
-			...effect,
-			classification: "UPDATE",
-			reason: "Apply the reviewed migration replacement after its semantic values were captured in canonical configuration.",
-			after: replacement.after,
-			diff: `${JSON.stringify(effect.before)} -> ${JSON.stringify(replacement.after)}`,
-		};
-	});
-	return changed ? { ...corePlan, effects, hash: hash({ delegated: corePlan.hash, effects }) } : corePlan;
-}
 
 async function runMigration(request) {
 	const legacyPlan = planLegacyMigration(request.snapshot.legacy, request.choices?.migration);
 	const coreChoices = legacyPlan.config ? migrationChoices(legacyPlan, request.choices?.core) : null;
 	const corePlan = coreChoices
-		? materializeReviewedMigrationPlan(buildPlan(request.snapshot.core, coreChoices), legacyPlan)
+		? composeLegacyContextPlan(request.snapshot.core, coreChoices, legacyPlan)
 		: null;
 	const [docsPlan, backfill] = await Promise.all([
 		planConfiguredDocumentation(
@@ -587,6 +608,11 @@ async function runMigration(request) {
 		),
 		planLocalJiraBackfill(legacyPlan.config, request.adapters),
 	]);
+	const currentDocsReadiness = await discoverDocumentationReadiness(
+		request.root,
+		request.snapshot.core.projectShape,
+		legacyPlan.config,
+	);
 	const migrationEffects = legacyPlan.effects.filter(effect => effect.order < 900);
 	const cleanupEffects = legacyPlan.effects.filter(effect => effect.order >= 900);
 	const items = [
@@ -618,7 +644,11 @@ async function runMigration(request) {
 	const requiresAuthorization = blockers.length === 0 && hasMutation(items);
 	if (!request.authorization || !requiresAuthorization) {
 		const readiness = coreChoices && !requiresAuthorization
-			? withBackfillReadiness(deriveReadiness(request.snapshot.core, coreChoices), backfill, undefined)
+			? withBackfillReadiness(
+				withMigrationDocumentationReadiness(migrationReadiness({ readiness: deriveReadiness(request.snapshot.core, coreChoices) }, legacyPlan), currentDocsReadiness),
+				backfill,
+				undefined,
+			)
 			: undefined;
 		return {
 			manifest: complete,
@@ -654,7 +684,12 @@ async function runMigration(request) {
 	}
 	const applyResult = await applyPlan(request.root, corePlan, request.injection?.failure);
 	const verifiedDiscovery = await discoverStandaloneRepository(request.root, request.snapshot.core.machine);
-	const coreReadiness = deriveReadiness(verifiedDiscovery, coreChoices);
+	const coreDocsReadiness = await discoverDocumentationReadiness(
+		request.root,
+		request.snapshot.core.projectShape,
+		legacyPlan.config,
+	);
+	const coreReadiness = withDocumentationReadiness(deriveReadiness(verifiedDiscovery, coreChoices), coreDocsReadiness);
 	const failure = applyResult.failure
 		? {
 			target: applyResult.failure.target,
@@ -722,6 +757,11 @@ async function runMigration(request) {
 				request.injection?.docsFailure,
 			);
 		} catch (error) {
+			const failedDocsReadiness = await discoverDocumentationReadiness(
+				request.root,
+				request.snapshot.core.projectShape,
+				legacyPlan.config,
+			);
 			const completed = (error.completed ?? []).map(effect => effect.target);
 			const pending = (error.pending ?? []).map(effect => effect.target);
 			return {
@@ -729,7 +769,7 @@ async function runMigration(request) {
 				requiresAuthorization: false,
 				applied: false,
 				operations: [...core.operations, ...externalOperations, ...(error.operations ?? [])],
-				readiness: withBackfillReadiness(migrationReadiness(core, legacyPlan), backfill, backfillResult),
+				readiness: withBackfillReadiness(withMigrationDocumentationReadiness(migrationReadiness(core, legacyPlan), failedDocsReadiness), backfill, backfillResult),
 				report: `Migration documentation stopped at ${pending[0] ?? "documentation:bootstrap"}: ${error.message}. No rollback was performed.`,
 				failure: {
 					target: pending[0] ?? "documentation:bootstrap",
@@ -740,6 +780,11 @@ async function runMigration(request) {
 			};
 		}
 	}
+	const verifiedDocsReadiness = await discoverDocumentationReadiness(
+		request.root,
+		request.snapshot.core.projectShape,
+		legacyPlan.config,
+	);
 	let readiness = migrationReadiness(core, legacyPlan);
 	if (request.adapters?.verifyMigrationReadiness) {
 		readiness = {
@@ -747,7 +792,10 @@ async function runMigration(request) {
 			...await request.adapters.verifyMigrationReadiness({ manifest: complete, legacyPlan, coreResult: core }),
 		};
 	}
-	readiness = withBackfillReadiness(readiness, backfill, backfillResult);
+	readiness = withMigrationDocumentationReadiness(
+		withBackfillReadiness(readiness, backfill, backfillResult),
+		verifiedDocsReadiness,
+	);
 	const cleanupRuntimeEvidence = {
 		sessionDiscipline: readiness.runtimeReady === true && verifiedDiscovery.machine.sessionDiscipline === true,
 		dangerousGitGuard: readiness.runtimeReady === true && verifiedDiscovery.machine.dangerousGitGuard === true,
