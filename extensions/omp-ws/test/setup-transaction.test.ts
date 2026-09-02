@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
 	type EffectClassification,
+	type OriginVerifier,
 	RECOMMENDED_LOCAL_CHOICES,
 	discoverStandaloneRepository,
 	runSetupTransaction,
@@ -232,24 +233,30 @@ test("repository creation requires valid origin and initializes as planned", asy
 			discovery,
 			choices: { profile: "recommended_local", createRepository: true, origin: "not-a-url" },
 		});
-		expect(invalidOrigin.report).toContain("Invalid origin URL");
+		expect(invalidOrigin.report).toContain("Origin must be a GitHub or GitLab HTTPS/SSH URL");
 		expect(invalidOrigin.plan?.effects.find(e => e.target === "git:origin")?.classification).toBe("BLOCKING_CONFLICT");
 
 		// Inaccessible origin (injected validation failure) -> blocked
 		const inaccessibleOrigin = await runSetupTransaction({
 			root,
 			discovery,
-			choices: { profile: "recommended_local", createRepository: true, origin: "https://example.com/dead.git" },
-			injectedOriginValidation: { origin: "https://example.com/dead.git", isValid: false, reason: "Connection refused" },
+			choices: { profile: "recommended_local", createRepository: true, origin: "https://github.com/wsagency/dead.git" },
+			originVerifier: async () => ({ accessible: false, identity: null, reason: "Connection refused" }),
 		});
 		expect(inaccessibleOrigin.report).toContain("Connection refused");
 		expect(inaccessibleOrigin.plan?.effects.find(e => e.target === "git:origin")?.classification).toBe("BLOCKING_CONFLICT");
+
 		// Valid injected origin -> applied
+		const origin = "https://github.com/wsagency/repo.git";
+		const originVerifier: OriginVerifier = async ({ expectedIdentity }) => ({
+			accessible: true,
+			identity: expectedIdentity,
+		});
 		const validOrigin = await runSetupTransaction({
 			root,
 			discovery,
-			choices: { profile: "recommended_local", createRepository: true, origin: "https://example.com/repo.git" },
-			injectedOriginValidation: { origin: "https://example.com/repo.git", isValid: true },
+			choices: { profile: "recommended_local", createRepository: true, origin },
+			originVerifier,
 		});
 		expect(validOrigin.requiresConfirmation).toBe(true);
 		const auth = validOrigin.plan!.hash;
@@ -257,8 +264,8 @@ test("repository creation requires valid origin and initializes as planned", asy
 		const applied = await runSetupTransaction({
 			root,
 			discovery,
-			choices: { profile: "recommended_local", createRepository: true, origin: "https://example.com/repo.git" },
-			injectedOriginValidation: { origin: "https://example.com/repo.git", isValid: true },
+			choices: { profile: "recommended_local", createRepository: true, origin },
+			originVerifier,
 			authorization: auth,
 		});
 		expect(applied.report).toContain("WS setup verified");
