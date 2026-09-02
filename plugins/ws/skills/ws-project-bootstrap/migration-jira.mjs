@@ -1,3 +1,5 @@
+import { flattenPaths, getPath, setPath } from "./migration-primitives.mjs";
+
 export function discoverJiraState(snapshots) {
 	const globalValues = snapshots["~/.claude/ws/config.yaml"] || {};
 	const projectValues = snapshots[".claude/ws-project.yaml"] || {};
@@ -8,21 +10,10 @@ export function discoverJiraState(snapshots) {
 	const knownProjectKeys = ["jira.project", "jira.board", "jira.default_issue_type", "changelog.path", "changelog.skip_types", "changelog.auto_update", "hooks.session_start_dashboard"];
 	const knownDocsKeys = ["auto.changelog_per_commit", "auto.adr_for_arch_changes", "docs.changelog.skip_types", "docs.user_track", "docs.dev_track", "docs.default_audience", "docs.default_scope"];
 	
-	const flattenKeys = (obj, prefix = '') => {
-		return Object.keys(obj).reduce((acc, k) => {
-			const pre = prefix.length ? prefix + '.' : '';
-			if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k])) {
-				Object.assign(acc, flattenKeys(obj[k], pre + k));
-			} else {
-				acc[pre + k] = obj[k];
-			}
-			return acc;
-		}, {});
-	};
 
-	const flatGlobal = flattenKeys(globalValues);
-	const flatProject = flattenKeys(projectValues);
-	const flatDocs = flattenKeys(docsValues);
+	const flatGlobal = flattenPaths(globalValues);
+	const flatProject = flattenPaths(projectValues);
+	const flatDocs = flattenPaths(docsValues);
 	
 	for (const key of Object.keys(flatGlobal)) {
 		if (!knownGlobalKeys.includes(key)) unrecognized.push({ source: "~/.claude/ws/config.yaml", key, value: flatGlobal[key] });
@@ -52,25 +43,6 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 	const effects = [];
 	const blockers = [];
 	
-	const setPatch = (path, value) => {
-		const parts = path.split('.');
-		let current = patch;
-		for (let i = 0; i < parts.length - 1; i++) {
-			if (!current[parts[i]]) current[parts[i]] = {};
-			current = current[parts[i]];
-		}
-		current[parts[parts.length - 1]] = value;
-	};
-
-	const getCanonical = (path) => {
-		const parts = path.split('.');
-		let current = currentCanonical;
-		for (const part of parts) {
-			if (!current) return undefined;
-			current = current[part];
-		}
-		return current;
-	};
 
 	// Local mappings
 	const { projectValues = {}, docsValues = {}, globalValues = {} } = discovery;
@@ -88,7 +60,7 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 	
 	// Helper for local values
 	const handleLocal = (legacyKey, canonicalKey, transform = v => v) => {
-		const canonVal = getCanonical(canonicalKey);
+		const canonVal = getPath(currentCanonical, canonicalKey);
 		if (canonVal !== undefined) return;
 		
 		let localVal = projectValues[legacyKey];
@@ -96,14 +68,14 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 		if (resolutions && resolutions[canonicalKey] !== undefined) {
 			localVal = resolutions[canonicalKey];
 			if (localVal !== undefined && localVal !== null) {
-				setPatch(canonicalKey, transform(localVal));
+				setPath(patch, canonicalKey, transform(localVal));
 				trackedFields.add(canonicalKey);
 			}
 			return;
 		}
 		
 		if (localVal !== undefined) {
-			setPatch(canonicalKey, transform(localVal));
+			setPath(patch, canonicalKey, transform(localVal));
 			trackedFields.add(canonicalKey);
 		}
 	};
@@ -113,10 +85,10 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 	handleLocal("jira.board", "jira.board");
 	handleLocal("jira.default_issue_type", "jira.default_issue_type");
 	handleLocal("changelog.path", "changelog.path");
-	const canonSkipTypes = getCanonical("changelog.skip_types");
+	const canonSkipTypes = getPath(currentCanonical, "changelog.skip_types");
 	if (canonSkipTypes === undefined) {
 		if (resolutions && resolutions["changelog.skip_types"] !== undefined) {
-			setPatch("changelog.skip_types", resolutions["changelog.skip_types"]);
+			setPath(patch, "changelog.skip_types", resolutions["changelog.skip_types"]);
 			trackedFields.add("changelog.skip_types");
 		} else {
 			const projSkip = projectValues["changelog.skip_types"];
@@ -131,30 +103,30 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 					]
 				});
 			} else if (projSkip !== undefined) {
-				setPatch("changelog.skip_types", projSkip);
+				setPath(patch, "changelog.skip_types", projSkip);
 				trackedFields.add("changelog.skip_types");
 			} else if (docsSkip !== undefined) {
-				setPatch("changelog.skip_types", docsSkip);
+				setPath(patch, "changelog.skip_types", docsSkip);
 				trackedFields.add("changelog.skip_types");
 			}
 		}
 	}
 
 	// UI Dashboard
-	const canonUi = getCanonical("ui.session_start_dashboard");
+	const canonUi = getPath(currentCanonical, "ui.session_start_dashboard");
 	if (canonUi === undefined) {
 		const localHook = projectValues["hooks.session_start_dashboard"];
 		if (localHook !== undefined) {
-			setPatch("ui.session_start_dashboard", localHook ? "jira_assignments" : "disabled");
+			setPath(patch, "ui.session_start_dashboard", localHook ? "jira_assignments" : "disabled");
 			trackedFields.add("ui.session_start_dashboard");
 		}
 	}
 
 	// Changelog Mode
-	const canonUpdate = getCanonical("changelog.update_mode");
+	const canonUpdate = getPath(currentCanonical, "changelog.update_mode");
 	if (canonUpdate === undefined) {
 		if (resolutions && resolutions["changelog.update_mode"] !== undefined) {
-			setPatch("changelog.update_mode", resolutions["changelog.update_mode"]);
+			setPath(patch, "changelog.update_mode", resolutions["changelog.update_mode"]);
 			trackedFields.add("changelog.update_mode");
 		} else {
 			const prUpdate = projectValues["changelog.auto_update"];
@@ -169,16 +141,16 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 					]
 				});
 			} else if (prUpdate === true) {
-				setPatch("changelog.update_mode", "pull_request");
+				setPath(patch, "changelog.update_mode", "pull_request");
 				trackedFields.add("changelog.update_mode");
 			} else if (commitUpdate === true) {
-				setPatch("changelog.update_mode", "commit");
+				setPath(patch, "changelog.update_mode", "commit");
 				trackedFields.add("changelog.update_mode");
 			} else if (prUpdate === false && commitUpdate === false) {
-				setPatch("changelog.update_mode", "disabled");
+				setPath(patch, "changelog.update_mode", "disabled");
 				trackedFields.add("changelog.update_mode");
 			} else if (prUpdate === false && commitUpdate === undefined) {
-				setPatch("changelog.update_mode", "disabled");
+				setPath(patch, "changelog.update_mode", "disabled");
 				trackedFields.add("changelog.update_mode");
 			} else if ((prUpdate === undefined && commitUpdate === false) || (prUpdate === undefined && commitUpdate === undefined)) {
 				// absent + false -> ask (insufficient evidence)
@@ -198,7 +170,7 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 	let globalJiraActions = globalValues["defaults.jira_actions"];
 	if (globalJiraActions === "never") globalJiraActions = "disabled";
 	
-	if (globalJiraActions !== undefined && getCanonical("commit.jira.actions") === undefined) {
+	if (globalJiraActions !== undefined && getPath(currentCanonical, "commit.jira.actions") === undefined) {
 		suggestions.push({
 			field: "commit.jira.actions",
 			value: globalJiraActions,
@@ -207,7 +179,7 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 	}
 
 	const globalUi = globalValues["ui.session_start_dashboard"];
-	if (globalUi !== undefined && getCanonical("ui.session_start_dashboard") === undefined && patch.ui?.session_start_dashboard === undefined) {
+	if (globalUi !== undefined && getPath(currentCanonical, "ui.session_start_dashboard") === undefined && patch.ui?.session_start_dashboard === undefined) {
 		suggestions.push({
 			field: "ui.session_start_dashboard",
 			value: globalUi ? "jira_assignments" : "disabled",

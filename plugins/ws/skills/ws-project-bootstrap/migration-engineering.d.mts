@@ -1,5 +1,6 @@
 import type { CanonicalProjectConfig, ConfigValidationResult } from "./config.d.mts";
-import type { SetupEffect, SnapshotEntry } from "./transaction.d.mts";
+import type { MigrationEffect } from "./migration-primitives.d.mts";
+import type { SnapshotEntry } from "./transaction.d.mts";
 
 export interface TrackerMigrationDiscovery {
 	recognized: boolean;
@@ -30,7 +31,7 @@ export interface EngineeringMigrationPlan {
 	patch: CanonicalProjectConfig;
 	conflicts: EngineeringMigrationConflict[];
 	suggestions: Array<{ field: string; source: string; classification: "choice-required" }>;
-	effects: SetupEffect[];
+	effects: MigrationEffect[];
 	blockers: string[];
 }
 

@@ -1,5 +1,6 @@
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { migrationEffect, normalizeMigrationEntry, setIfAbsent } from "./migration-primitives.mjs";
+import { getAdapterContent } from "./trackers.mjs";
 
 const LEGACY_ROOT = new URL("./fixtures/pre-5-engineering/", import.meta.url);
 const TRACKER_TEMPLATES = Object.freeze({
@@ -11,41 +12,11 @@ const TRACKER_TEMPLATES = Object.freeze({
 });
 const TRIAGE_TEMPLATE = readFileSync(new URL("triage-labels.md", LEGACY_ROOT), "utf8");
 const DOMAIN_TEMPLATE = readFileSync(new URL("domain.md", LEGACY_ROOT), "utf8");
+const CURRENT_TRIAGE_TEMPLATE = readFileSync(new URL("./templates/triage-labels.md", import.meta.url), "utf8");
+const CURRENT_DOMAIN_TEMPLATE = readFileSync(new URL("./templates/domain.md", import.meta.url), "utf8");
 const MANAGED_START = "<!-- WS-AGENT-SKILLS:START -->";
 const MANAGED_END = "<!-- WS-AGENT-SKILLS:END -->";
 
-function sha256(value) {
-	return createHash("sha256").update(value).digest("hex");
-}
-
-function entryOf(value) {
-	if (value == null) return { kind: "missing", content: null, fingerprint: null };
-	if (typeof value === "string") return { kind: "file", content: value, fingerprint: sha256(value) };
-	if (typeof value === "object" && Object.hasOwn(value, "content")) {
-		return {
-			kind: value.kind ?? "file",
-			content: value.content,
-			fingerprint: value.fingerprint ?? (typeof value.content === "string" ? sha256(value.content) : null),
-		};
-	}
-	return { kind: "state", content: value, fingerprint: sha256(JSON.stringify(value)) };
-}
-
-function effect(order, target, kind, classification, reason, entry, after) {
-	const before = entry?.content ?? null;
-	const renderedAfter = kind === "state" && after !== undefined ? JSON.stringify(after) : (after ?? before);
-	return {
-		order,
-		target,
-		kind,
-		classification,
-		reason,
-		before,
-		after: renderedAfter,
-		diff: classification === "PRESERVE" || classification === "NO-OP" ? "unchanged" : `${JSON.stringify(before)} -> ${JSON.stringify(renderedAfter ?? null)}`,
-		fingerprint: entry?.fingerprint ?? null,
-	};
-}
 function placeholderPattern(template) {
 	const escaped = template.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	return new RegExp(`^${escaped.replaceAll("<PROJECT-KEY>", "([A-Z][A-Z0-9_-]*)")}$`);
@@ -104,30 +75,20 @@ function extractContextBlock(content) {
 	return nextHeading < 0 ? content.slice(heading).trimEnd() : content.slice(heading, heading + 1 + nextHeading).trimEnd();
 }
 
-function setIfAbsent(target, path, value, changes, source) {
-	if (value === undefined || value === null) return;
-	const parts = path.split(".");
-	let cursor = target;
-	for (const part of parts.slice(0, -1)) cursor = cursor[part] ??= {};
-	const key = parts.at(-1);
-	if (cursor[key] !== undefined) return;
-	cursor[key] = value;
-	changes.push({ field: path, value, source });
-}
 
 export function discoverEngineeringState(snapshots) {
 	const entries = Object.fromEntries(
 		Object.entries(snapshots ?? {})
 			.filter(([target]) => target !== "activeLocalWork")
-			.map(([target, value]) => [target, entryOf(value)]),
+			.map(([target, value]) => [target, normalizeMigrationEntry(value)]),
 	);
-	const trackerEntry = entries["dev-docs/agents/issue-tracker.md"] ?? entryOf(null);
-	const triageEntry = entries["dev-docs/agents/triage-labels.md"] ?? entryOf(null);
-	const domainEntry = entries["dev-docs/agents/domain.md"] ?? entryOf(null);
-	const agentsEntry = entries["AGENTS.md"] ?? entryOf(null);
-	const claudeEntry = entries["CLAUDE.md"] ?? entryOf(null);
-	const contextEntry = entries["CONTEXT.md"] ?? entryOf(null);
-	const contextMapEntry = entries["CONTEXT-MAP.md"] ?? entryOf(null);
+	const trackerEntry = entries["dev-docs/agents/issue-tracker.md"] ?? normalizeMigrationEntry(null);
+	const triageEntry = entries["dev-docs/agents/triage-labels.md"] ?? normalizeMigrationEntry(null);
+	const domainEntry = entries["dev-docs/agents/domain.md"] ?? normalizeMigrationEntry(null);
+	const agentsEntry = entries["AGENTS.md"] ?? normalizeMigrationEntry(null);
+	const claudeEntry = entries["CLAUDE.md"] ?? normalizeMigrationEntry(null);
+	const contextEntry = entries["CONTEXT.md"] ?? normalizeMigrationEntry(null);
+	const contextMapEntry = entries["CONTEXT-MAP.md"] ?? normalizeMigrationEntry(null);
 	const tracker = trackerEntry.kind === "file" ? classifyTracker(trackerEntry.content) : null;
 	const labels = triageEntry.kind === "file" ? triageLabels(triageEntry.content) : null;
 	const agentsBlock = extractContextBlock(agentsEntry.content);
@@ -168,7 +129,7 @@ export function planEngineeringMigration(discovery, currentCanonical = {}, resol
 			}
 		}
 		const trackerEntry = discovery.entries["dev-docs/agents/issue-tracker.md"];
-		effects.push(effect(40, "dev-docs/agents/issue-tracker.md", "file", discovery.tracker.generated ? "UPDATE" : "PRESERVE", discovery.tracker.generated ? "Replace a released generated adapter after canonical read-back." : "Preserve customized tracker semantics for reviewed merge.", trackerEntry));
+		effects.push(migrationEffect(40, "dev-docs/agents/issue-tracker.md", "file", discovery.tracker.generated ? "UPDATE" : "PRESERVE", discovery.tracker.generated ? "Replace a released generated adapter after canonical read-back." : "Preserve customized tracker semantics for reviewed merge.", trackerEntry, discovery.tracker.generated ? getAdapterContent(discovery.tracker.primary) : trackerEntry.content));
 	}
 	if (discovery.triage) {
 		if (!discovery.triage.labels) {
@@ -176,13 +137,13 @@ export function planEngineeringMigration(discovery, currentCanonical = {}, resol
 			conflicts.push({ field: "triage.labels", source: "dev-docs/agents/triage-labels.md", classification: "lossy" });
 		} else setIfAbsent(patch, "triage.labels", resolutions["triage.labels"] ?? discovery.triage.labels, changes, "dev-docs/agents/triage-labels.md");
 		const triageEntry = discovery.entries["dev-docs/agents/triage-labels.md"];
-		effects.push(effect(41, "dev-docs/agents/triage-labels.md", "file", discovery.triage.generated ? "UPDATE" : "PRESERVE", discovery.triage.generated ? "Replace a released generated triage adapter after canonical read-back." : "Preserve customized triage labels.", triageEntry));
+		effects.push(migrationEffect(41, "dev-docs/agents/triage-labels.md", "file", discovery.triage.generated ? "UPDATE" : "PRESERVE", discovery.triage.generated ? "Replace a released generated triage adapter after canonical read-back." : "Preserve customized triage labels.", triageEntry, discovery.triage.generated ? CURRENT_TRIAGE_TEMPLATE : triageEntry.content));
 	}
 	if (discovery.domain) {
 		if (discovery.domain.layout) setIfAbsent(patch, "domain.layout", resolutions["domain.layout"] ?? discovery.domain.layout, changes, discovery.domain.layout === "multi_context" ? "CONTEXT-MAP.md" : "CONTEXT.md");
 		else suggestions.push({ field: "domain.layout", source: "dev-docs/agents/domain.md", classification: "choice-required" });
 		const domainEntry = discovery.entries["dev-docs/agents/domain.md"];
-		effects.push(effect(42, "dev-docs/agents/domain.md", "file", discovery.domain.generated ? "UPDATE" : "PRESERVE", discovery.domain.generated ? "Replace a released generated domain adapter after canonical read-back." : "Preserve customized domain guidance.", domainEntry));
+		effects.push(migrationEffect(42, "dev-docs/agents/domain.md", "file", discovery.domain.generated ? "UPDATE" : "PRESERVE", discovery.domain.generated ? "Replace a released generated domain adapter after canonical read-back." : "Preserve customized domain guidance.", domainEntry, discovery.domain.generated ? CURRENT_DOMAIN_TEMPLATE : domainEntry.content));
 	}
 	if (discovery.context.conflict && !resolutions["context.source"]) {
 		blockers.push("Conflicting authored Agent skills blocks require an explicit merge choice.");
@@ -190,10 +151,10 @@ export function planEngineeringMigration(discovery, currentCanonical = {}, resol
 	}
 	for (const target of ["AGENTS.md", "CLAUDE.md"]) {
 		const entry = discovery.entries[target];
-		if (entry?.kind === "file") effects.push(effect(45, target, "file", "PRESERVE", "Byte-preserve authored context outside reviewed managed ranges.", entry));
+		if (entry?.kind === "file") effects.push(migrationEffect(45, target, "file", "PRESERVE", "Byte-preserve authored context outside reviewed managed ranges.", entry));
 	}
-	for (const change of changes) effects.push(effect(20, `config:${change.field}`, "state", "UPDATE", `Migrate deterministic repository-local value from ${change.source}.`, null, change.value));
-	for (const conflict of conflicts) effects.push(effect(10, `config:${conflict.field}`, "state", "BLOCKING_CONFLICT", `Resolve ${conflict.classification} legacy source ${conflict.source ?? conflict.sources?.join(", ")}.`, null));
+	for (const change of changes) effects.push(migrationEffect(20, `config:${change.field}`, "state", "UPDATE", `Migrate deterministic repository-local value from ${change.source}.`, null, change.value));
+	for (const conflict of conflicts) effects.push(migrationEffect(10, `config:${conflict.field}`, "state", "BLOCKING_CONFLICT", `Resolve ${conflict.classification} legacy source ${conflict.source ?? conflict.sources?.join(", ")}.`, null));
 	effects.sort((left, right) => left.order - right.order || left.target.localeCompare(right.target));
 	return { patch, effects, conflicts, suggestions, blockers };
 }

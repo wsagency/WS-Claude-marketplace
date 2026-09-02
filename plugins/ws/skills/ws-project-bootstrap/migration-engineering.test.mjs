@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { checkEngineeringCleanupEligibility, discoverEngineeringState, planEngineeringMigration } from "./migration-engineering.mjs";
+import { getAdapterContent } from "./trackers.mjs";
 
 const LEGACY_ROOT = new URL("./fixtures/pre-5-engineering/", import.meta.url);
 const template = name => readFileSync(new URL(name, LEGACY_ROOT), "utf8");
@@ -28,6 +29,10 @@ for (const [file, primary, sync] of [
 		assert.equal(plan.patch.tracker.pull_requests, "ignore");
 		assert.equal(plan.blockers.length, 0);
 		assert.ok(plan.effects.every(effect => ["order", "target", "kind", "classification", "reason", "before", "after", "diff", "fingerprint"].every(field => Object.hasOwn(effect, field))));
+		const adapter = plan.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md");
+		assert.equal(adapter.classification, "UPDATE");
+		assert.equal(adapter.after, getAdapterContent(primary));
+		assert.notEqual(adapter.after, content);
 		if (file.includes("jira")) assert.equal(plan.patch.jira.project, "WCM");
 	});
 }
@@ -38,7 +43,9 @@ test("customized known tracker guidance is converted but preserved", () => {
 	const plan = planEngineeringMigration(discovery, canonical());
 	assert.equal(plan.patch.tracker.primary, "github");
 	assert.equal(plan.blockers.length, 0);
-	assert.equal(plan.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").classification, "PRESERVE");
+	const adapter = plan.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md");
+	assert.equal(adapter.classification, "PRESERVE");
+	assert.equal(adapter.after, content);
 });
 
 test("unsupported custom tracker blocks before writes", () => {

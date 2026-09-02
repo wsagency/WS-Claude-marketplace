@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { applyLegacyCleanup, discoverLegacySetup, planLegacyMigration } from "./migration.mjs";
 import { serializeCanonicalConfig } from "./config.mjs";
+import { getAdapterContent } from "./trackers.mjs";
 
 async function withRepository(files, run) {
 	const root = await mkdtemp(path.join(tmpdir(), "ws-migration-test-"));
@@ -20,16 +21,27 @@ async function withRepository(files, run) {
 }
 
 const machine = { sessionDiscipline: true, dangerousGitGuard: true };
-const fullReadiness = {
-	configValid: true,
-	semanticReadBack: true,
-	engineeringReady: true,
-	contextReady: true,
-	runtimeReady: true,
-	fingerprintsReady: true,
-	docsReady: true,
-	jiraReady: true,
-};
+const managedContext = "<!-- WS-AGENT-SKILLS:START -->\n## Agent skills\n<!-- WS-AGENT-SKILLS:END -->\n";
+
+async function writeRepositoryFile(root, target, content) {
+	await mkdir(path.dirname(path.join(root, target)), { recursive: true });
+	await writeFile(path.join(root, target), content, "utf8");
+}
+
+async function materializeMigrationEvidence(root, plan) {
+	await writeRepositoryFile(root, ".wsagency/config.yaml", serializeCanonicalConfig(plan.config));
+	await writeRepositoryFile(root, "dev-docs/agents/issue-tracker.md", getAdapterContent(plan.config.tracker.primary));
+	await writeRepositoryFile(root, "dev-docs/agents/triage-labels.md", await readFile(new URL("./templates/triage-labels.md", import.meta.url), "utf8"));
+	await writeRepositoryFile(root, "dev-docs/agents/domain.md", await readFile(new URL("./templates/domain.md", import.meta.url), "utf8"));
+	await writeRepositoryFile(root, "AGENTS.md", managedContext);
+	await writeRepositoryFile(root, "CLAUDE.md", "@AGENTS.md\n");
+	await writeRepositoryFile(root, plan.config.domain.layout === "multi_context" ? "CONTEXT-MAP.md" : "CONTEXT.md", "# Domain context\n");
+	if (plan.config.docs) {
+		await mkdir(path.join(root, plan.config.docs.user_track), { recursive: true });
+		await mkdir(path.join(root, plan.config.docs.dev_track), { recursive: true });
+		await writeRepositoryFile(root, plan.config.changelog.path, "# Changelog\n");
+	}
+}
 
 test("initializer-only repository produces a strict Jira canonical plan", async () => {
 	await withRepository({
@@ -85,6 +97,30 @@ test("unsupported custom tracker blocks and remains preserved", async () => {
 	});
 });
 
+test("released adapters remain authorized replacements while customized adapters remain preserved", async () => {
+	const released = (await readFile(new URL("./fixtures/pre-5-engineering/issue-tracker-jira.md", import.meta.url), "utf8")).replaceAll("<PROJECT-KEY>", "WCM");
+	await withRepository({ "dev-docs/agents/issue-tracker.md": released }, async root => {
+		const plan = planLegacyMigration(await discoverLegacySetup(root, machine));
+		const adapter = plan.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md");
+		assert.equal(adapter.classification, "UPDATE");
+		assert.equal(adapter.after, getAdapterContent("jira"));
+		assert.notEqual(adapter.before, adapter.after);
+
+		await writeRepositoryFile(root, ".wsagency/config.yaml", serializeCanonicalConfig(plan.config));
+		const resumed = planLegacyMigration(await discoverLegacySetup(root, machine));
+		assert.equal(resumed.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").classification, "UPDATE");
+		assert.equal(resumed.effects.find(effect => effect.target === ".wsagency/config.yaml").classification, "NO-OP");
+	});
+	const customized = "# Team issue tracker\n\nUse GitHub Issues. Preserve component metadata and escalation notes.\n";
+	await withRepository({ "dev-docs/agents/issue-tracker.md": customized }, async root => {
+		const plan = planLegacyMigration(await discoverLegacySetup(root, machine));
+		const adapter = plan.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md");
+		assert.equal(plan.blockers.length, 0);
+		assert.equal(adapter.classification, "PRESERVE");
+		assert.equal(adapter.after, customized);
+	});
+});
+
 test("canonical-first rerun resumes verified legacy cleanup after an interrupted migration", async () => {
 	await withRepository({ ".claude/ws-project.yaml": "jira:\n  project: WCM\n  default_issue_type: Task\n" }, async root => {
 		const initial = planLegacyMigration(await discoverLegacySetup(root, machine));
@@ -100,7 +136,8 @@ test("canonical-first rerun resumes verified legacy cleanup after an interrupted
 		assert.equal(resumed.effects.find(item => item.target === ".claude/ws-project.yaml").classification, "UPDATE");
 		assert.equal(resumed.requiresConfirmation, true);
 
-		assert.deepEqual(await applyLegacyCleanup(root, resumed, resumed.hash, fullReadiness), [{ action: "delete", target: ".claude/ws-project.yaml" }]);
+		await materializeMigrationEvidence(root, resumed);
+		assert.deepEqual(await applyLegacyCleanup(root, resumed, resumed.hash, machine), [{ action: "delete", target: ".claude/ws-project.yaml" }]);
 		const aligned = planLegacyMigration(await discoverLegacySetup(root, machine));
 		assert.equal(aligned.requiresConfirmation, false);
 		assert.equal(aligned.report, "Valid canonical configuration wins. No migration changes required.");
@@ -128,17 +165,53 @@ test("future canonical schema stops without rewrite", async () => {
 	});
 });
 
-test("cleanup is read-back gated, authorized, drift-safe, and repository-local", async () => {
+test("legacy discovery refuses sources reached through an external symlink", async () => {
+	const external = await mkdtemp(path.join(tmpdir(), "ws-migration-external-"));
+	try {
+		await writeFile(path.join(external, "ws-project.yaml"), "jira:\n  project: OUTSIDE\n", "utf8");
+		await withRepository({}, async root => {
+			await symlink(external, path.join(root, ".claude"), "dir");
+			const discovery = await discoverLegacySetup(root, machine);
+			assert.equal(discovery.entries[".claude/ws-project.yaml"].kind, "blocked");
+			const plan = planLegacyMigration(discovery);
+			assert.ok(plan.blockers.length > 0);
+			assert.ok(!plan.effects.some(effect => effect.target === ".claude/ws-project.yaml" && effect.classification === "UPDATE"));
+			assert.equal(await readFile(path.join(external, "ws-project.yaml"), "utf8"), "jira:\n  project: OUTSIDE\n");
+		});
+	} finally {
+		await rm(external, { recursive: true, force: true });
+	}
+});
+
+test("cleanup derives every gate from current repository state before deletion", async () => {
 	await withRepository({
 		".claude/ws-project.yaml": "jira:\n  project: WCM\n  default_issue_type: Task\n",
 		".claude/docs-config.yaml": "docs:\n  user_track: docs\n  dev_track: dev-docs\n  default_audience: ask\n  default_scope: repo\n  auto:\n    changelog_per_commit: false\n    adr_for_arch_changes: true\n",
 	}, async root => {
 		const discovery = await discoverLegacySetup(root, machine);
 		const plan = planLegacyMigration(discovery, { resolutions: { "changelog.update_mode": "pull_request" } });
-		await assert.rejects(() => applyLegacyCleanup(root, plan, "wrong", fullReadiness), /authorization/i);
-		await assert.rejects(() => applyLegacyCleanup(root, plan, plan.hash, { ...fullReadiness, semanticReadBack: false }), /semanticReadBack/);
+		await assert.rejects(() => applyLegacyCleanup(root, plan, "wrong", machine), /authorization/i);
+		await assert.rejects(() => applyLegacyCleanup(root, plan, plan.hash, machine), /canonical configuration is missing/i);
+		assert.equal(await readFile(path.join(root, ".claude/ws-project.yaml"), "utf8"), discovery.entries[".claude/ws-project.yaml"].content);
+
+		await materializeMigrationEvidence(root, plan);
+		const adapterTarget = "dev-docs/agents/issue-tracker.md";
+		await rm(path.join(root, adapterTarget));
+		await assert.rejects(() => applyLegacyCleanup(root, plan, plan.hash, machine), /migrated adapter/i);
+		await writeRepositoryFile(root, adapterTarget, getAdapterContent(plan.config.tracker.primary));
+
+		await rm(path.join(root, "AGENTS.md"));
+		await assert.rejects(() => applyLegacyCleanup(root, plan, plan.hash, machine), /shared context/i);
+		await writeRepositoryFile(root, "AGENTS.md", managedContext);
+
+		await assert.rejects(() => applyLegacyCleanup(root, plan, plan.hash, { ...machine, dangerousGitGuard: false }), /active runtime delivery/i);
+
+		await rm(path.join(root, plan.config.docs.user_track), { recursive: true });
+		await assert.rejects(() => applyLegacyCleanup(root, plan, plan.hash, machine), /selected documentation path/i);
+		await mkdir(path.join(root, plan.config.docs.user_track), { recursive: true });
+
 		await writeFile(path.join(root, ".claude/docs-config.yaml"), "authored drift\n", "utf8");
-		await assert.rejects(() => applyLegacyCleanup(root, plan, plan.hash, fullReadiness), /drift/i);
+		await assert.rejects(() => applyLegacyCleanup(root, plan, plan.hash, machine), /drift/i);
 		assert.equal(await readFile(path.join(root, ".claude/ws-project.yaml"), "utf8"), discovery.entries[".claude/ws-project.yaml"].content);
 	});
 });
@@ -147,12 +220,13 @@ test("verified cleanup deletes only known local sources and aligned rerun is pro
 	await withRepository({ ".claude/ws-project.yaml": "jira:\n  project: WCM\n  default_issue_type: Task\n" }, async root => {
 		const discovery = await discoverLegacySetup(root, machine);
 		const plan = planLegacyMigration(discovery);
-		const operations = await applyLegacyCleanup(root, plan, plan.hash, fullReadiness);
+		await assert.rejects(() => applyLegacyCleanup(root, plan, plan.hash, machine), /canonical configuration is missing/i);
+		await materializeMigrationEvidence(root, plan);
+		const operations = await applyLegacyCleanup(root, plan, plan.hash, machine);
 		assert.deepEqual(operations, [{ action: "delete", target: ".claude/ws-project.yaml" }]);
-		await mkdir(path.join(root, ".wsagency"), { recursive: true });
-		await writeFile(path.join(root, ".wsagency/config.yaml"), serializeCanonicalConfig(plan.config), "utf8");
 		const rerun = planLegacyMigration(await discoverLegacySetup(root, machine));
 		assert.equal(rerun.requiresConfirmation, false);
 		assert.equal(rerun.report, "Valid canonical configuration wins. No migration changes required.");
+		assert.deepEqual(await applyLegacyCleanup(root, rerun, rerun.hash, machine), []);
 	});
 });

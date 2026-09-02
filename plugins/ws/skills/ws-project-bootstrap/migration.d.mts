@@ -51,15 +51,9 @@ export interface LegacyMigrationOptions {
 	confirmedMachineHints?: Record<string, unknown>;
 }
 
-export interface LegacyCleanupReadiness {
-	configValid?: boolean;
-	semanticReadBack?: boolean;
-	engineeringReady?: boolean;
-	contextReady?: boolean;
-	runtimeReady?: boolean;
-	fingerprintsReady?: boolean;
-	docsReady?: boolean;
-	jiraReady?: boolean;
+export interface LegacyCleanupRuntimeEvidence {
+	sessionDiscipline?: boolean;
+	dangerousGitGuard?: boolean;
 }
 
 export function discoverLegacySetup(root: string, machine?: LegacyDiscovery["machine"]): Promise<LegacyDiscovery>;
@@ -68,5 +62,5 @@ export function applyLegacyCleanup(
 	root: string,
 	plan: LegacyMigrationPlan,
 	authorization: string,
-	readiness: LegacyCleanupReadiness,
+	runtimeEvidence?: LegacyCleanupRuntimeEvidence,
 ): Promise<Array<{ action: "delete"; target: string }>>;

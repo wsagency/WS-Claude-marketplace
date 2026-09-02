@@ -1,5 +1,5 @@
 import type { CanonicalProjectConfig, ConfigValidationResult } from "./config.d.mts";
-import type { SetupEffect } from "./transaction.d.mts";
+import type { MigrationEffect } from "./migration-primitives.d.mts";
 
 export interface LegacySnapshotEntry {
 	kind: "missing" | "file" | "directory" | "blocked" | "state";
@@ -28,7 +28,7 @@ export interface DocsRuntimeMigrationPlan {
 	patch: CanonicalProjectConfig;
 	conflicts: DocsRuntimeMigrationConflict[];
 	blockers: string[];
-	effects: SetupEffect[];
+	effects: MigrationEffect[];
 }
 
 export function discoverDocsRuntimeState(
