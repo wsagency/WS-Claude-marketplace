@@ -1,5 +1,5 @@
 ---
-allowed-tools: Bash, Read, AskUserQuestion
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, AskUserQuestion
 argument-hint: "[reconfigure]"
 description: Configure, migrate, repair, or intentionally reconfigure WS project policy through one verified transaction
 ---
@@ -9,6 +9,8 @@ description: Configure, migrate, repair, or intentionally reconfigure WS project
 `/ws-setup` is the only public WS project-setup entry point. It configures a new repository, migrates every supported pre-5 setup, repairs missing managed state, or recognizes an aligned repository without prompting. `/ws-setup reconfigure` is the only mode that may intentionally change choices in an already valid canonical policy.
 
 The command owns the complete transaction: discovery, unresolved choices, validation, planning, one confirmation, ordered worker dispatch, read-back verification, and reporting. `ws-project-bootstrap` and `ws-docs-bootstrap` are internal workers. They receive one already-confirmed manifest, never ask another question, and return state deltas to this command.
+
+Before discovery, read and follow both internal workers' `SKILL.md` files from the installed plugin root. Invoke their deterministic modules directly for planning and apply; do not reimplement their contracts in prompt logic.
 
 ## Invocation
 
