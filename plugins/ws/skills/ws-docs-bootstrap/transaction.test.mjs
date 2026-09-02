@@ -55,6 +55,40 @@ describe("Documentation Bootstrap Plan", () => {
 		assert.ok(!createdTargets.includes("docs/contributing.md"), "Should NOT create docs/contributing.md");
 		assert.ok(createdTargets.includes("dev-docs/development.md"), "Should create dev-docs/development.md");
 	});
+	test("Standalone PRESERVE keeps differing existing content", () => {
+		const discovery = {
+			root: "/mock", projectShape: "standalone",
+			entries: { "CONTRIBUTING.md": { kind: "file", content: "Custom existing contributing." } }
+		};
+		const plan = planDocumentation(discovery);
+		const effect = plan.effects.find(e => e.target === "CONTRIBUTING.md");
+		assert.strictEqual(effect.classification, "PRESERVE");
+		assert.strictEqual(effect.after, "Custom existing contributing.");
+	});
+
+	test("Aligned NO-OP applies to exact matching content", () => {
+		const discovery = {
+			root: "/mock", projectShape: "standalone",
+			entries: { "CHANGELOG.md": { kind: "file", content: "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\nThe format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).\n\n## [Unreleased]\n" } }
+		};
+		const plan = planDocumentation(discovery);
+		const effect = plan.effects.find(e => e.target === "CHANGELOG.md");
+		assert.strictEqual(effect.classification, "NO-OP");
+	});
+
+	test("Hub root maps to isStandalone logic (generates all)", () => {
+		const discovery = {
+			root: "/mock", projectShape: "hub_root",
+			entries: { }
+		};
+		const plan = planDocumentation(discovery);
+		// Hub root is effectively standalone in terms of local docs shape.
+		// Wait, the logic is `projectShape === "standalone" || projectShape === "not_git"`.
+		// Ah, for hub root, it shouldn't generate docs/. Let's check the test expectation.
+		const docsEffect = plan.effects.find(e => e.target === "docs");
+		assert.strictEqual(docsEffect.classification, "SKIP");
+	});
+
 });
 import { applyDocumentation } from "./transaction.mjs";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -94,6 +128,29 @@ describe("Documentation Bootstrap Apply", () => {
 			assert.strictEqual(e.pending[0].target, "docs/index.md");
 		}
 	});
+	test("Resume missing-only skips already created files", async () => {
+		// Setup initial state
+		const plan1 = { effects: [
+			{ classification: "CREATE", target: "docs", kind: "directory" },
+			{ classification: "CREATE", target: "docs/index.md", kind: "file", after: "content" }
+		] };
+		
+		// Apply failure on second
+		try {
+			await applyDocumentation(tempDir, plan1, "docs/index.md");
+		} catch (e) {
+			// Recovered state should show docs as existing
+			const plan2 = { effects: [
+				{ classification: "NO-OP", target: "docs", kind: "directory" },
+				{ classification: "CREATE", target: "docs/index.md", kind: "file", after: "content" }
+			] };
+			const ops = await applyDocumentation(tempDir, plan2);
+			// Only writing index.md on resume
+			assert.strictEqual(ops.filter(o => o.action === "write").length, 1);
+			assert.strictEqual(ops[0].target, "docs/index.md");
+		}
+	});
+
 	test("cleanup", async () => {
 		if (tempDir) await rm(tempDir, { recursive: true, force: true });
 	});

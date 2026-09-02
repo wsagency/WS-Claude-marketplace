@@ -127,16 +127,10 @@ Verb behavior at the hub root:
   multi-select). Resolve the interactive answers ONCE in the main session
   before dispatch — `default_audience` and the real-`CLAUDE.md` migration offer
   are user-facing prompts a subagent cannot surface — and pass the resolved
-  values to each repo. Do NOT re-enter the repo-level 4-worker wave per repo
-  through a coordinator subagent (shipped WS workers are leaves and cannot
-  spawn); instead the main session dispatches, per selected repo, the DEV-TRACK
-  workers only — `architecture-documenter` → `dev-docs/architecture.md`,
-  `contributing-generator` → the DEV-track CONTRIBUTING files only (root `CONTRIBUTING.md` router + `dev-docs/development.md`; the `docs/contributing.md` user-track page routes to `DOCS_REPO` with the rest of the user track), `changelog-analyzer`
-  → root `CHANGELOG.md` — while the main session creates that repo's
-  `dev-docs/{decisions,runbooks,reference,explanation}/` + `index.md` stubs,
-  `.claude/docs-config.yaml`, the AGENTS.md maintenance section, and the thin
-  `CLAUDE.md` import. The `diataxis-writer` (user-track tutorial) is excluded
-  here — route all `docs/` scaffolding to `DOCS_REPO` (offer `/ws-hub init`
+  values to each repo. Do NOT re-enter the legacy 4-worker wave per repo.
+  Instead, the main session invokes the internal `ws-docs-bootstrap` worker per selected repo:
+  run `discoverDocumentation` and `planDocumentation`, verify the plan only targets `dev-docs/` (as `projectShape` is `hub_subrepository`), and execute `applyDocumentation`.
+  The user track (`docs/`) is excluded here — route all `docs/` scaffolding to `DOCS_REPO` (offer `/ws-hub init`
   step 4b if none is registered). `auto.enforce_via_hooks` is repo-local (see
   the header): it takes effect inside each sub-repo, not from the hub-root
   session, so do not offer it as a hub-level toggle.
@@ -187,47 +181,19 @@ State icons: `✓ present`, `⚠ stale|behind|empty`, `✗ missing`. Suggest ver
 
 ### verb = init
 
-First-time setup. Dispatch the following as one parallel wave through the Worker
-dispatch contract:
+First-time setup. Do NOT dispatch the legacy 4-subagent wave. Instead, invoke the internal `ws-docs-bootstrap` worker directly from the main session:
 
-1. `architecture-documenter` → writes `dev-docs/architecture.md`
-2. `contributing-generator` → writes the 3-file CONTRIBUTING set
-3. `changelog-analyzer` → generates root `CHANGELOG.md` from git history (the command owns the `docs/changelog.md` mirror — see below)
-4. `diataxis-writer` (quadrant: `tutorial`) → writes `docs/tutorials/getting-started.md` if absent
-
-While they run, in the main session:
-- Create directories: `docs/{tutorials,how-to,reference,explanation,release-notes}/` and `dev-docs/{decisions,runbooks,reference,explanation}/`
-- Create `index.md` stubs in each subfolder if missing (one line: `# <Subfolder>`)
-- Write `.claude/docs-config.yaml` with defaults (see schema below). Prompt the user via AskUserQuestion (or a plain chat question when that tool is unavailable) if they want to override `default_audience` (ask | user | dev) or `auto.enforce_via_hooks` (true | false).
-- Append the "Documentation maintenance" section to root `AGENTS.md` (the canonical, agent-neutral context file; create it if missing). Do not overwrite existing content; if a previous maintenance section is detected in `AGENTS.md` (`# Documentation maintenance` heading), replace it; otherwise append. Never append the maintenance section to `CLAUDE.md`. (Tool-managed marker blocks in a thin `CLAUDE.md` — e.g. OpenWiki's `<!-- OPENWIKI:START/END -->` — are a permitted exception owned by their tool: leave them alone, and do not treat a thin import that carries one as "fat".)
-- Ensure root `CLAUDE.md` is the thin import. If it is missing, create it containing exactly:
-
-  ```markdown
-  @AGENTS.md
-  <!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->
-  ```
-
-- If a real (non-thin) `CLAUDE.md` exists (anything beyond the `@AGENTS.md` import — including a v2.x/v3.x `# Documentation maintenance` section), offer migration via AskUserQuestion: move its content into `AGENTS.md` (dropping any old maintenance section there — the fresh one is appended above), then replace `CLAUDE.md` with the two-line import. If the user declines, leave `CLAUDE.md` untouched; the maintenance section still goes to `AGENTS.md`.
-
-Collect every worker result and summarize only when all report. When
-`changelog-analyzer` reports its `CHANGELOG.md`, mirror it to
-`docs/changelog.md` (Read `CHANGELOG.md` + Write `docs/changelog.md`) — the
-command owns this mirror, not the worker, matching the `changelog` verb. While
-workers
-run, you may print a status block like:
-
-```
-/ws-docs init  —  4 subagents
-
-⏳ architecture-documenter   running   writing dev-docs/architecture.md
-⏳ contributing-generator    running   analyzing tooling...
-✓ diataxis-writer           done      docs/tutorials/getting-started.md
-⏳ changelog-analyzer        running   parsing commits
-```
+1. Import `discoverDocumentation`, `planDocumentation`, and `applyDocumentation` from `plugins/ws/skills/ws-docs-bootstrap/transaction.mjs`.
+2. Run `discoverDocumentation(root, projectShape)` and feed the output to `planDocumentation(discovery)`.
+3. The worker creates a complete project-shape-aware plan (including `docs-config.yaml`, `CHANGELOG.md`, `CONTRIBUTING.md`, directories, and stubs). 
+4. Prompt the user via AskUserQuestion (or plain chat) if they want to override `default_audience` (ask | user | dev) or `auto.enforce_via_hooks` (true | false). Modify the plan's `after` content for the config file if overridden.
+5. If a real (non-thin) `CLAUDE.md` exists (anything beyond the `@AGENTS.md` import), offer migration via AskUserQuestion: move its content into `AGENTS.md` (dropping any old maintenance section there), then replace `CLAUDE.md` with the thin import. If declined, leave `CLAUDE.md` untouched.
+6. Apply the shared context fragments (`plan.contextFragments.agents` and `plan.contextFragments.claude`) to `AGENTS.md` and `CLAUDE.md` in the main session. For `AGENTS.md`, replace the existing maintenance section if present; otherwise append.
+7. Run `applyDocumentation(root, plan, failureInjection)` to perform the missing-only writes. If it throws an error containing `.completed` and `.pending`, catch it and report exactly what succeeded and what remains blocked.
 
 When all complete, print a final summary listing every file created. Commit nothing automatically — print the suggested commit message:
 
-```
+```bash
 Suggested commit:
   git add docs/ dev-docs/ CHANGELOG.md CONTRIBUTING.md AGENTS.md CLAUDE.md .claude/docs-config.yaml
   git commit -m "chore(docs): initialize dual-track docs via /ws-docs init"

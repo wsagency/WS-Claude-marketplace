@@ -144,8 +144,8 @@ export function planDocumentation(discovery) {
 	effects.push(fileEffect(order++, "dev-docs/index.md", "# Internal Documentation\n\nWelcome to the dev-docs.\n", discovery));
 
 	const contextFragments = {
-		agents: "\n### Documentation\n\nThis project uses the WS dual-track-docs convention. Run `/ws-docs` to audit or scaffold documentation.\n",
-		claude: "@AGENTS.md\n"
+		agents: "\n# Documentation maintenance\n\nThis project uses the WS dual-track-docs convention. Run `/ws-docs` to audit or scaffold documentation.\n",
+		claude: "<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n"
 	};
 
 	effects.sort((left, right) => left.order - right.order);
@@ -183,6 +183,7 @@ export async function applyDocumentation(root, plan, failureInjection) {
 			const error = new Error(`Injected failure writing ${effect.target}.`);
 			error.completed = completed;
 			error.pending = pending;
+			error.operations = operations;
 			throw error;
 		}
 
@@ -194,12 +195,17 @@ export async function applyDocumentation(root, plan, failureInjection) {
 				await mkdir(path.dirname(absolute), { recursive: true });
 				await writeFile(absolute, effect.after, "utf8");
 			}
+			const verified = await readSnapshotEntry(root, effect.target, effect.kind);
+			if (effect.kind === "directory" ? verified.kind !== "directory" : verified.content !== effect.after) {
+				throw new Error(`Verification failed after writing ${effect.target}.`);
+			}
 			operations.push({ action: "verify", target: effect.target });
 			completed.push(effect);
 		} catch (e) {
 			pending.push(...writes.slice(i));
 			e.completed = completed;
 			e.pending = pending;
+			e.operations = operations;
 			throw e;
 		}
 	}
