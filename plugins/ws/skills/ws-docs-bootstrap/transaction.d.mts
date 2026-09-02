@@ -1,3 +1,4 @@
+import type { CanonicalProjectConfig } from "../ws-project-bootstrap/config.d.mts";
 import type { ProjectShape, EffectClassification, SnapshotEntry, SetupOperation } from "../ws-project-bootstrap/transaction.d.mts";
 
 export interface DocsDiscovery {
@@ -27,6 +28,7 @@ export interface DocsPlan {
 	scope: { root: string; projectShape: ProjectShape };
 	effects: DocsEffect[];
 	contextFragments: DocsContextFragments;
+	configFragment: Pick<CanonicalProjectConfig, "docs" | "changelog">;
 }
 
 export interface DocsTransactionRequest {

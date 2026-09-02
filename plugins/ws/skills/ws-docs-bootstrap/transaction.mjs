@@ -10,7 +10,6 @@ const DOCS_DIRECTORIES = ["docs", "docs/tutorials", "docs/how-to", "docs/referen
 const DEV_DOCS_DIRECTORIES = ["dev-docs", "dev-docs/decisions", "dev-docs/scoping", "dev-docs/runbooks", "dev-docs/reference", "dev-docs/explanation"];
 
 const FILE_TARGETS = [
-	".claude/docs-config.yaml",
 	"CHANGELOG.md",
 	"CONTRIBUTING.md",
 	"docs/contributing.md",
@@ -120,9 +119,20 @@ export function planDocumentation(discovery) {
 	
 	let order = 100;
 
-	// Config
-	effects.push(fileEffect(order++, ".claude/docs-config.yaml", readTemplate("docs-config.yaml"), discovery));
-	
+	const configFragment = {
+		docs: {
+			user_track: "docs",
+			dev_track: "dev-docs",
+			default_audience: "ask",
+			default_scope: "repo",
+			adr_for_arch_changes: true,
+		},
+		changelog: {
+			update_mode: "pull_request",
+			path: "CHANGELOG.md",
+			skip_types: ["docs", "chore", "test", "style", "build", "ci"],
+		},
+	};
 	// Base directories
 	if (includeDocs) {
 		for (const dir of DOCS_DIRECTORIES) effects.push(directoryEffect(order++, dir, discovery));
@@ -151,6 +161,7 @@ export function planDocumentation(discovery) {
 	effects.sort((left, right) => left.order - right.order);
 	const scope = { root: discovery.root, projectShape: discovery.projectShape };
 	const hashPayload = {
+		configFragment,
 		scope,
 		effects: effects.map(effect => ({
 			order: effect.order,
@@ -161,7 +172,7 @@ export function planDocumentation(discovery) {
 			fingerprint: effect.fingerprint,
 		})),
 	};
-	return { hash: sha256(JSON.stringify(hashPayload)), scope, effects, contextFragments };
+	return { hash: sha256(JSON.stringify(hashPayload)), scope, effects, contextFragments, configFragment };
 }
 
 export async function applyDocumentation(root, plan, failureInjection) {

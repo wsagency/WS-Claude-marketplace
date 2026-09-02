@@ -31,6 +31,21 @@ describe("Documentation Bootstrap Plan", () => {
 		assert.ok(createdTargets.includes("CONTRIBUTING.md"), "Should create CONTRIBUTING.md");
 		assert.ok(createdTargets.includes("docs/contributing.md"), "Should create docs/contributing.md");
 		assert.ok(createdTargets.includes("dev-docs/development.md"), "Should create dev-docs/development.md");
+		assert.ok(!plan.effects.some(effect => effect.target === ".claude/docs-config.yaml"), "Legacy docs config must not be recreated");
+		assert.deepEqual(plan.configFragment, {
+			docs: {
+				user_track: "docs",
+				dev_track: "dev-docs",
+				default_audience: "ask",
+				default_scope: "repo",
+				adr_for_arch_changes: true,
+			},
+			changelog: {
+				update_mode: "pull_request",
+				path: "CHANGELOG.md",
+				skip_types: ["docs", "chore", "test", "style", "build", "ci"],
+			},
+		});
 	});
 
 	test("Hub subrepository missing-only creates only internal track and 2-file CONTRIBUTING", () => {
