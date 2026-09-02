@@ -119,7 +119,10 @@ describe("release verifier orchestration", () => {
 					npm: [{ name: "@wsagency/omp-ws", version: "0.7.0" }],
 					marketplace: [],
 				}),
-				"omp-plugin-doctor": JSON.stringify([{ name: "test", status: "ok" }]),
+				"omp-plugin-doctor": JSON.stringify([
+					{ name: "package_manifest", status: "warning", message: "Not created yet" },
+					{ name: "plugin:@wsagency/omp-ws", status: "ok" },
+				]),
 			};
 			return { status: 0, stdout: overrides[step.label] ?? outputs[step.label] ?? `${step.label}\n`, stderr: "" };
 		};
@@ -265,6 +268,17 @@ describe("release verifier orchestration", () => {
 			}),
 			resolveClaudePluginInstallation: async () => installedClaude(claudeRoot),
 		})).rejects.toThrow("omp plugin doctor reports unhealthy status: test");
+	});
+
+	test("blocks unexpected omp plugin doctor warnings", async () => {
+		const inputs = await fakeReleaseInputs();
+		const claudeRoot = await temporaryRoot("fake-claude-root-");
+		await expect(verifyReleaseArtifacts(inputs.options, {
+			runCommand: successfulCommandRunner({
+				"omp-plugin-doctor": JSON.stringify([{ name: "plugin:@wsagency/omp-ws", status: "warning", message: "Version drift" }]),
+			}),
+			resolveClaudePluginInstallation: async () => installedClaude(claudeRoot),
+		})).rejects.toThrow("omp plugin doctor reports unhealthy status: plugin:@wsagency/omp-ws");
 	});
 });
 

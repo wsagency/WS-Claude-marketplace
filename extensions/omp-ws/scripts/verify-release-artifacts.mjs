@@ -307,7 +307,8 @@ export async function verifyReleaseArtifacts(options, dependencies = {}) {
 			throw new Error("Failed to parse omp plugin doctor JSON.");
 		}
 		if (!Array.isArray(ompDoctor)) throw new Error("omp plugin doctor returned an unexpected JSON shape.");
-		const unhealthy = ompDoctor.filter(item => item.status !== "ok");
+		const unhealthy = ompDoctor.filter(item => item.status !== "ok"
+			&& !(item.name === "package_manifest" && item.status === "warning" && item.message === "Not created yet"));
 		if (unhealthy.length > 0) {
 			throw new Error(`omp plugin doctor reports unhealthy status: ${unhealthy.map(item => item.name).join(", ")}`);
 		}
