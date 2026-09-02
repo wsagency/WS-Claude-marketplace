@@ -277,9 +277,89 @@ async function verifyDocsEvidence(root, config) {
 	if (changelog.kind !== "file") throw new Error(`Legacy cleanup is not eligible: selected changelog ${config.changelog.path} is missing or drifted.`);
 }
 
-function verifyJiraRecovery(discovery, config) {
-	if (!config.jira || config.jira.sync !== "all_local_tickets" || !discovery.activeLocalWork) return;
-	throw new Error("Legacy cleanup is not eligible: Jira recovery for active Local tickets is not verified.");
+const LOCAL_TICKET_DIRECTORIES = ["dev-docs/tickets/open", "dev-docs/tickets/done"];
+const JIRA_KEY = /^[A-Z][A-Z0-9_]*-[1-9]\d*$/;
+const JIRA_RETURNED_ID = /^(?:[A-Z][A-Z0-9_]*-[1-9]\d*|[1-9]\d*)$/;
+const JIRA_CORRELATION = /^[a-f0-9]{64}$/;
+const RECOVERY_FIELDS = new Set(["jira", "jira_sync", "jira_correlation", "jira_returned_id"]);
+
+function ticketRecoveryMetadata(content) {
+	const metadata = {};
+	let fence = null;
+	for (const line of content.replaceAll("\r\n", "\n").split("\n")) {
+		const fenceMarker = line.match(/^(`{3,}|~{3,})/u)?.[1];
+		if (fenceMarker) {
+			if (fence === null) fence = fenceMarker[0];
+			else if (fenceMarker[0] === fence) fence = null;
+			continue;
+		}
+		if (fence !== null) continue;
+		const field = line.match(/^([a-z_]+):[ \t]*(.*)$/u);
+		if (!field || !RECOVERY_FIELDS.has(field[1])) continue;
+		if (Object.hasOwn(metadata, field[1])) return { error: `duplicate ${field[1]} evidence` };
+		metadata[field[1]] = field[2].trim();
+	}
+
+	if (Object.hasOwn(metadata, "jira") && !JIRA_KEY.test(metadata.jira)) return { error: "empty or malformed jira evidence" };
+	if (Object.hasOwn(metadata, "jira_sync") && metadata.jira_sync !== "pending") return { error: "empty or malformed jira_sync evidence" };
+	if (Object.hasOwn(metadata, "jira_correlation") && !JIRA_CORRELATION.test(metadata.jira_correlation)) return { error: "empty or malformed jira_correlation evidence" };
+	if (Object.hasOwn(metadata, "jira_returned_id") && !JIRA_RETURNED_ID.test(metadata.jira_returned_id)) return { error: "empty or malformed jira_returned_id evidence" };
+	if (metadata.jira) return { recoverable: true, jiraKey: metadata.jira };
+	if (metadata.jira_sync === "pending" && (metadata.jira_correlation || metadata.jira_returned_id)) {
+		return {
+			recoverable: true,
+			correlation: metadata.jira_correlation,
+			jiraKey: JIRA_KEY.test(metadata.jira_returned_id ?? "") ? metadata.jira_returned_id : undefined,
+			returnedId: metadata.jira_returned_id,
+		};
+	}
+	return { recoverable: false };
+}
+
+async function discoverLocalTickets(root) {
+	const tickets = [];
+	for (const directory of LOCAL_TICKET_DIRECTORIES) {
+		const directoryEntry = await snapshotEntry(root, directory);
+		if (directoryEntry.kind !== "directory") throw new Error(`Legacy cleanup is not eligible: Local ticket directory ${directory} is missing, unreadable, or symlinked.`);
+		const absolute = await repositoryLocalTarget(root, directory);
+		if (!absolute) throw new Error(`Legacy cleanup is not eligible: Local ticket directory ${directory} is outside the repository.`);
+		let names;
+		try {
+			names = (await readdir(absolute)).filter(name => name.endsWith(".md")).sort();
+		} catch {
+			throw new Error(`Legacy cleanup is not eligible: Local ticket directory ${directory} is unreadable.`);
+		}
+		for (const name of names) {
+			const target = `${directory}/${name}`;
+			const entry = await snapshotEntry(root, target);
+			if (entry.kind !== "file") throw new Error(`Legacy cleanup is not eligible: Local ticket ${target} is unreadable, not a file, or symlinked.`);
+			tickets.push({ target, content: entry.content });
+		}
+	}
+	return tickets;
+}
+
+async function verifyJiraRecovery(root, config) {
+	if (!config.jira || config.jira.sync !== "all_local_tickets") return;
+	const tickets = await discoverLocalTickets(root);
+	const correlations = new Map();
+	const jiraIdentities = new Map();
+	for (const ticket of tickets) {
+		const evidence = ticketRecoveryMetadata(ticket.content);
+		if (evidence.error) throw new Error(`Legacy cleanup is not eligible: ${ticket.target} has ${evidence.error}.`);
+		if (!evidence.recoverable) throw new Error(`Legacy cleanup is not eligible: Local ticket ${ticket.target} is unmapped and has no durable Jira recovery evidence.`);
+		if (evidence.correlation) {
+			const duplicate = correlations.get(evidence.correlation);
+			if (duplicate) throw new Error(`Legacy cleanup is not eligible: Local tickets ${duplicate} and ${ticket.target} share Jira correlation evidence.`);
+			correlations.set(evidence.correlation, ticket.target);
+		}
+		const jiraIdentity = evidence.jiraKey ?? evidence.returnedId;
+		if (jiraIdentity) {
+			const duplicate = jiraIdentities.get(jiraIdentity);
+			if (duplicate) throw new Error(`Legacy cleanup is not eligible: Local tickets ${duplicate} and ${ticket.target} share Jira identity evidence.`);
+			jiraIdentities.set(jiraIdentity, ticket.target);
+		}
+	}
 }
 
 async function verifyAuthorizedEffects(root, plan) {
@@ -305,9 +385,8 @@ export async function applyLegacyCleanup(root, plan, authorization, runtimeEvide
 	await verifyContextEvidence(resolvedRoot, plan.config);
 	if (!runtimeEvidenceAligned(plan.config, runtimeEvidence)) throw new Error("Legacy cleanup is not eligible: active runtime delivery is not verified.");
 	await verifyDocsEvidence(resolvedRoot, plan.config);
-	const discovery = await discoverLegacySetup(resolvedRoot, runtimeEvidence);
-	verifyJiraRecovery(discovery, plan.config);
 	await verifyAuthorizedEffects(resolvedRoot, plan);
+	await verifyJiraRecovery(resolvedRoot, plan.config);
 
 	const cleanup = plan.effects.filter(item => item.order >= 900 && item.classification === "UPDATE" && item.after == null);
 	const operations = [];

@@ -43,6 +43,23 @@ async function materializeMigrationEvidence(root, plan) {
 	}
 }
 
+async function withLocalJiraCleanup(tickets, run) {
+	const releasedAdapter = (await readFile(new URL("./fixtures/pre-5-engineering/issue-tracker-local-jira.md", import.meta.url), "utf8")).replaceAll("<PROJECT-KEY>", "WCM");
+	await withRepository({
+		".claude/ws-project.yaml": "jira:\n  project: WCM\n  default_issue_type: Task\n",
+		"dev-docs/agents/issue-tracker.md": releasedAdapter,
+		...tickets,
+	}, async root => {
+		const plan = planLegacyMigration(await discoverLegacySetup(root, machine));
+		assert.equal(plan.blockers.length, 0);
+		assert.equal(plan.config.jira.sync, "all_local_tickets");
+		await mkdir(path.join(root, "dev-docs/tickets/open"), { recursive: true });
+		await mkdir(path.join(root, "dev-docs/tickets/done"), { recursive: true });
+		await materializeMigrationEvidence(root, plan);
+		await run(root, plan);
+	});
+}
+
 test("initializer-only repository produces a strict Jira canonical plan", async () => {
 	await withRepository({
 		".claude/ws-project.yaml": "jira:\n  project: WCM\n  board: 42\n  default_issue_type: Task\nchangelog:\n  auto_update: true\n  path: CHANGELOG.md\n  skip_types: [docs, chore]\nhooks:\n  session_start_dashboard: true\n",
@@ -229,4 +246,65 @@ test("verified cleanup deletes only known local sources and aligned rerun is pro
 		assert.equal(rerun.report, "Valid canonical configuration wins. No migration changes required.");
 		assert.deepEqual(await applyLegacyCleanup(root, rerun, rerun.hash, machine), []);
 	});
+});
+
+test("Jira cleanup accepts completed mappings across open and done tickets", async () => {
+	await withLocalJiraCleanup({
+		"dev-docs/tickets/open/WCM-101.md": "# Open ticket\n\njira: WCM-101\n",
+		"dev-docs/tickets/done/WCM-102.md": "# Done ticket\n\njira: WCM-102\n",
+	}, async (root, plan) => {
+		assert.deepEqual(await applyLegacyCleanup(root, plan, plan.hash, machine), [{ action: "delete", target: ".claude/ws-project.yaml" }]);
+	});
+});
+
+test("Jira cleanup accepts durable pending correlation and returned ID evidence", async () => {
+	await withLocalJiraCleanup({
+		"dev-docs/tickets/open/pending-correlation.md": `# Pending ticket\n\njira_sync: pending\njira_correlation: ${"a".repeat(64)}\n`,
+		"dev-docs/tickets/done/pending-returned-id.md": "# Returned ticket\n\njira_sync: pending\njira_returned_id: WCM-103\n",
+	}, async (root, plan) => {
+		assert.deepEqual(await applyLegacyCleanup(root, plan, plan.hash, machine), [{ action: "delete", target: ".claude/ws-project.yaml" }]);
+	});
+});
+
+test("Jira cleanup blocks an unmapped Local ticket", async () => {
+	await withLocalJiraCleanup({
+		"dev-docs/tickets/open/unmapped.md": "# Unmapped ticket\n\nNo Jira recovery metadata.\n",
+	}, async (root, plan) => {
+		await assert.rejects(() => applyLegacyCleanup(root, plan, plan.hash, machine), /unmapped.*durable Jira recovery evidence/i);
+		assert.equal(await readFile(path.join(root, ".claude/ws-project.yaml"), "utf8"), "jira:\n  project: WCM\n  default_issue_type: Task\n");
+	});
+});
+
+test("Jira cleanup derives recovery evidence from current ticket state", async () => {
+	await withLocalJiraCleanup({
+		"dev-docs/tickets/open/drifted.md": "# Initially mapped ticket\n\njira: WCM-104\n",
+	}, async (root, plan) => {
+		await writeFile(path.join(root, "dev-docs/tickets/open/drifted.md"), "# Mapping removed after planning\n", "utf8");
+		await assert.rejects(() => applyLegacyCleanup(root, plan, plan.hash, machine), /unmapped.*durable Jira recovery evidence/i);
+		assert.equal(await readFile(path.join(root, ".claude/ws-project.yaml"), "utf8"), "jira:\n  project: WCM\n  default_issue_type: Task\n");
+	});
+});
+
+test("Jira cleanup rejects malformed durable recovery evidence", async () => {
+	await withLocalJiraCleanup({
+		"dev-docs/tickets/open/malformed.md": "# Malformed ticket\n\njira_sync: pending\njira_correlation: short-lived-token\n",
+	}, async (root, plan) => {
+		await assert.rejects(() => applyLegacyCleanup(root, plan, plan.hash, machine), /malformed jira_correlation evidence/i);
+	});
+});
+
+test("Jira cleanup fails closed for non-file and symlinked Markdown ticket entries", async t => {
+	for (const kind of ["directory", "symlink"]) {
+		await t.test(kind, async () => {
+			await withLocalJiraCleanup({
+				"dev-docs/tickets/open/unsafe.md": "# Initially mapped ticket\n\njira: WCM-105\n",
+			}, async (root, plan) => {
+				const target = path.join(root, "dev-docs/tickets/open/unsafe.md");
+				await rm(target);
+				if (kind === "directory") await mkdir(target);
+				else await symlink(path.join(root, ".claude/ws-project.yaml"), target);
+				await assert.rejects(() => applyLegacyCleanup(root, plan, plan.hash, machine), /unreadable, not a file, or symlinked/i);
+			});
+		});
+	}
 });
