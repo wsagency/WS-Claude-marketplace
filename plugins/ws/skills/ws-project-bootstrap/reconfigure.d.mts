@@ -25,6 +25,9 @@ export interface ReconfigureChoices {
 	values?: Record<string, unknown>;
 	repositories?: string[];
 	cancelDependent?: boolean;
+	triageMappings?: Record<string, { role: string; newLabel: string }>;
+	contextMap?: Record<string, string>;
+	authorizeSourceDelete?: boolean;
 }
 
 export interface ReconfigureJournalState {

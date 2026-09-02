@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { validateCanonicalConfigObject } from "./config.mjs";
+import { planDomain, planTriage } from "./routing.mjs";
 
 
 export class ReconfigureError extends Error {
@@ -118,6 +119,19 @@ export function plan(config, snapshot, machine, choices) {
         });
     }
 
+    const routing = choices.domain === "tracker" && choices.triageMappings
+        ? planTriage(config, snapshot, machine, choices)
+        : ["engineering", "docs"].includes(choices.domain) && choices.contextMap
+            ? planDomain(config, snapshot, machine, choices)
+            : null;
+    if (routing?.blocking) {
+        throw new ReconfigureError("Blocking conflict detected. Migration unsafe.", "ERR_BLOCKING_CONFLICT");
+    }
+    if (routing) {
+        effects.push(...routing.effects);
+        dependencyClosure.push(...routing.dependencyClosure);
+    }
+
     if (choices.values?.["runtime.dangerous_git_guard"] === "disabled") {
         const owners = machine?.sharedGuardsOwnedBy ?? [];
         const shared = owners.some(owner => !selectedRepos.includes(owner));
@@ -194,7 +208,13 @@ async function executePhases(state, snapshot, adapters, injection) {
     let ownershipReport = {};
 
     try {
-        // Prepare phase: validate fingerprints and drift
+        const actionable = state.effects.filter(e => e.classification === "UPDATE" || e.classification === "CREATE");
+        actionable.sort((a, b) => a.order - b.order);
+        const prepareMax = actionable.filter(e => e.order < 10).length;
+        const cutoverMax = prepareMax + actionable.filter(e => e.order >= 10 && e.order < 30).length;
+        const cleanupMax = actionable.length;
+
+        // Prepare phase: validate fingerprints and drift, then run prepare effects
         if (state.phase === "prepare") {
             if (injection.failAtPhase === "prepare") {
                 throw new Error("Injected failure at phase prepare");
@@ -210,22 +230,31 @@ async function executePhases(state, snapshot, adapters, injection) {
                     }
                 }
             }
+            while (state.completedEffects < prepareMax) {
+                if (injection.failAtEffectIndex === state.completedEffects) {
+                     throw new Error(`Injected failure at effect ${state.completedEffects}`);
+                }
+                const effect = actionable[state.completedEffects];
+                if (adapters.applyEffect) {
+                    await adapters.applyEffect(effect);
+                }
+                state.completedEffects++;
+            }
             state.phase = "cutover";
             currentPhaseIdx++;
             if (adapters.writeJournal) await adapters.writeJournal(state.hash, stripSecretsFromState(state));
         }
 
-        // Cutover phase: apply updates and creates
+        // Cutover phase: apply normal updates and creates
         if (state.phase === "cutover") {
             if (injection.failAtPhase === "cutover") {
                 throw new Error("Injected failure at phase cutover");
             }
-            const cutoverEffects = state.effects.filter(e => e.classification === "UPDATE" || e.classification === "CREATE");
-            while (state.completedEffects < cutoverEffects.length) {
+            while (state.completedEffects < cutoverMax) {
                 if (injection.failAtEffectIndex === state.completedEffects) {
                      throw new Error(`Injected failure at effect ${state.completedEffects}`);
                 }
-                const effect = cutoverEffects[state.completedEffects];
+                const effect = actionable[state.completedEffects];
                 if (adapters.applyEffect) {
                     await adapters.applyEffect(effect);
                 }
@@ -236,12 +265,21 @@ async function executePhases(state, snapshot, adapters, injection) {
             if (adapters.writeJournal) await adapters.writeJournal(state.hash, stripSecretsFromState(state));
         }
 
-        // Cleanup phase: remove obsoleted elements
+        // Cleanup phase: run cleanup effects (order >= 30)
         if (state.phase === "cleanup") {
             if (injection.failAtPhase === "cleanup") {
                 throw new Error("Injected failure at phase cleanup");
             }
-            // Execute cleanup logic if applicable
+            while (state.completedEffects < cleanupMax) {
+                if (injection.failAtEffectIndex === state.completedEffects) {
+                     throw new Error(`Injected failure at effect ${state.completedEffects}`);
+                }
+                const effect = actionable[state.completedEffects];
+                if (adapters.applyEffect) {
+                    await adapters.applyEffect(effect);
+                }
+                state.completedEffects++;
+            }
             state.phase = "done";
             currentPhaseIdx++;
             ownershipReport = { [snapshot.repositoryId || "current"]: "owned" };
