@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { validateCanonicalConfigObject } from "./config.mjs";
 
 export function hashField(value) {
 	if (value === undefined || value === null) return "hash_empty";
@@ -27,8 +28,8 @@ export class FakeJiraAdapterTemplate {
 		return this.existingData[id] || null;
 	}
 
-	async createTicket(fields) {
-		this.callLog.push({ method: "createTicket", args: { fields } });
+	async createTicket(fields, correlationId) {
+		this.callLog.push({ method: "createTicket", args: { fields, correlationId } });
 		if (this.outage) throw new Error("Jira is unreachable");
 		const id = `PROJ-${this.idCounter++}`;
 		const ticket = { id, ...fields };
@@ -77,12 +78,17 @@ export async function runTrackerOperation({
 		readiness: { ready: true }
 	};
 
-	if (config.primaryTracker !== "local") {
+	const validation = validateCanonicalConfigObject(config);
+	if (validation.status !== "valid") {
+		result.readiness = { ready: false, reason: "Canonical project policy must be strict-valid." };
+		return result;
+	}
+	if (config.tracker?.primary !== "local") {
 		result.readiness = { ready: false, reason: "Local Markdown must be primary." };
 		return result;
 	}
-	if (!config.jiraBinding) {
-		result.readiness = { ready: false, reason: "An explicit ready Jira binding required." };
+	if (!config.jira?.project || config.jira.sync !== "all_local_tickets") {
+		result.readiness = { ready: false, reason: "An explicit ready Jira binding required with all-ticket synchronization." };
 		return result;
 	}
 
@@ -92,7 +98,7 @@ export async function runTrackerOperation({
 
 	const adapter = {
 		getTicket: async (id) => { logCall("getTicket", { id }); return jiraAdapter.getTicket(id); },
-		createTicket: async (fields, corrId) => { logCall("createTicket", { fields, correlationId: corrId }); return jiraAdapter.createTicket(fields); },
+		createTicket: async (fields, corrId) => { logCall("createTicket", { fields, correlationId: corrId }); return jiraAdapter.createTicket(fields, corrId); },
 		updateTicket: async (id, fields) => { logCall("updateTicket", { id, fields }); return jiraAdapter.updateTicket(id, fields); },
 		addComment: async (id, text) => { logCall("addComment", { id, text }); return jiraAdapter.addComment(id, text); }
 	};

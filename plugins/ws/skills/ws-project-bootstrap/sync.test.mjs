@@ -4,7 +4,7 @@ import { runTrackerOperation, FakeJiraAdapterTemplate, hashField } from "./sync.
 
 test("rejects synchronization if config is Jira-primary or lacks Jira binding", async () => {
 	const result = await runTrackerOperation({
-		config: { primaryTracker: "jira", jiraBinding: true },
+		config: { schema_version: 1, tracker: { primary: "jira", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "disabled" } },
 		localStore: {},
 		syncState: { mappings: {}, pendingOperations: [] },
 		operation: null,
@@ -14,7 +14,7 @@ test("rejects synchronization if config is Jira-primary or lacks Jira binding", 
 	assert.match(result.readiness.reason, /Local Markdown must be primary/);
 
 	const result2 = await runTrackerOperation({
-		config: { primaryTracker: "local", jiraBinding: false },
+		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" } },
 		localStore: {},
 		syncState: { mappings: {}, pendingOperations: [] },
 		operation: null,
@@ -38,7 +38,7 @@ test("creates ticket in Jira, hashes fields, and ignores local metadata", async 
 		}
 	};
 	const result = await runTrackerOperation({
-		config: { primaryTracker: "local", jiraBinding: true },
+		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
 		localStore,
 		syncState: { mappings: {}, pendingOperations: [] },
 		operation: { action: "create", localId: "loc-1", payload: localStore["loc-1"] },
@@ -86,7 +86,7 @@ test("synchronizes pending operations before local action", async () => {
 	};
 
 	const result = await runTrackerOperation({
-		config: { primaryTracker: "local", jiraBinding: true },
+		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
 		localStore,
 		syncState,
 		operation: { action: "update", localId: "loc-2", payload: { title: "Newest Title" } },
@@ -131,7 +131,7 @@ test("stops on semantic conflict when both sides change a mapped field", async (
 	};
 
 	const result = await runTrackerOperation({
-		config: { primaryTracker: "local", jiraBinding: true },
+		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
 		localStore,
 		syncState,
 		operation: { action: "update", localId: "loc-3", payload: { title: "Local Changed Title" } },
@@ -162,7 +162,7 @@ test("outage permits local operation and records pending sync", async () => {
 	};
 
 	const result = await runTrackerOperation({
-		config: { primaryTracker: "local", jiraBinding: true },
+		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
 		localStore,
 		syncState: { mappings: {}, pendingOperations: [] },
 		operation: { action: "create", localId: "loc-4", payload: localStore["loc-4"] },
@@ -201,7 +201,7 @@ test("resolves conflict with manual choice", async () => {
 	};
 
 	const result = await runTrackerOperation({
-		config: { primaryTracker: "local", jiraBinding: true },
+		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
 		localStore,
 		syncState,
 		operation: { action: "update", localId: "loc-5", payload: { title: "Local Title" } },
@@ -226,7 +226,7 @@ test("comment synchronizes correctly without conflict detection", async () => {
 	adapter.existingData["PROJ-6"] = { id: "PROJ-6", title: "Title" };
 
 	const result = await runTrackerOperation({
-		config: { primaryTracker: "local", jiraBinding: true },
+		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
 		localStore: { "loc-6": { id: "loc-6", comments: [] } },
 		syncState,
 		operation: { action: "comment", localId: "loc-6", payload: { text: "Hello" } },
@@ -248,7 +248,7 @@ test("status synchronizes correctly with conflict detection", async () => {
 	adapter.existingData["PROJ-7"] = { id: "PROJ-7", status: "open_changed" };
 
 	const result = await runTrackerOperation({
-		config: { primaryTracker: "local", jiraBinding: true },
+		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
 		localStore: { "loc-7": { id: "loc-7", status: "open" } },
 		syncState,
 		operation: { action: "status", localId: "loc-7", payload: { status: "closed" } },
@@ -269,7 +269,7 @@ test("aligned no-op skips external update when Jira matches local", async () => 
 	adapter.existingData["PROJ-8"] = { id: "PROJ-8", title: "Same Title" };
 
 	const result = await runTrackerOperation({
-		config: { primaryTracker: "local", jiraBinding: true },
+		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
 		localStore: { "loc-8": { id: "loc-8", title: "Old Title" } },
 		syncState,
 		operation: { action: "update", localId: "loc-8", payload: { title: "Same Title" } },
@@ -290,7 +290,7 @@ test("resolves conflict with local or jira choices", async () => {
 	adapterLocal.existingData["PROJ-9"] = { id: "PROJ-9", title: "Jira Title" };
 
 	const resultLocal = await runTrackerOperation({
-		config: { primaryTracker: "local", jiraBinding: true },
+		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
 		localStore: { "loc-9": { id: "loc-9", title: "Old Title" } },
 		syncState: syncStateLocal,
 		operation: { action: "update", localId: "loc-9", payload: { title: "Local Title" } },
@@ -309,7 +309,7 @@ test("resolves conflict with local or jira choices", async () => {
 	adapterJira.existingData["PROJ-9"] = { id: "PROJ-9", title: "Jira Title" };
 
 	const resultJira = await runTrackerOperation({
-		config: { primaryTracker: "local", jiraBinding: true },
+		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
 		localStore: { "loc-9": { id: "loc-9", title: "Old Title" } },
 		syncState: syncStateJira,
 		operation: { action: "update", localId: "loc-9", payload: { title: "Local Title" } },
