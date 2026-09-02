@@ -6,6 +6,7 @@ import type { LegacyDiscovery, LegacyMigrationOptions, LegacyMigrationPlan } fro
 import type {
 	ReconfigureAdapters,
 	ReconfigureApplyResult,
+	ReconfigureOperationReport,
 	ReconfigureChoices,
 	ReconfigureInjection,
 	ReconfigureMachineCapabilities,
@@ -57,7 +58,7 @@ export interface ManifestBackfillAdapters {
 	persistence: BackfillPersistence & { readLocalTickets(): Promise<Record<string, LocalTicket>> };
 }
 
-export type ManifestOperation = SetupOperation | HubOperation | ReconfigureApplyResult["operationReport"][number] | {
+export type ManifestOperation = SetupOperation | HubOperation | {
 	action: "verify" | "pending" | "delete" | "update";
 	target: string;
 	remoteId?: string | null;
@@ -76,18 +77,29 @@ export interface MigrationManifestReadiness {
 	blockers?: Record<string, string[]>;
 }
 
-export interface ManifestResult {
-	manifest: DeterministicManifest;
+export interface ArrayManifestResult {
+	manifest: DeterministicManifest & { mode: Exclude<ManifestMode, "reconfigure"> };
 	requiresAuthorization: boolean;
 	applied: boolean;
 	operations: ManifestOperation[];
-	readiness?: SetupReadiness | MigrationManifestReadiness | DerivedSetupReadiness | HubTransactionResult["readiness"];
+	readiness?: SetupReadiness | MigrationManifestReadiness | HubTransactionResult["readiness"];
 	report: string;
 	failure?: SetupTransactionFailure;
 	outcomes?: HubOutcome[];
+}
+
+export interface ReconfigureManifestResult {
+	manifest: DeterministicManifest & { mode: "reconfigure" };
+	requiresAuthorization: boolean;
+	applied: boolean;
+	operations: [] | ReconfigureOperationReport;
+	readiness?: DerivedSetupReadiness;
+	report: string;
 	phase?: ReconfigureApplyResult["phase"];
 	ownership?: ReconfigureApplyResult["ownershipReport"];
 }
+
+export type ManifestResult = ArrayManifestResult | ReconfigureManifestResult;
 
 export interface ManifestInjection {
 	docsFailure?: string;
@@ -159,6 +171,9 @@ export interface ReconfigureManifestRequest {
 
 export const MANIFEST_CONTRACT_VERSION: 1;
 export const MANIFEST_CLASSIFICATIONS: readonly ManifestClassification[];
-export function runManifestTransaction(
-	request: SetupManifestRequest | MigrationManifestRequest | HubManifestRequest | ReconfigureManifestRequest,
-): Promise<ManifestResult>;
+export type ManifestRequest = SetupManifestRequest | MigrationManifestRequest | HubManifestRequest | ReconfigureManifestRequest;
+export type ManifestResultFor<Request extends ManifestRequest> =
+	Request extends ReconfigureManifestRequest ? ReconfigureManifestResult : ArrayManifestResult;
+export function runManifestTransaction<Request extends ManifestRequest>(
+	request: Request,
+): Promise<ManifestResultFor<Request>>;

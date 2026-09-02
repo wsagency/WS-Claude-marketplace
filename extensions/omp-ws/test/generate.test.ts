@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -8,12 +10,46 @@ import {
 	agentModel,
 	generate,
 	RUNTIME_SCRIPT_FILES,
+	RELEASE_MANIFEST_FILE,
+	resolveMarketplaceCommit,
 	extractKeyBlock,
 	skillHasDescription,
 	splitFrontmatter,
 	transformAgent,
 	transformCommand,
 } from "../scripts/generate";
+const MARKETPLACE_COMMIT = "1111111111111111111111111111111111111111";
+
+
+describe("release source identity", () => {
+	test("accepts only an explicit full immutable commit", () => {
+		expect(resolveMarketplaceCommit("/not-a-checkout", MARKETPLACE_COMMIT)).toBe(MARKETPLACE_COMMIT);
+		expect(() => resolveMarketplaceCommit("/not-a-checkout", "1111111")).toThrow("full lowercase Git SHA");
+	});
+
+	test("uses HEAD only after verifying a clean checkout", async () => {
+		const root = await fs.mkdtemp(path.join(os.tmpdir(), "omp-ws-identity-"));
+		try {
+			for (const args of [
+				["init", "--quiet"],
+				["config", "user.name", "WS Generator Test"],
+				["config", "user.email", "generator-test@example.invalid"],
+			]) {
+				expect(spawnSync("git", args, { cwd: root }).status).toBe(0);
+			}
+			await fs.writeFile(path.join(root, "source.txt"), "reviewed\n");
+			for (const args of [["add", "."], ["commit", "--quiet", "-m", "test: fixture"]]) {
+				expect(spawnSync("git", args, { cwd: root }).status).toBe(0);
+			}
+			const expected = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).stdout.trim();
+			expect(resolveMarketplaceCommit(root)).toBe(expected);
+			await fs.writeFile(path.join(root, "source.txt"), "unreviewed\n");
+			expect(() => resolveMarketplaceCommit(root)).toThrow("WS_MARKETPLACE_COMMIT is required");
+		} finally {
+			await fs.rm(root, { recursive: true, force: true });
+		}
+	});
+});
 
 describe("splitFrontmatter", () => {
 	test("splits fences and keeps body verbatim", () => {
@@ -237,11 +273,28 @@ describe("generate runtime assets", () => {
 		const outRoot = await fs.mkdtemp(path.join(os.tmpdir(), "omp-ws-generate-"));
 
 		try {
-			const counts = await generate(sourceRoot, outRoot);
+			const counts = await generate(sourceRoot, outRoot, { marketplaceCommit: MARKETPLACE_COMMIT });
 			expect(counts.runtimeScripts).toBe(RUNTIME_SCRIPT_FILES.length);
 			expect((await fs.readdir(path.join(outRoot, "scripts"))).sort()).toEqual([...RUNTIME_SCRIPT_FILES].sort());
 			expect(counts.commands).toBe(7);
 			expect(counts.skills).toBe(30);
+			const manifestContent = await fs.readFile(path.join(outRoot, RELEASE_MANIFEST_FILE), "utf8");
+			const manifest = JSON.parse(manifestContent) as {
+				schemaVersion: number;
+				marketplaceCommit: string;
+				files: Array<{ surface: string; source: string; target: string; sourceSha256: string; generatedSha256: string }>;
+			};
+			expect(manifest.schemaVersion).toBe(1);
+			expect(manifest.marketplaceCommit).toBe(MARKETPLACE_COMMIT);
+			expect(manifest.files).toHaveLength(counts.releaseFiles);
+			expect(new Set(manifest.files.map(file => file.target)).size).toBe(manifest.files.length);
+			expect(manifest.files.map(file => file.target)).toEqual([...manifest.files.map(file => file.target)].sort());
+			for (const file of manifest.files) {
+				const source = await fs.readFile(path.join(sourceRoot, file.source));
+				const generated = await fs.readFile(path.join(outRoot, file.target));
+				expect(createHash("sha256").update(source).digest("hex")).toBe(file.sourceSha256);
+				expect(createHash("sha256").update(generated).digest("hex")).toBe(file.generatedSha256);
+			}
 			expect(counts.agents).toBe(14);
 			expect(counts.rules).toBe(4);
 			const setupCommand = await fs.readFile(path.join(outRoot, "commands", "ws-setup.md"), "utf8");

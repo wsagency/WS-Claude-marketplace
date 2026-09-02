@@ -15,6 +15,8 @@
  * source `scripts/` directory are overwritten by name. Never hand-edit them.
  * Run via `bun run generate` (also the first step of `bun run build`).
  */
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
@@ -221,6 +223,114 @@ export function skillHasDescription(skillMd: string): boolean {
 const GENERATED_DIRS = ["commands", "skills", "agents", "rules", "templates"] as const;
 export const RUNTIME_SCRIPT_FILES = ["outline-sync.py", "parse-git-log.sh", "validate-changelog.sh"] as const;
 
+export const RELEASE_MANIFEST_FILE = "release-manifest.json";
+export const RELEASE_MANIFEST_VERSION = 1;
+
+export interface ReleaseSurfaceFile {
+	surface: "commands" | "skills" | "agents" | "rules";
+	source: string;
+	target: string;
+	sourceSha256: string;
+	generatedSha256: string;
+}
+
+export interface ReleaseManifest {
+	schemaVersion: typeof RELEASE_MANIFEST_VERSION;
+	marketplaceCommit: string;
+	files: ReleaseSurfaceFile[];
+}
+
+export interface GenerateOptions {
+	marketplaceCommit: string;
+}
+
+function sha256(content: Uint8Array): string {
+	return createHash("sha256").update(content).digest("hex");
+}
+
+function portable(relativePath: string): string {
+	return relativePath.split(path.sep).join("/");
+}
+
+function assertFullCommit(commit: string): string {
+	if (!/^[0-9a-f]{40}$/.test(commit)) {
+		throw new Error(`Marketplace commit must be a full lowercase Git SHA, got: ${commit || "(empty)"}`);
+	}
+	return commit;
+}
+
+function git(cwd: string, args: string[]): string {
+	const result = spawnSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+	if (result.error) throw result.error;
+	if (result.status !== 0) {
+		throw new Error(`git ${args.join(" ")} failed: ${(result.stderr || result.stdout || "no output").trim()}`);
+	}
+	return result.stdout.trim();
+}
+
+/**
+ * Resolve the immutable source identity embedded in the native artifact.
+ * Release automation supplies WS_MARKETPLACE_COMMIT after merge. Local builds
+ * may omit it only when the marketplace checkout is clean, making HEAD a
+ * verified description of every generated input.
+ */
+export function resolveMarketplaceCommit(marketplaceRoot: string, explicitCommit?: string): string {
+	if (explicitCommit !== undefined && explicitCommit !== "") return assertFullCommit(explicitCommit);
+	const status = git(marketplaceRoot, ["status", "--porcelain", "--untracked-files=all"]);
+	if (status !== "") {
+		throw new Error("WS_MARKETPLACE_COMMIT is required when the marketplace checkout has uncommitted changes.");
+	}
+	return assertFullCommit(git(marketplaceRoot, ["rev-parse", "--verify", "HEAD^{commit}"]));
+}
+
+async function listFilesRecursively(root: string, relative = ""): Promise<string[]> {
+	const directory = path.join(root, relative);
+	const entries = await fs.readdir(directory, { withFileTypes: true });
+	const files: string[] = [];
+	for (const entry of entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
+		const child = path.join(relative, entry.name);
+		if (entry.isDirectory()) {
+			files.push(...(await listFilesRecursively(root, child)));
+		} else if (entry.isFile()) {
+			files.push(child);
+		} else {
+			throw new Error(`Generated release surface does not support non-file entry: ${path.join(root, child)}`);
+		}
+	}
+	return files;
+}
+
+async function writeReleaseManifest(
+	sourceRoot: string,
+	outRoot: string,
+	marketplaceCommit: string,
+	mappings: Array<Pick<ReleaseSurfaceFile, "surface" | "source" | "target">>,
+): Promise<ReleaseManifest> {
+	const files: ReleaseSurfaceFile[] = [];
+	for (const mapping of mappings.sort((left, right) => left.target < right.target ? -1 : left.target > right.target ? 1 : 0)) {
+		const source = portable(mapping.source);
+		const target = portable(mapping.target);
+		const [sourceContent, generatedContent] = await Promise.all([
+			fs.readFile(path.join(sourceRoot, source)),
+			fs.readFile(path.join(outRoot, target)),
+		]);
+		files.push({
+			...mapping,
+			source,
+			target,
+			sourceSha256: sha256(sourceContent),
+			generatedSha256: sha256(generatedContent),
+		});
+	}
+	const manifest: ReleaseManifest = {
+		schemaVersion: RELEASE_MANIFEST_VERSION,
+		marketplaceCommit: assertFullCommit(marketplaceCommit),
+		files,
+	};
+	await fs.writeFile(path.join(outRoot, RELEASE_MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`);
+	return manifest;
+}
+
 async function listMarkdown(dir: string): Promise<string[]> {
 	const entries = await fs.readdir(dir, { withFileTypes: true });
 	return entries
@@ -232,7 +342,9 @@ async function listMarkdown(dir: string): Promise<string[]> {
 export async function generate(
 	sourceRoot: string,
 	outRoot: string,
-): Promise<{ commands: number; skills: number; agents: number; rules: number; hubRules: number; runtimeScripts: number }> {
+	options: GenerateOptions,
+): Promise<{ commands: number; skills: number; agents: number; rules: number; hubRules: number; runtimeScripts: number; releaseFiles: number }> {
+	const sharedSurface: Array<Pick<ReleaseSurfaceFile, "surface" | "source" | "target">> = [];
 	for (const dir of GENERATED_DIRS) {
 		const target = path.join(outRoot, dir);
 		await fs.rm(target, { recursive: true, force: true });
@@ -244,6 +356,7 @@ export async function generate(
 	for (const name of commandFiles) {
 		const content = await fs.readFile(path.join(sourceRoot, "commands", name), "utf8");
 		await fs.writeFile(path.join(outRoot, "commands", name), transformCommand(content, name));
+		sharedSurface.push({ surface: "commands", source: path.join("commands", name), target: path.join("commands", name) });
 	}
 
 	// Skills ship verbatim except the repository-maintenance workflow, which is
@@ -267,6 +380,13 @@ export async function generate(
 			continue;
 		}
 		await fs.cp(skillDir, path.join(outRoot, "skills", name), { recursive: true });
+		for (const relative of await listFilesRecursively(skillDir)) {
+			sharedSurface.push({
+				surface: "skills",
+				source: path.join("skills", name, relative),
+				target: path.join("skills", name, relative),
+			});
+		}
 	}
 	if (offenders.length > 0) {
 		throw new Error(`skills rejected (omp requires a frontmatter description):\n  - ${offenders.join("\n  - ")}`);
@@ -277,6 +397,7 @@ export async function generate(
 	for (const name of agentFiles) {
 		const content = await fs.readFile(path.join(sourceRoot, "agents", name), "utf8");
 		await fs.writeFile(path.join(outRoot, "agents", name), transformAgent(content, name.replace(/\.md$/, "")));
+		sharedSurface.push({ surface: "agents", source: path.join("agents", name), target: path.join("agents", name) });
 	}
 
 	// rules (verbatim: TTSR templates + the always-apply edge discipline)
@@ -293,12 +414,14 @@ export async function generate(
 	}
 	const ruleSources = [
 		...(await listMarkdown(path.join(sourceRoot, "templates", "omp", "rules"))).map(name =>
-			path.join(sourceRoot, "templates", "omp", "rules", name),
+			path.join("templates", "omp", "rules", name),
 		),
-		...packagedPluginRules.map(name => path.join(sourceRoot, "rules", name)),
+		...packagedPluginRules.map(name => path.join("rules", name)),
 	];
 	for (const source of ruleSources) {
-		await fs.copyFile(source, path.join(outRoot, "rules", path.basename(source)));
+		const target = path.join("rules", path.basename(source));
+		await fs.copyFile(path.join(sourceRoot, source), path.join(outRoot, target));
+		sharedSurface.push({ surface: "rules", source, target });
 	}
 
 	// Runtime assets referenced by generated commands and skills.
@@ -316,6 +439,7 @@ export async function generate(
 	for (const name of RUNTIME_SCRIPT_FILES) {
 		await fs.copyFile(path.join(sourceRoot, "scripts", name), path.join(outRoot, "scripts", name));
 	}
+	const releaseManifest = await writeReleaseManifest(sourceRoot, outRoot, options.marketplaceCommit, sharedSurface);
 
 	return {
 		commands: commandFiles.length,
@@ -324,15 +448,18 @@ export async function generate(
 		rules: ruleSources.length,
 		hubRules: excludedPluginRules.length,
 		runtimeScripts: RUNTIME_SCRIPT_FILES.length,
+		releaseFiles: releaseManifest.files.length,
 	};
 }
 
 async function main(): Promise<void> {
 	const outRoot = path.resolve(import.meta.dir, "..");
-	const sourceRoot = path.resolve(outRoot, "../../plugins/ws");
-	const counts = await generate(sourceRoot, outRoot);
+	const marketplaceRoot = path.resolve(outRoot, "../..");
+	const sourceRoot = path.join(marketplaceRoot, "plugins", "ws");
+	const marketplaceCommit = resolveMarketplaceCommit(marketplaceRoot, process.env.WS_MARKETPLACE_COMMIT);
+	const counts = await generate(sourceRoot, outRoot, { marketplaceCommit });
 	console.log(
-		`omp-ws generate: ${counts.commands} commands, ${counts.skills} skills, ${counts.agents} agents, ${counts.rules} rules, ${counts.hubRules} hub-only rules, templates, ${counts.runtimeScripts} runtime scripts (from ${sourceRoot})`,
+		`omp-ws generate: ${counts.commands} commands, ${counts.skills} skills, ${counts.agents} agents, ${counts.rules} rules, ${counts.hubRules} hub-only rules, templates, ${counts.runtimeScripts} runtime scripts, ${counts.releaseFiles} checksummed shared files at ${marketplaceCommit} (from ${sourceRoot})`,
 	);
 }
 

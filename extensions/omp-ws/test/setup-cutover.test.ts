@@ -8,6 +8,7 @@ const REPO_ROOT = path.resolve(import.meta.dir, "../../..");
 const SOURCE_ROOT = path.join(REPO_ROOT, "plugins", "ws");
 const RETIRED_SETUP_SKILL = ["ws", "setup", "matt", "pocock", "skills"].join("-");
 const RETIRED_MATT_SETUP_ROUTE = ["/ws-matt", "setup"].join(" ");
+const MARKETPLACE_COMMIT = "1111111111111111111111111111111111111111";
 const RETIRED_SETUP_COMMAND = ["/ws", "init"].join("-");
 const TEXT_EXTENSIONS: Record<string, true> = {
 	".json": true,
@@ -49,7 +50,7 @@ function permitsRetiredSetupReference(relativePath: string): boolean {
 test("WS 5 setup cutover is complete in source and generated output", async () => {
 	const outRoot = await fs.mkdtemp(path.join(os.tmpdir(), "omp-ws-setup-cutover-"));
 	try {
-		const counts = await generate(SOURCE_ROOT, outRoot);
+		const counts = await generate(SOURCE_ROOT, outRoot, { marketplaceCommit: MARKETPLACE_COMMIT });
 		expect(counts.commands).toBe(7);
 		expect(counts.skills).toBe(30);
 
@@ -162,7 +163,7 @@ test("WS 5 release metadata, references, and migration guide stay aligned", asyn
 	expect(packageManifest.name).toBe("@wsagency/omp-ws");
 	expect(packageManifest.version).toBe("0.7.0");
 	expect(packageManifest.omp.extensions).toEqual(["./dist/index.js"]);
-	expect(packageManifest.files).toEqual(expect.arrayContaining(["dist", "commands", "skills", "agents", "rules", "templates"]));
+	expect(packageManifest.files).toEqual(expect.arrayContaining(["dist", "commands", "skills", "agents", "rules", "release-manifest.json", "templates"]));
 
 	const changelog = await source("CHANGELOG.md");
 	expect(await source("docs/changelog.md")).toBe(changelog);

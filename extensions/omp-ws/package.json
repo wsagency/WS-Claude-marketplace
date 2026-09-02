@@ -10,6 +10,7 @@
     "skills",
     "agents",
     "rules",
+    "release-manifest.json",
     "templates",
     "scripts/outline-sync.py",
     "scripts/parse-git-log.sh",

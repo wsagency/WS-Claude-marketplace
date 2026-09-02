@@ -2,7 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, cp, mkdir, mkdtemp, realpath, rm, stat, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, realpath, readdir, rm, stat, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -11,6 +11,33 @@ const PLUGIN_ID = "ws@ws-marketplace";
 const NATIVE_PACKAGE = "@wsagency/omp-ws";
 const RETIRED_COMMAND = `${["ws", "init"].join("-")}.md`;
 const RETIRED_SKILL = ["ws", "setup", "matt", "pocock", "skills"].join("-");
+const RELEASE_MANIFEST_FILE = "release-manifest.json";
+const RELEASE_MANIFEST_VERSION = 1;
+const GENERATED_SURFACES = Object.freeze(["commands", "skills", "agents", "rules"]);
+const EXPECTED_CLAUDE_HOOK_ASSETS = Object.freeze([
+	"hooks/docs-policy.mjs",
+	"hooks/enforce-changelog.sh",
+	"hooks/enforce-stop.sh",
+	"hooks/openwiki-freshness.sh",
+	"hooks/session-discipline.sh",
+	"hooks/session-start-dashboard.mjs",
+]);
+const EXPECTED_OMP_HOOK_EVENTS = Object.freeze([
+	"session.compacting",
+	"session_start",
+	"session_start",
+	"session_stop",
+	"session_stop",
+	"tool_call",
+	"tool_call",
+]);
+const EXPECTED_OMP_RULES = Object.freeze([
+	"omp-edge-discipline.md",
+	"ws-commit-format.md",
+	"ws-generated-files.md",
+	"ws-guard-git.md",
+]);
+const EXPECTED_OMP_TOOLS = Object.freeze(["ws_adr", "ws_changelog", "ws_ticket"]);
 
 export const REQUIRED_INSTALLED_ASSETS = Object.freeze([
 	"commands/ws-setup.md",
@@ -125,59 +152,240 @@ async function resolveClaudePluginInstallation(claudeConfig) {
 	};
 }
 
-async function initializeFixtureRepository(root, env, runCommand) {
-	for (const [label, args] of [
-		["git-init", ["init", "--quiet"]],
-		["git-user-name", ["config", "user.name", "WS Release Verifier"]],
-		["git-user-email", ["config", "user.email", "release-verifier@example.invalid"]],
-		["git-add", ["add", "."]],
-		["git-commit", ["commit", "--quiet", "--allow-empty", "-m", "test: installed migration fixture"]],
-	]) {
-		await runCommand({ label, command: "git", args, cwd: root, env });
-	}
+function sha256(content) {
+	return createHash("sha256").update(content).digest("hex");
 }
 
-async function exerciseInstalledTransaction(pluginRoot, workspaceRoot, label, runCommand, env) {
-	const skillRoot = path.join(pluginRoot, "skills", "ws-project-bootstrap");
-	const fixtureRepository = path.join(skillRoot, "fixtures", "released-repositories", "ws-init-only", "repository");
-	const root = path.join(workspaceRoot, `migration-${label}`);
-	await cp(fixtureRepository, root, { recursive: true });
-	await initializeFixtureRepository(root, env, runCommand);
-
-	const nonce = `${Date.now()}-${label}`;
-	const [{ runManifestTransaction }, { discoverLegacySetup }, { discoverStandaloneRepository }] = await Promise.all([
-		import(`${pathToFileURL(path.join(skillRoot, "manifest-contract.mjs")).href}?verify=${nonce}`),
-		import(`${pathToFileURL(path.join(skillRoot, "migration.mjs")).href}?verify=${nonce}`),
-		import(`${pathToFileURL(path.join(skillRoot, "transaction.mjs")).href}?verify=${nonce}`),
-	]);
-	const machine = { activeHarness: "omp", sessionDiscipline: true, dangerousGitGuard: true, jiraCli: true };
-	const request = {
-		mode: "migration",
-		root,
-		snapshot: {
-			legacy: await discoverLegacySetup(root, machine),
-			core: await discoverStandaloneRepository(root, machine),
-		},
-		choices: { core: { jiraValidation: { ready: true }, docsReadiness: { ready: true } } },
-		adapters: { verifyMigrationReadiness: async () => ({ jiraReady: true, docsReady: true }) },
-	};
-	const planned = await runManifestTransaction(request);
-	if (!planned.requiresAuthorization || planned.operations.length !== 0) throw new Error(`${label} installed migration did not stop at authorization.`);
-	const applied = await runManifestTransaction({ ...request, authorization: planned.manifest.hash });
-	if (!applied.applied || applied.readiness?.configValid !== true) throw new Error(`${label} installed migration did not verify readiness.`);
-
-	const alignedRequest = {
-		...request,
-		snapshot: {
-			legacy: await discoverLegacySetup(root, machine),
-			core: await discoverStandaloneRepository(root, machine),
-		},
-	};
-	const aligned = await runManifestTransaction(alignedRequest);
-	if (aligned.requiresAuthorization || !/No migration changes required|Valid canonical configuration wins/.test(aligned.report)) {
-		throw new Error(`${label} installed aligned rerun was not a prompt-free no-op.`);
+function containedPath(root, relative, label) {
+	if (
+		typeof relative !== "string"
+		|| relative === ""
+		|| relative.includes("\\")
+		|| path.isAbsolute(relative)
+		|| relative.split("/").some(segment => segment === "" || segment === "." || segment === "..")
+	) {
+		throw new Error(`${label} contains an unsafe path: ${String(relative)}`);
 	}
-	return { label, plannedItems: planned.manifest.items.length, operations: applied.operations.length, aligned: true };
+	return path.join(root, ...relative.split("/"));
+}
+
+async function listSurfaceFiles(root, relative = "") {
+	const entries = await readdir(path.join(root, relative), { withFileTypes: true });
+	const files = [];
+	for (const entry of entries.sort((left, right) => left.name < right.name ? -1 : left.name > right.name ? 1 : 0)) {
+		const child = path.join(relative, entry.name);
+		if (entry.isDirectory()) {
+			files.push(...(await listSurfaceFiles(root, child)));
+		} else if (entry.isFile()) {
+			files.push(child.split(path.sep).join("/"));
+		} else {
+			throw new Error(`Installed release surface contains an unsupported entry: ${child}`);
+		}
+	}
+	return files;
+}
+
+function parseReleaseManifest(content) {
+	let manifest;
+	try {
+		manifest = JSON.parse(content);
+	} catch {
+		throw new Error(`Native package ${RELEASE_MANIFEST_FILE} is not valid JSON.`);
+	}
+	if (manifest?.schemaVersion !== RELEASE_MANIFEST_VERSION || !Array.isArray(manifest.files)) {
+		throw new Error(`Native package ${RELEASE_MANIFEST_FILE} has an unsupported shape.`);
+	}
+	if (!/^[0-9a-f]{40}$/.test(manifest.marketplaceCommit ?? "")) {
+		throw new Error(`Native package ${RELEASE_MANIFEST_FILE} does not contain a full marketplace commit.`);
+	}
+	return manifest;
+}
+
+export async function verifySharedGeneratedSurface(claudeRoot, nativeRoot, expectedMarketplaceCommit) {
+	const [resolvedClaudeRoot, resolvedNativeRoot] = await Promise.all([realpath(claudeRoot), realpath(nativeRoot)]);
+	const manifestContent = await readFile(path.join(resolvedNativeRoot, RELEASE_MANIFEST_FILE), "utf8").catch(error => {
+		if (error?.code === "ENOENT") throw new Error(`Native package is missing ${RELEASE_MANIFEST_FILE}.`);
+		throw error;
+	});
+	const manifest = parseReleaseManifest(manifestContent);
+	if (manifest.marketplaceCommit !== expectedMarketplaceCommit) {
+		throw new Error(
+			`Native artifact marketplace commit mismatch. Expected ${expectedMarketplaceCommit}, got ${manifest.marketplaceCommit}`,
+		);
+	}
+
+	const targetFiles = [];
+	for (const surface of GENERATED_SURFACES) {
+		for (const relative of await listSurfaceFiles(path.join(resolvedNativeRoot, surface))) {
+			targetFiles.push(`${surface}/${relative}`);
+		}
+	}
+	const seenTargets = new Set();
+	const bySurface = Object.fromEntries(GENERATED_SURFACES.map(surface => [surface, 0]));
+	for (const entry of manifest.files) {
+		if (
+			!GENERATED_SURFACES.includes(entry?.surface)
+			|| typeof entry.source !== "string"
+			|| typeof entry.target !== "string"
+			|| !/^[0-9a-f]{64}$/.test(entry.sourceSha256 ?? "")
+			|| !/^[0-9a-f]{64}$/.test(entry.generatedSha256 ?? "")
+		) {
+			throw new Error(`Native package ${RELEASE_MANIFEST_FILE} contains an invalid file entry.`);
+		}
+		if (!entry.target.startsWith(`${entry.surface}/`)) {
+			throw new Error(`Native package ${RELEASE_MANIFEST_FILE} maps ${entry.target} to the wrong surface.`);
+		}
+		const validSource = entry.source.startsWith(`${entry.surface}/`)
+			|| (entry.surface === "rules" && entry.source.startsWith("templates/omp/rules/"));
+		if (!validSource) {
+			throw new Error(`Native package ${RELEASE_MANIFEST_FILE} maps ${entry.source} from the wrong surface.`);
+		}
+		if (seenTargets.has(entry.target)) {
+			throw new Error(`Native package ${RELEASE_MANIFEST_FILE} contains duplicate target: ${entry.target}`);
+		}
+		seenTargets.add(entry.target);
+		bySurface[entry.surface] += 1;
+
+		const sourcePath = containedPath(resolvedClaudeRoot, entry.source, RELEASE_MANIFEST_FILE);
+		const targetPath = containedPath(resolvedNativeRoot, entry.target, RELEASE_MANIFEST_FILE);
+		const [sourceContent, targetContent] = await Promise.all([
+			readFile(sourcePath).catch(error => {
+				if (error?.code === "ENOENT") throw new Error(`Claude installation is missing shared source asset: ${entry.source}`);
+				throw error;
+			}),
+			readFile(targetPath).catch(error => {
+				if (error?.code === "ENOENT") throw new Error(`Native installation is missing generated asset: ${entry.target}`);
+				throw error;
+			}),
+		]);
+		const sourceDigest = sha256(sourceContent);
+		if (sourceDigest !== entry.sourceSha256) {
+			throw new Error(`Claude/native parity drift for ${entry.source}: expected ${entry.sourceSha256}, got ${sourceDigest}`);
+		}
+		const targetDigest = sha256(targetContent);
+		if (targetDigest !== entry.generatedSha256) {
+			throw new Error(`Installed native asset checksum mismatch for ${entry.target}: expected ${entry.generatedSha256}, got ${targetDigest}`);
+		}
+	}
+
+	const expectedTargets = [...seenTargets].sort();
+	targetFiles.sort();
+	if (JSON.stringify(targetFiles) !== JSON.stringify(expectedTargets)) {
+		const missing = targetFiles.filter(target => !seenTargets.has(target));
+		const absent = expectedTargets.filter(target => !targetFiles.includes(target));
+		throw new Error(
+			`Native generated surface does not match ${RELEASE_MANIFEST_FILE}; unmanifested: ${missing.join(", ") || "none"}; missing: ${absent.join(", ") || "none"}`,
+		);
+	}
+	return {
+		manifest: RELEASE_MANIFEST_FILE,
+		manifestSha256: sha256(Buffer.from(manifestContent)),
+		marketplaceCommit: manifest.marketplaceCommit,
+		files: manifest.files.length,
+		bySurface,
+	};
+}
+
+function assertExactMembers(actual, expected, label) {
+	const normalized = [...actual].sort();
+	const required = [...expected].sort();
+	if (JSON.stringify(normalized) !== JSON.stringify(required)) {
+		throw new Error(`${label} mismatch. Expected ${required.join(", ")}, got ${normalized.join(", ") || "none"}`);
+	}
+	return normalized;
+}
+
+export async function probeClaudeRuntime(pluginRoot) {
+	const root = await realpath(pluginRoot);
+	const [pluginContent, hooksContent] = await Promise.all([
+		readFile(path.join(root, ".claude-plugin", "plugin.json"), "utf8"),
+		readFile(path.join(root, "hooks", "hooks.json"), "utf8"),
+	]);
+	const plugin = JSON.parse(pluginContent);
+	const hooks = JSON.parse(hooksContent);
+	if (plugin?.name !== "ws" || !hooks?.hooks || typeof hooks.hooks !== "object") {
+		throw new Error("Claude installation is missing the ws plugin runtime manifest.");
+	}
+	const registrations = [];
+	for (const [event, groups] of Object.entries(hooks.hooks)) {
+		if (!Array.isArray(groups)) throw new Error(`Claude hook event ${event} has an unexpected shape.`);
+		for (const group of groups) {
+			if (!Array.isArray(group?.hooks)) throw new Error(`Claude hook event ${event} has an unexpected registration.`);
+			for (const hook of group.hooks) {
+				const match = /^\$\{CLAUDE_PLUGIN_ROOT\}\/([^\s]+)$/.exec(hook?.command ?? "");
+				if (hook?.type !== "command" || !match) throw new Error(`Claude hook event ${event} has an unsupported command.`);
+				registrations.push({ event, matcher: group.matcher ?? "", asset: match[1] });
+			}
+		}
+	}
+	const registeredAssets = registrations.map(registration => registration.asset);
+	for (const expected of EXPECTED_CLAUDE_HOOK_ASSETS) {
+		if (expected === "hooks/docs-policy.mjs") continue;
+		if (!registeredAssets.includes(expected)) throw new Error(`Claude runtime delivery is missing hook registration: ${expected}`);
+	}
+	const assets = [];
+	for (const relative of EXPECTED_CLAUDE_HOOK_ASSETS) {
+		const content = await readFile(containedPath(root, relative, "Claude runtime")).catch(error => {
+			if (error?.code === "ENOENT") throw new Error(`Claude runtime delivery is missing asset: ${relative}`);
+			throw error;
+		});
+		assets.push({ path: relative, sha256: sha256(content) });
+	}
+	return {
+		plugin: plugin.name,
+		hookManifestSha256: sha256(Buffer.from(hooksContent)),
+		registrations,
+		assets,
+	};
+}
+
+function runtimeProbeZod() {
+	const schema = {
+		describe() { return schema; },
+		optional() { return schema; },
+	};
+	return {
+		array() { return schema; },
+		enum() { return schema; },
+		object() { return schema; },
+		string() { return schema; },
+	};
+}
+
+export async function probeOmpRuntime(pluginRoot) {
+	const root = await realpath(pluginRoot);
+	const extensionPath = path.join(root, "dist", "index.js");
+	const extensionContent = await readFile(extensionPath).catch(error => {
+		if (error?.code === "ENOENT") throw new Error("omp runtime delivery is missing dist/index.js.");
+		throw error;
+	});
+	const module = await import(`${pathToFileURL(extensionPath).href}?release-probe=${Date.now()}`);
+	if (typeof module.default !== "function") throw new Error("omp runtime delivery has no extension entry point.");
+	const hookEvents = [];
+	const tools = [];
+	module.default({
+		zod: runtimeProbeZod(),
+		on(event, handler) {
+			if (typeof handler !== "function") throw new Error(`omp runtime registered a non-function handler for ${event}.`);
+			hookEvents.push(event);
+		},
+		registerTool(tool) {
+			if (typeof tool?.name !== "string" || typeof tool?.execute !== "function") {
+				throw new Error("omp runtime registered an invalid tool.");
+			}
+			tools.push(tool.name);
+		},
+	});
+	const rules = (await readdir(path.join(root, "rules"), { withFileTypes: true }))
+		.filter(entry => entry.isFile() && entry.name.endsWith(".md"))
+		.map(entry => entry.name);
+	return {
+		extension: "dist/index.js",
+		extensionSha256: sha256(extensionContent),
+		hookEvents: assertExactMembers(hookEvents, EXPECTED_OMP_HOOK_EVENTS, "omp runtime hook delivery"),
+		tools: assertExactMembers(tools, EXPECTED_OMP_TOOLS, "omp runtime tool delivery"),
+		rules: assertExactMembers(rules, EXPECTED_OMP_RULES, "omp runtime rule delivery"),
+	};
 }
 
 async function validateInputs(options) {
@@ -223,6 +431,9 @@ export async function verifyReleaseArtifacts(options, dependencies = {}) {
 	for (const name of requiredOptions) {
 		if (!options?.[name]) throw new Error(`Explicit ${name} is required.`);
 	}
+	if (!/^[0-9a-f]{40}$/.test(options.expectedMarketplaceCommit)) {
+		throw new Error("Explicit expectedMarketplaceCommit must be a full lowercase Git SHA.");
+	}
 	const inputs = await validateInputs(options);
 	const runCommand = dependencies.runCommand ?? defaultRunCommand;
 	const identityEnv = isolatedEnvironment(inputs.marketplaceRoot);
@@ -251,7 +462,7 @@ export async function verifyReleaseArtifacts(options, dependencies = {}) {
 	}
 
 	const tarballData = await readFile(inputs.tarballPath);
-	const tarballSha256 = createHash("sha256").update(tarballData).digest("hex");
+	const tarballSha256 = sha256(tarballData);
 	if (tarballSha256 !== options.expectedTarballSha256) {
 		throw new Error(`Tarball SHA256 mismatch. Expected ${options.expectedTarballSha256}, got ${tarballSha256}`);
 	}
@@ -259,7 +470,9 @@ export async function verifyReleaseArtifacts(options, dependencies = {}) {
 	const tempRoot = await mkdtemp(path.join(tmpdir(), "ws-release-artifacts-"));
 	const paths = verificationPaths(tempRoot);
 	const inspectSurface = dependencies.inspectSurface ?? assertInstalledSurface;
-	const exerciseTransaction = dependencies.exerciseTransaction ?? exerciseInstalledTransaction;
+	const verifyParity = dependencies.verifySharedGeneratedSurface ?? verifySharedGeneratedSurface;
+	const inspectClaudeRuntime = dependencies.probeClaudeRuntime ?? probeClaudeRuntime;
+	const inspectOmpRuntime = dependencies.probeOmpRuntime ?? probeOmpRuntime;
 	try {
 		for (const target of [paths.claudeHome, paths.claudeConfig, paths.ompHome, paths.ompXdgConfig, paths.ompXdgData, paths.npmPrefix, paths.workspace]) {
 			await mkdir(target, { recursive: true });
@@ -325,10 +538,10 @@ export async function verifyReleaseArtifacts(options, dependencies = {}) {
 			throw new Error(`Native package version mismatch. Expected ${options.expectedPackageVersion}, got ${nativePackageJson.version}`);
 		}
 
-		const ompEnv = steps.find(step => step.label === "omp-plugin-list").env;
-		const [claudeMigration, ompMigration] = await Promise.all([
-			exerciseTransaction(claudeInstallation.root, paths.workspace, "claude", runCommand, ompEnv),
-			exerciseTransaction(paths.nativeRoot, paths.workspace, "omp", runCommand, ompEnv),
+		const [parity, claudeRuntime, ompRuntime] = await Promise.all([
+			verifyParity(claudeSurface.root, ompSurface.root, options.expectedMarketplaceCommit),
+			inspectClaudeRuntime(claudeSurface.root),
+			inspectOmpRuntime(ompSurface.root),
 		]);
 		return {
 			identities: {
@@ -340,8 +553,16 @@ export async function verifyReleaseArtifacts(options, dependencies = {}) {
 				tarballSize: inputs.tarballSize,
 			},
 			commands: commandResults.map(result => result.label),
-			claude: { root: claudeSurface.root, migration: claudeMigration },
-			omp: { root: ompSurface.root, migration: ompMigration },
+			parity,
+			claude: { root: claudeSurface.root, runtime: claudeRuntime },
+			omp: {
+				root: ompSurface.root,
+				runtime: {
+					...ompRuntime,
+					linkedPlugin: ompNpmPlugin,
+					doctor: ompDoctor,
+				},
+			},
 		};
 	} finally {
 		await rm(tempRoot, { recursive: true, force: true });

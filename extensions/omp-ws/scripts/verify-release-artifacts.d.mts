@@ -40,24 +40,40 @@ export interface ClaudePluginInstallation {
 	gitCommitSha: string;
 }
 
-export interface MigrationExercise {
-	label: string;
-	plannedItems: number;
-	operations: number;
-	aligned: boolean;
+export interface SharedSurfaceEvidence {
+	manifest: string;
+	manifestSha256: string;
+	marketplaceCommit: string;
+	files: number;
+	bySurface: Record<"commands" | "skills" | "agents" | "rules", number>;
+}
+
+export interface ClaudeRuntimeEvidence {
+	plugin: string;
+	hookManifestSha256: string;
+	registrations: Array<{ event: string; matcher: string; asset: string }>;
+	assets: Array<{ path: string; sha256: string }>;
+}
+
+export interface OmpRuntimeEvidence {
+	extension: string;
+	extensionSha256: string;
+	hookEvents: string[];
+	tools: string[];
+	rules: string[];
 }
 
 export interface VerificationDependencies {
 	runCommand?: (step: VerificationStep) => CommandResult | Promise<CommandResult>;
 	resolveClaudePluginInstallation?: (claudeConfig: string) => ClaudePluginInstallation | Promise<ClaudePluginInstallation>;
 	inspectSurface?: (root: string) => InstalledSurface | Promise<InstalledSurface>;
-	exerciseTransaction?: (
-		pluginRoot: string,
-		workspaceRoot: string,
-		label: string,
-		runCommand: (step: VerificationStep) => CommandResult | Promise<CommandResult>,
-		env: VerificationEnvironment,
-	) => MigrationExercise | Promise<MigrationExercise>;
+	verifySharedGeneratedSurface?: (
+		claudeRoot: string,
+		nativeRoot: string,
+		expectedMarketplaceCommit: string,
+	) => SharedSurfaceEvidence | Promise<SharedSurfaceEvidence>;
+	probeClaudeRuntime?: (root: string) => ClaudeRuntimeEvidence | Promise<ClaudeRuntimeEvidence>;
+	probeOmpRuntime?: (root: string) => OmpRuntimeEvidence | Promise<OmpRuntimeEvidence>;
 }
 
 export interface ReleaseIdentities {
@@ -72,8 +88,15 @@ export interface ReleaseIdentities {
 export interface ReleaseVerificationResult {
 	identities: ReleaseIdentities;
 	commands: string[];
-	claude: { root: string; migration: MigrationExercise };
-	omp: { root: string; migration: MigrationExercise };
+	parity: SharedSurfaceEvidence;
+	claude: { root: string; runtime: ClaudeRuntimeEvidence };
+	omp: {
+		root: string;
+		runtime: OmpRuntimeEvidence & {
+			linkedPlugin: Record<string, unknown>;
+			doctor: Array<Record<string, unknown>>;
+		};
+	};
 }
 
 export interface VerifyReleaseArtifactsOptions {
@@ -95,6 +118,13 @@ export function buildVerificationSteps(input: {
 	paths: VerificationPaths;
 }): VerificationStep[];
 export function assertInstalledSurface(pluginRoot: string): Promise<InstalledSurface>;
+export function verifySharedGeneratedSurface(
+	claudeRoot: string,
+	nativeRoot: string,
+	expectedMarketplaceCommit: string,
+): Promise<SharedSurfaceEvidence>;
+export function probeClaudeRuntime(pluginRoot: string): Promise<ClaudeRuntimeEvidence>;
+export function probeOmpRuntime(pluginRoot: string): Promise<OmpRuntimeEvidence>;
 export function verifyReleaseArtifacts(
 	options: VerifyReleaseArtifactsOptions,
 	dependencies?: VerificationDependencies,
