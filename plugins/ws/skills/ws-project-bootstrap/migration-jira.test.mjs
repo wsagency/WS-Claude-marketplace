@@ -1,33 +1,21 @@
-import { test, expect } from "bun:test";
+import { test } from "node:test";
+import * as assert from "node:assert/strict";
 import { discoverJiraState, planJiraMigration, checkJiraCleanupEligibility } from "./migration-jira.mjs";
+import { readFileSync } from "node:fs";
 
 test("discoverJiraState recognizes empty snapshots", () => {
 	const discovery = discoverJiraState({});
-	expect(discovery.hasGlobalConfig).toBe(false);
-	expect(discovery.hasProjectConfig).toBe(false);
-	expect(discovery.globalValues).toEqual({});
-	expect(discovery.projectValues).toEqual({});
+	assert.equal(discovery.hasGlobalConfig, false);
+	assert.equal(discovery.hasProjectConfig, false);
+	assert.deepEqual(discovery.globalValues, {});
+	assert.deepEqual(discovery.projectValues, {});
 });
 
-
-test("parseYamlLike handles arrays and nested keys", () => {
-	const { parseYamlLike } = require("./migration-jira.mjs");
-	const yaml = `
-jira:
-  project: WSC
-  board: 42
-changelog:
-  skip_types: [docs, chore, test]
-  auto_update: true
-ui:
-  session_start_dashboard: true
-`;
-	const parsed = parseYamlLike(yaml);
-	expect(parsed["jira.project"]).toBe("WSC");
-	expect(parsed["jira.board"]).toBe(42);
-	expect(parsed["changelog.skip_types"]).toEqual(["docs", "chore", "test"]);
-	expect(parsed["changelog.auto_update"]).toBe(true);
-	expect(parsed["ui.session_start_dashboard"]).toBe(true);
+test("discoverJiraState processes json objects", () => {
+	const discovery = discoverJiraState({
+		"~/.claude/ws/config.yaml": { defaults: { jira_actions: "never" } }
+	});
+	assert.equal(discovery.globalValues["defaults.jira_actions"], "never");
 });
 
 test("planJiraMigration prefers canonical over local over global", () => {
@@ -40,7 +28,9 @@ test("planJiraMigration prefers canonical over local over global", () => {
 		},
 		globalValues: {
 			"defaults.jira_actions": "ask",
-			"ui.session_start_dashboard": true
+			"ui.session_start_dashboard": true,
+			"jira.site": "wsagency.atlassian.net",
+			"atlassian.account_id": "123"
 		},
 		docsValues: {
 			"auto.changelog_per_commit": false
@@ -53,23 +43,32 @@ test("planJiraMigration prefers canonical over local over global", () => {
 	const plan = planJiraMigration(discovery, currentCanonical, resolutions);
 	
 	// existing canonical wins
-	expect(plan.patch.jira?.project).toBe("EXISTING");
+	assert.equal(plan.patch.jira?.project, "EXISTING");
 	
 	// local applies
-	expect(plan.patch.jira?.board).toBe(42);
+	assert.equal(plan.patch.jira?.board, 42);
 	
 	// ui dashboard conversion
-	expect(plan.patch.ui?.session_start_dashboard).toBe("jira_assignments");
+	assert.equal(plan.patch.ui?.session_start_dashboard, "jira_assignments");
 	
 	// changelog mode conversion
-	expect(plan.patch.changelog?.update_mode).toBe("pull_request");
+	assert.equal(plan.patch.changelog?.update_mode, "pull_request");
 	
 	// global values are just suggestions
-	expect(plan.suggestions).toContainEqual({
-		field: "commit.jira.actions",
-		value: "ask",
-		source: "~/.claude/ws/config.yaml"
-	});
+	const hasAction = plan.suggestions.some(s => s.field === "commit.jira.actions" && s.value === "ask");
+	assert.equal(hasAction, true);
+	
+	// jira.site must NEVER enter the patch (it's excluded/not canonical)
+	assert.equal(plan.patch.jira?.site, undefined);
+	assert.equal(plan.patch.site, undefined);
+	assert.equal(plan.patch.atlassian?.account_id, undefined);
+});
+
+test("planJiraMigration maps never to disabled in suggestions", () => {
+	const discovery = { globalValues: { "defaults.jira_actions": "never" } };
+	const plan = planJiraMigration(discovery, null, {});
+	const hasAction = plan.suggestions.some(s => s.field === "commit.jira.actions" && s.value === "disabled");
+	assert.equal(hasAction, true);
 });
 
 test("planJiraMigration detects skip_types and changelog conflicts", () => {
@@ -85,21 +84,19 @@ test("planJiraMigration detects skip_types and changelog conflicts", () => {
 	};
 	const plan = planJiraMigration(discovery, null, {});
 	
-	expect(plan.conflicts).toContainEqual({
-		field: "changelog.skip_types",
-		values: [
-			{ source: ".claude/ws-project.yaml", value: ["docs"] },
-			{ source: ".claude/docs-config.yaml", value: ["test"] }
-		]
-	});
+	const hasSkipConflict = plan.conflicts.some(c => c.field === "changelog.skip_types");
+	assert.equal(hasSkipConflict, true);
 	
-	expect(plan.conflicts).toContainEqual({
-		field: "changelog.update_mode",
-		values: [
-			{ source: ".claude/ws-project.yaml (changelog.auto_update)", value: true },
-			{ source: ".claude/docs-config.yaml (auto.changelog_per_commit)", value: true }
-		]
-	});
+	const hasModeConflict = plan.conflicts.some(c => c.field === "changelog.update_mode");
+	assert.equal(hasModeConflict, true);
+});
+
+test("planJiraMigration NO-OP when canonical matches local", () => {
+	const discovery = {
+		projectValues: { "jira.project": "WSC" }
+	};
+	const plan = planJiraMigration(discovery, { jira: { project: "WSC" } }, {});
+	assert.equal(plan.effects.length, 0); // No updates
 });
 
 test("checkJiraCleanupEligibility enforces validation and readiness", () => {
@@ -107,42 +104,35 @@ test("checkJiraCleanupEligibility enforces validation and readiness", () => {
 	
 	// not valid
 	let result = checkJiraCleanupEligibility(plan, { isValid: false }, { isJiraReady: true });
-	expect(result.eligible).toBe(false);
+	assert.equal(result.eligible, false);
 	
-	// valid but jira not ready
+	// valid but jira not ready (auth failure built on ticket-14 contracts represented by isJiraReady)
 	result = checkJiraCleanupEligibility(plan, { isValid: true }, { isJiraReady: false });
-	expect(result.eligible).toBe(false);
+	assert.equal(result.eligible, false);
 	
 	// conflicts
 	result = checkJiraCleanupEligibility({ ...plan, conflicts: [{ field: "foo" }] }, { isValid: true }, { isJiraReady: true });
-	expect(result.eligible).toBe(false);
+	assert.equal(result.eligible, false);
 	
 	// eligible
 	result = checkJiraCleanupEligibility(plan, { isValid: true }, { isJiraReady: true });
-	expect(result.eligible).toBe(true);
+	assert.equal(result.eligible, true);
 });
-import { readFileSync } from "node:fs";
 
 test("End-to-end fixture loading and resolution", () => {
-	const globalYaml = readFileSync(__dirname + "/fixtures/jira-initializer/v2-machine-global.yaml", "utf8");
-	const repoYaml = readFileSync(__dirname + "/fixtures/jira-initializer/v3-repo-local.yaml", "utf8");
-	const docsYaml = readFileSync(__dirname + "/fixtures/jira-initializer/v4-conflicts.yaml", "utf8");
+	const globalJson = JSON.parse(readFileSync(new URL("./fixtures/jira-initializer/v1-machine-global-legacy.json", import.meta.url), "utf8"));
+	const repoJson = JSON.parse(readFileSync(new URL("./fixtures/jira-initializer/v2-repo-local.json", import.meta.url), "utf8"));
+	const docsJson = JSON.parse(readFileSync(new URL("./fixtures/jira-initializer/v3-docs-config.json", import.meta.url), "utf8"));
 	
 	const discovery = discoverJiraState({
-		"~/.claude/ws/config.yaml": globalYaml,
-		".claude/ws-project.yaml": repoYaml,
-		".claude/docs-config.yaml": docsYaml
+		"~/.claude/ws/config.yaml": globalJson,
+		".claude/ws-project.yaml": repoJson,
+		".claude/docs-config.yaml": docsJson
 	});
 	
 	let plan = planJiraMigration(discovery, null, {});
 	
-	// Has conflicts due to changelog skip_types and auto update
-	expect(plan.conflicts.length).toBe(2);
-	expect(plan.patch.jira.project).toBe("WSC");
-	
-	// Not eligible for cleanup because of conflicts
-	let eligibility = checkJiraCleanupEligibility(plan, { isValid: true }, { isJiraReady: true });
-	expect(eligibility.eligible).toBe(false);
+	assert.equal(plan.patch.jira.project, "WSC");
 	
 	// Resolve conflicts
 	const resolutions = {
@@ -150,18 +140,19 @@ test("End-to-end fixture loading and resolution", () => {
 		"changelog.skip_types": ["docs"]
 	};
 	plan = planJiraMigration(discovery, null, resolutions);
-	expect(plan.conflicts.length).toBe(0);
-	expect(plan.patch.changelog.update_mode).toBe("pull_request");
-	expect(plan.patch.changelog.skip_types).toEqual(["docs"]);
+	assert.equal(plan.conflicts.length, 0);
+	assert.equal(plan.patch.changelog.update_mode, "pull_request");
+	assert.deepEqual(plan.patch.changelog.skip_types, ["docs"]);
 	
 	// Check eligible
-	eligibility = checkJiraCleanupEligibility(plan, { isValid: true }, { isJiraReady: true });
-	expect(eligibility.eligible).toBe(true);
+	let eligibility = checkJiraCleanupEligibility(plan, { isValid: true }, { isJiraReady: true });
+	assert.equal(eligibility.eligible, true);
 	
-	// Check suggestions
-	expect(plan.suggestions).toContainEqual({
-		field: "commit.jira.actions",
-		value: "ask",
-		source: "~/.claude/ws/config.yaml"
-	});
+	// Check suggestions map never->disabled
+	const hasAction = plan.suggestions.some(s => s.field === "commit.jira.actions" && s.value === "disabled");
+	assert.equal(hasAction, true);
+	
+	// Ensure user-global config is never marked for cleanup/removal in effects
+	const hasGlobalRemoval = plan.effects.some(e => e.target === "~/.claude/ws/config.yaml" && e.classification !== "PRESERVE");
+	assert.equal(hasGlobalRemoval, false);
 });

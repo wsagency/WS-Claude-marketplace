@@ -1,8 +1,0 @@
-# ~/.claude/ws/config.yaml
-defaults:
-  jira_actions: ask
-ui:
-  session_start_dashboard: true
-jira:
-  site: wsagency.atlassian.net
-  account_id: 1234

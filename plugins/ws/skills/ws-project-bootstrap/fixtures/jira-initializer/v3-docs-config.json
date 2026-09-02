@@ -1,0 +1,11 @@
+{
+  "auto": {
+    "changelog_per_commit": false,
+    "adr_for_arch_changes": true
+  },
+  "docs": {
+    "changelog": {
+      "skip_types": ["test", "style"]
+    }
+  }
+}

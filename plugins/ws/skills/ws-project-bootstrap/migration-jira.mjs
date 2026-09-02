@@ -1,74 +1,47 @@
-export function parseYamlLike(content) {
-	if (!content) return {};
-	const result = {};
-	let currentContext = [];
-	let currentIndent = 0;
-	
-	const lines = content.split('\n');
-	for (const line of lines) {
-		const trimmed = line.trim();
-		if (!trimmed || trimmed.startsWith('#')) continue;
-		
-		const indentMatch = line.match(/^(\s*)/);
-		const indent = indentMatch ? indentMatch[1].length : 0;
-		
-		while (currentContext.length > 0 && indent <= currentContext[currentContext.length - 1].indent) {
-			currentContext.pop();
-		}
-		
-		const colonIdx = trimmed.indexOf(':');
-		if (colonIdx === -1) continue;
-		
-		const key = trimmed.slice(0, colonIdx).trim();
-		let valueStr = trimmed.slice(colonIdx + 1).trim();
-		
-		// Remove inline comments
-		const commentIdx = valueStr.indexOf('#');
-		if (commentIdx !== -1) {
-			valueStr = valueStr.slice(0, commentIdx).trim();
-		}
-		
-		if (!valueStr) {
-			currentContext.push({ key, indent });
-			continue;
-		}
-		
-		let value = valueStr;
-		if (value === 'true') value = true;
-		else if (value === 'false') value = false;
-		else if (!isNaN(Number(value)) && value !== '') value = Number(value);
-		else if (value.startsWith('[') && value.endsWith(']')) {
-			value = value.slice(1, -1).split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
-		} else if (value.startsWith('"') && value.endsWith('"')) {
-			value = value.slice(1, -1);
-		} else if (value.startsWith("'") && value.endsWith("'")) {
-			value = value.slice(1, -1);
-		}
-		
-		const path = currentContext.map(c => c.key).concat(key).join('.');
-		result[path] = value;
-	}
-	
-	return result;
-}
-
 export function discoverJiraState(snapshots) {
-	const globalContent = snapshots["~/.claude/ws/config.yaml"];
-	const projectContent = snapshots[".claude/ws-project.yaml"];
-	const docsContent = snapshots[".claude/docs-config.yaml"];
+	const globalValues = snapshots["~/.claude/ws/config.yaml"] || {};
+	const projectValues = snapshots[".claude/ws-project.yaml"] || {};
+	const docsValues = snapshots[".claude/docs-config.yaml"] || {};
 	
-	const globalValues = parseYamlLike(globalContent);
-	const projectValues = parseYamlLike(projectContent);
-	const docsValues = parseYamlLike(docsContent);
+	const unrecognized = [];
+	const knownGlobalKeys = ["jira.site", "atlassian.cloud_id", "atlassian.account_id", "defaults.jira_actions", "defaults.pr_transition", "defaults.smart_commit_trailer", "defaults.commit_comment", "ui.session_start_dashboard"];
+	const knownProjectKeys = ["jira.project", "jira.board", "jira.default_issue_type", "changelog.path", "changelog.skip_types", "changelog.auto_update", "hooks.session_start_dashboard"];
+	const knownDocsKeys = ["auto.changelog_per_commit", "auto.adr_for_arch_changes", "docs.changelog.skip_types", "docs.user_track", "docs.dev_track", "docs.default_audience", "docs.default_scope"];
 	
+	const flattenKeys = (obj, prefix = '') => {
+		return Object.keys(obj).reduce((acc, k) => {
+			const pre = prefix.length ? prefix + '.' : '';
+			if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k])) {
+				Object.assign(acc, flattenKeys(obj[k], pre + k));
+			} else {
+				acc[pre + k] = obj[k];
+			}
+			return acc;
+		}, {});
+	};
+
+	const flatGlobal = flattenKeys(globalValues);
+	const flatProject = flattenKeys(projectValues);
+	const flatDocs = flattenKeys(docsValues);
+	
+	for (const key of Object.keys(flatGlobal)) {
+		if (!knownGlobalKeys.includes(key)) unrecognized.push({ source: "~/.claude/ws/config.yaml", key, value: flatGlobal[key] });
+	}
+	for (const key of Object.keys(flatProject)) {
+		if (!knownProjectKeys.includes(key)) unrecognized.push({ source: ".claude/ws-project.yaml", key, value: flatProject[key] });
+	}
+	for (const key of Object.keys(flatDocs)) {
+		if (!knownDocsKeys.includes(key)) unrecognized.push({ source: ".claude/docs-config.yaml", key, value: flatDocs[key] });
+	}
+
 	return {
-		hasGlobalConfig: !!globalContent,
-		hasProjectConfig: !!projectContent,
-		hasDocsConfig: !!docsContent,
-		globalValues,
-		projectValues,
-		docsValues,
-		unrecognized: []
+		hasGlobalConfig: Object.keys(globalValues).length > 0,
+		hasProjectConfig: Object.keys(projectValues).length > 0,
+		hasDocsConfig: Object.keys(docsValues).length > 0,
+		globalValues: flatGlobal,
+		projectValues: flatProject,
+		docsValues: flatDocs,
+		unrecognized
 	};
 }
 
@@ -101,6 +74,7 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 
 	// Local mappings
 	const { projectValues = {}, docsValues = {}, globalValues = {} } = discovery;
+	const trackedFields = new Set();
 	
 	// Helper for local values
 	const handleLocal = (legacyKey, canonicalKey, transform = v => v) => {
@@ -113,24 +87,27 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 			localVal = resolutions[canonicalKey];
 			if (localVal !== undefined && localVal !== null) {
 				setPatch(canonicalKey, transform(localVal));
+				trackedFields.add(canonicalKey);
 			}
 			return;
 		}
 		
 		if (localVal !== undefined) {
 			setPatch(canonicalKey, transform(localVal));
+			trackedFields.add(canonicalKey);
 		}
 	};
+
 
 	handleLocal("jira.project", "jira.project");
 	handleLocal("jira.board", "jira.board");
 	handleLocal("jira.default_issue_type", "jira.default_issue_type");
 	handleLocal("changelog.path", "changelog.path");
-
 	const canonSkipTypes = getCanonical("changelog.skip_types");
 	if (canonSkipTypes === undefined) {
 		if (resolutions && resolutions["changelog.skip_types"] !== undefined) {
 			setPatch("changelog.skip_types", resolutions["changelog.skip_types"]);
+			trackedFields.add("changelog.skip_types");
 		} else {
 			const projSkip = projectValues["changelog.skip_types"];
 			const docsSkip = docsValues["docs.changelog.skip_types"];
@@ -145,8 +122,10 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 				});
 			} else if (projSkip !== undefined) {
 				setPatch("changelog.skip_types", projSkip);
+				trackedFields.add("changelog.skip_types");
 			} else if (docsSkip !== undefined) {
 				setPatch("changelog.skip_types", docsSkip);
+				trackedFields.add("changelog.skip_types");
 			}
 		}
 	}
@@ -157,37 +136,58 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 		const localHook = projectValues["hooks.session_start_dashboard"];
 		if (localHook !== undefined) {
 			setPatch("ui.session_start_dashboard", localHook ? "jira_assignments" : "disabled");
+			trackedFields.add("ui.session_start_dashboard");
 		}
 	}
+
 	// Changelog Mode
 	const canonUpdate = getCanonical("changelog.update_mode");
 	if (canonUpdate === undefined) {
 		if (resolutions && resolutions["changelog.update_mode"] !== undefined) {
 			setPatch("changelog.update_mode", resolutions["changelog.update_mode"]);
+			trackedFields.add("changelog.update_mode");
 		} else {
 			const prUpdate = projectValues["changelog.auto_update"];
 			const commitUpdate = docsValues["auto.changelog_per_commit"];
 			
-			if (prUpdate !== undefined || commitUpdate !== undefined) {
-				if ((prUpdate === true && commitUpdate === true) || (prUpdate === false && commitUpdate === false)) {
+			if (prUpdate === true && commitUpdate === true) {
+				conflicts.push({
+					field: "changelog.update_mode",
+					values: [
+						{ source: ".claude/ws-project.yaml (changelog.auto_update)", value: prUpdate },
+						{ source: ".claude/docs-config.yaml (auto.changelog_per_commit)", value: commitUpdate }
+					]
+				});
+			} else if (prUpdate === true) {
+				setPatch("changelog.update_mode", "pull_request");
+				trackedFields.add("changelog.update_mode");
+			} else if (commitUpdate === true) {
+				setPatch("changelog.update_mode", "commit");
+				trackedFields.add("changelog.update_mode");
+			} else if (prUpdate === false && commitUpdate === false) {
+				setPatch("changelog.update_mode", "disabled");
+				trackedFields.add("changelog.update_mode");
+			} else if (prUpdate === false && commitUpdate === undefined) {
+				setPatch("changelog.update_mode", "disabled");
+				trackedFields.add("changelog.update_mode");
+			} else if ((prUpdate === undefined && commitUpdate === false) || (prUpdate === undefined && commitUpdate === undefined)) {
+				// absent + false -> ask (insufficient evidence)
+				// absent + absent -> ask (insufficient evidence)
+				if (projectValues["changelog.path"] !== undefined || docsValues["docs.changelog.skip_types"] !== undefined) {
 					conflicts.push({
 						field: "changelog.update_mode",
-						values: [
-							{ source: ".claude/ws-project.yaml (changelog.auto_update)", value: prUpdate },
-							{ source: ".claude/docs-config.yaml (auto.changelog_per_commit)", value: commitUpdate }
-						]
+						values: [{ source: "inference", value: "ambiguous/insufficient evidence" }]
 					});
-				} else if (prUpdate === true || commitUpdate === false) {
-					setPatch("changelog.update_mode", "pull_request");
-				} else if (prUpdate === false || commitUpdate === true) {
-					setPatch("changelog.update_mode", "commit");
 				}
 			}
 		}
 	}
 
+
 	// Suggestions from Global
-	const globalJiraActions = globalValues["defaults.jira_actions"];
+	let globalJiraActions = globalValues["defaults.jira_actions"];
+	if (globalJiraActions === "never") globalJiraActions = "disabled";
+	
 	if (globalJiraActions !== undefined && getCanonical("commit.jira.actions") === undefined) {
 		suggestions.push({
 			field: "commit.jira.actions",
@@ -203,6 +203,24 @@ export function planJiraMigration(discovery, currentCanonical, resolutions) {
 			value: globalUi ? "jira_assignments" : "disabled",
 			source: "~/.claude/ws/config.yaml"
 		});
+	}
+	
+	// Categorized effects
+	for (const field of trackedFields) {
+		effects.push({
+			classification: "UPDATE",
+			target: ".wsagency/config.yaml",
+			fields: [field]
+		});
+	}
+	for (const conflict of conflicts) {
+		effects.push({
+			classification: "BLOCKING_CONFLICT",
+			target: ".wsagency/config.yaml",
+			fields: [conflict.field],
+			reason: "Unresolved legacy conflict"
+		});
+		blockers.push(`Unresolved conflict for ${conflict.field}`);
 	}
 	
 	return { patch, conflicts, suggestions, effects, blockers };

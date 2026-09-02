@@ -1,0 +1,17 @@
+{
+  "jira": {
+    "site": "wsagency.atlassian.net"
+  },
+  "atlassian": {
+    "cloud_id": "c1234",
+    "account_id": "a1234"
+  },
+  "defaults": {
+    "jira_actions": "never",
+    "pr_transition": "in-review",
+    "smart_commit_trailer": true
+  },
+  "ui": {
+    "session_start_dashboard": true
+  }
+}

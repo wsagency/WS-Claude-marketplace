@@ -1,6 +1,0 @@
-# .claude/docs-config.yaml
-auto:
-  changelog_per_commit: true
-docs:
-  changelog:
-    skip_types: [test, style]
