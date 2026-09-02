@@ -1,0 +1,11 @@
+# .claude/ws-project.yaml
+jira:
+  project: WSC
+  board: 42
+  default_issue_type: Task
+changelog:
+  path: CHANGELOG.md
+  skip_types: [docs, chore, test]
+  auto_update: true
+hooks:
+  session_start_dashboard: true
