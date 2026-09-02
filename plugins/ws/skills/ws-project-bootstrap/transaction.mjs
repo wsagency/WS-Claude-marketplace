@@ -171,11 +171,10 @@ function managedRegionAligned(content, desired, start, end) {
 	const endIndex = content.indexOf(end, startIndex) + end.length;
 	return content.slice(startIndex, endIndex) === desired.trimEnd();
 }
-
-function discoveryIsAligned(discovery) {
-	if (discovery.projectShape !== "standalone") return false;
+export function discoveryIsAligned(discovery, targetConfig = CANONICAL_CONFIG_YAML) {
+	if (discovery.projectShape !== "standalone" && discovery.projectShape !== "hub_root" && discovery.projectShape !== "hub_subrepository") return false;
 	if (!discovery.machine.sessionDiscipline || !discovery.machine.dangerousGitGuard) return false;
-	if (discovery.entries[".wsagency/config.yaml"]?.content !== CANONICAL_CONFIG_YAML) return false;
+	if (discovery.entries[".wsagency/config.yaml"]?.content !== targetConfig) return false;
 	for (const target of DIRECTORY_TARGETS) {
 		if (discovery.entries[target]?.kind !== "directory") return false;
 	}
@@ -341,7 +340,7 @@ function validateOrigin(origin, injection) {
 	}
 }
 
-function buildPlan(discovery, choices, validationInjection) {
+export function buildPlan(discovery, choices, validationInjection) {
 	const effects = [];
 	const isNotGit = discovery.projectShape === "not_git";
 	const createRepo = isNotGit && choices.createRepository;
@@ -376,19 +375,20 @@ function buildPlan(discovery, choices, validationInjection) {
 	}
 	effects.push(baseEffect(1, "git:origin", "state", originClassification, originReason, null, originAfter));
 
-	if (discovery.projectShape !== "standalone" && discovery.projectShape !== "not_git") {
-		effects.push(baseEffect(2, "project:shape", "state", "BLOCKING_CONFLICT", `This transaction supports standalone repositories, not ${discovery.projectShape}.`, null));
+	if (discovery.projectShape === "not_git" || discovery.projectShape === "standalone" || discovery.projectShape === "hub_root" || discovery.projectShape === "hub_subrepository") {
+		effects.push(baseEffect(2, "project:shape", "state", "NO-OP", `Detected ${discovery.projectShape} repository scope.`, null));
 	} else {
-		effects.push(baseEffect(2, "project:shape", "state", "NO-OP", "Standalone repository scope detected.", null));
+		effects.push(baseEffect(2, "project:shape", "state", "BLOCKING_CONFLICT", `This transaction does not support ${discovery.projectShape}.`, null));
 	}
 
 	const configEntry = discovery.entries[".wsagency/config.yaml"] || { kind: "missing", fingerprint: null };
+	const targetConfig = choices?.targetConfig || CANONICAL_CONFIG_YAML;
 	if (configEntry.kind === "missing") {
-		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "CREATE", "Write the strict versioned recommended Local policy.", configEntry, CANONICAL_CONFIG_YAML));
-	} else if (configEntry.kind === "file" && configEntry.content === CANONICAL_CONFIG_YAML) {
-		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "NO-OP", "Canonical configuration is already aligned.", configEntry, CANONICAL_CONFIG_YAML));
+		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "CREATE", "Write the strict versioned policy.", configEntry, targetConfig));
+	} else if (configEntry.kind === "file" && configEntry.content === targetConfig) {
+		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "NO-OP", "Configuration is already aligned.", configEntry, targetConfig));
 	} else {
-		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "BLOCKING_CONFLICT", "Existing configuration is not the verified recommended Local v1 payload.", configEntry));
+		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", choices?.targetConfig ? "UPDATE" : "BLOCKING_CONFLICT", choices?.targetConfig ? "Apply materialized configuration." : "Existing configuration is not the verified recommended Local v1 payload.", configEntry, choices?.targetConfig ? targetConfig : undefined));
 	}
 
 	effects.push(directoryEffect(20, "dev-docs/tickets/open", discovery));
@@ -459,8 +459,9 @@ function buildPlan(discovery, choices, validationInjection) {
 	return { hash: sha256(JSON.stringify(hashPayload)), scope, effects };
 }
 
-function deriveReadiness(discovery) {
-	const configValid = discovery.entries[".wsagency/config.yaml"]?.content === CANONICAL_CONFIG_YAML;
+export function deriveReadiness(discovery, choices) {
+	const targetConfig = choices?.targetConfig || CANONICAL_CONFIG_YAML;
+	const configValid = discovery.entries[".wsagency/config.yaml"]?.content === targetConfig;
 	const trackerReady =
 		configValid &&
 		discovery.entries["dev-docs/tickets/open"]?.kind === "directory" &&
@@ -468,7 +469,7 @@ function deriveReadiness(discovery) {
 	const runtimeReady = discovery.machine.sessionDiscipline && discovery.machine.dangerousGitGuard;
 	return {
 		configValid,
-		engineeringReady: discoveryIsAligned(discovery),
+		engineeringReady: discoveryIsAligned(discovery, targetConfig),
 		trackerReady,
 		runtimeReady,
 	};
@@ -514,7 +515,7 @@ function failedVerificationReport(plan, readiness) {
 	return verifiedReport(plan, readiness).replace("WS setup verified", "WS setup verification failed");
 }
 
-async function applyPlan(root, plan, injectedFailure) {
+export async function applyPlan(root, plan, injectedFailure) {
 	const operations = [];
 	const completed = [];
 	const pending = [];
@@ -620,7 +621,7 @@ export async function runSetupTransaction(request) {
 		};
 	}
 	if (!hasWrites(plan)) {
-		const readiness = deriveReadiness(request.discovery);
+		const readiness = deriveReadiness(request.discovery, choices);
 		return {
 			discovery: request.discovery,
 			questions: [],
@@ -648,7 +649,7 @@ export async function runSetupTransaction(request) {
 	}
 	const applyResult = await applyPlan(request.root, freshPlan, request.injectedFailure);
 	const verifiedDiscovery = await discoverStandaloneRepository(request.root, request.discovery.machine);
-	const readiness = deriveReadiness(verifiedDiscovery);
+	const readiness = deriveReadiness(verifiedDiscovery, choices);
 
 	if (applyResult.failure) {
 		const f = applyResult.failure;
