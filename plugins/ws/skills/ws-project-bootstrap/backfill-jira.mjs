@@ -46,8 +46,7 @@ export async function auditBackfill(localTickets, syncState, jiraAdapter) {
 			const localHash = hashField(localValue);
 			const jiraHash = hashField(jiraValue);
 			if (localHash === jiraHash) return false;
-			const previousHash = mapping.fieldHashes?.[field];
-			if (previousHash === undefined) return false;
+			const previousHash = mapping.fieldHashes?.[field] || "hash_empty";
 			return localHash !== previousHash && jiraHash !== previousHash;
 		});
 		if (fields.length > 0) {

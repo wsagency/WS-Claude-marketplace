@@ -76,6 +76,8 @@ test("auditBackfill reports same-field conflicts without exposing Local-only met
 		},
 		"LOCAL-2": { id: "LOCAL-2", title: "Before", status: "open" },
 		"LOCAL-3": { id: "LOCAL-3", title: "Legacy local title", status: "open" },
+		"LOCAL-4": { id: "LOCAL-4", title: "Only local", status: "open" },
+		"LOCAL-5": { id: "LOCAL-5", status: "open" },
 	};
 	const syncState = {
 		mappings: {
@@ -87,7 +89,9 @@ test("auditBackfill reports same-field conflicts without exposing Local-only met
 				jiraId: "PROJ-2",
 				fieldHashes: { title: hashField("Before"), status: hashField("open") },
 			},
-			"LOCAL-3": { jiraId: "PROJ-3", fieldHashes: {} },
+			"LOCAL-3": { jiraId: "PROJ-3" },
+			"LOCAL-4": { jiraId: "PROJ-4" },
+			"LOCAL-5": { jiraId: "PROJ-5" },
 		},
 		pendingOperations: [],
 	};
@@ -95,13 +99,19 @@ test("auditBackfill reports same-field conflicts without exposing Local-only met
 		"PROJ-1": { id: "PROJ-1", title: "Remote title", status: "open" },
 		"PROJ-2": { id: "PROJ-2", title: "Remote-only title", status: "open" },
 		"PROJ-3": { id: "PROJ-3", title: "Legacy remote title", status: "open" },
+		"PROJ-4": { id: "PROJ-4", status: "open" },
+		"PROJ-5": { id: "PROJ-5", title: "Only remote", status: "open" },
 	});
 
 	const audit = await auditBackfill(localTickets, syncState, jiraAdapter);
-	assert.deepEqual(audit.conflicting, [{ localId: "LOCAL-1", jiraId: "PROJ-1", fields: ["title"] }]);
+	assert.deepEqual(audit.conflicting, [
+		{ localId: "LOCAL-1", jiraId: "PROJ-1", fields: ["title"] },
+		{ localId: "LOCAL-3", jiraId: "PROJ-3", fields: ["title"] },
+	]);
 	assert.deepEqual(audit.valid, [
 		{ localId: "LOCAL-2", jiraId: "PROJ-2" },
-		{ localId: "LOCAL-3", jiraId: "PROJ-3" },
+		{ localId: "LOCAL-4", jiraId: "PROJ-4" },
+		{ localId: "LOCAL-5", jiraId: "PROJ-5" },
 	]);
 	assert.doesNotMatch(JSON.stringify(audit), /repository-only|claim|secret/);
 });
