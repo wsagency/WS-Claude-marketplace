@@ -221,15 +221,13 @@ export async function discoverStandaloneRepository(root, machine) {
 	for (const target of DIRECTORY_TARGETS) entries[target] = await readSnapshotEntry(resolvedRoot, target, "directory");
 	for (const target of FILE_TARGETS) entries[target] = await readSnapshotEntry(resolvedRoot, target, "file");
 	
-	const dirtyLines = isRepository ? safeRunGit(resolvedRoot, ["status", "--porcelain"])?.split("\n").filter(Boolean) ?? [] : [];
-	const dirty = dirtyLines
-		.filter(line => !line.startsWith("??"))
-		.map(line => {
-			const rawPath = line.substring(3);
-			const pathMatch = rawPath.split(" -> ");
-			const targetPath = pathMatch.length > 1 ? pathMatch[1] : pathMatch[0];
-			return targetPath.replace(/\/$/, "");
-		});
+	const dirtyLines = isRepository ? safeRunGit(resolvedRoot, ["status", "--porcelain", "--untracked-files=all"])?.split("\n").filter(Boolean) ?? [] : [];
+	const dirty = dirtyLines.map(line => {
+		const rawPath = line.substring(3);
+		const pathMatch = rawPath.split(" -> ");
+		const targetPath = pathMatch.length > 1 ? pathMatch[1] : pathMatch[0];
+		return targetPath.replace(/\/$/, "");
+	});
 
 	const discovery = {
 		root: resolvedRoot,
@@ -546,7 +544,7 @@ function verifiedReport(plan, readiness) {
 }
 
 function readinessComplete(readiness) {
-	return readiness.configValid && readiness.engineeringReady && readiness.trackerReady && readiness.runtimeReady && (!readiness.docsConfigured || readiness.docsReady);
+	return readiness.configValid && readiness.engineeringReady && readiness.trackerReady && readiness.runtimeReady;
 }
 
 function failedVerificationReport(plan, readiness) {
@@ -698,6 +696,12 @@ export async function runSetupTransaction(request) {
 			requiresConfirmation: false,
 			operations: applyResult.operations,
 			readiness,
+			failure: {
+				target: f.target,
+				error: f.error.message,
+				completed: [...f.completed],
+				pending: [...f.pending],
+			},
 			report: [
 				`Transaction stopped at ${f.target}: ${f.error.message}`,
 				"No rollback was performed. The repository is in a partial setup state.",

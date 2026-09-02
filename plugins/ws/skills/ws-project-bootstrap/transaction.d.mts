@@ -84,6 +84,13 @@ export interface SetupTransactionRequest {
 	injectedFailure?: { phase: "write" | "verify"; target: string };
 }
 
+export interface SetupTransactionFailure {
+	target: string;
+	error: string;
+	completed: string[];
+	pending: string[];
+}
+
 export interface SetupTransactionResult {
 	discovery: SetupDiscovery;
 	questions: SetupQuestion[];
@@ -91,6 +98,7 @@ export interface SetupTransactionResult {
 	requiresConfirmation: boolean;
 	operations: SetupOperation[];
 	readiness?: SetupReadiness;
+	failure?: SetupTransactionFailure;
 	report: string;
 }
 

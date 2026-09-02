@@ -1,205 +1,440 @@
-import { describe, test, before, after } from "node:test";
-import assert from "node:assert";
+import { afterEach, describe, test } from "node:test";
+import assert from "node:assert/strict";
 import * as path from "node:path";
-import { mkdtemp, rm, writeFile, mkdir } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
-import { discoverHubTransaction, runHubTransaction, mergeConfig } from "./hub-transaction.mjs";
+import { discoverHubTransaction, mergeConfig, runHubTransaction } from "./hub-transaction.mjs";
 import { CANONICAL_CONFIG_YAML } from "./transaction.mjs";
 
-describe("Hub Transaction Core Logic", () => {
-	let tempDir;
+const MACHINE = { activeHarness: "omp", sessionDiscipline: true, dangerousGitGuard: true };
+const temporaryRoots = [];
 
-	before(async () => {
-		tempDir = await mkdtemp(path.join(tmpdir(), "ws-hub-test-"));
-	});
+function git(root, ...args) {
+	return execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+}
 
-	after(async () => {
-		if (tempDir) await rm(tempDir, { recursive: true, force: true });
-	});
-
-	test("mergeConfig overrides hub defaults with valid explicit child values", () => {
-		const hub = CANONICAL_CONFIG_YAML;
-		const child = `schema_version: 1\ntracker:\n  primary: jira\n  pull_requests: triage\njira:\n  project: PROJ\n  default_issue_type: Task\n  sync: disabled\n`;
-		const merged = mergeConfig(hub, child);
-		assert.ok(merged.includes("primary: jira"));
-		assert.ok(merged.includes("project: PROJ"));
-		// Contains hub default for something else
-		assert.ok(merged.includes("layout: single_context"));
-	});
-
-	test("mergeConfig gracefully falls back when parsing fails", () => {
-		const hub = CANONICAL_CONFIG_YAML;
-		const child = `malformed[yaml-!`;
-		const merged = mergeConfig(hub, child);
-		assert.equal(merged, child);
-	});
-});
-
-describe("Hub Transaction Real Worktree Scenarios", () => {
-	let rootDir;
-
-	async function setupGitRepo(repoPath) {
-		await mkdir(repoPath, { recursive: true });
-		execFileSync("git", ["init"], { cwd: repoPath });
+async function exists(target) {
+	try {
+		await access(target);
+		return true;
+	} catch {
+		return false;
 	}
+}
 
-	before(async () => {
-		rootDir = await mkdtemp(path.join(tmpdir(), "ws-hub-real-test-"));
-		
-		// Hub
-		await setupGitRepo(rootDir);
-		await writeFile(path.join(rootDir, "project.yaml"), `project:
-  name: test-hub
-repos:
-  - name: work1
-    path: ./work1
-    type: working
-  - name: work2
-    path: ./work2
-    type: working
-  - name: out1
-    path: ./out1
-    type: output
-  - name: work3
-    path: ./work3
-    type: working`);
-		
-		// Sub-repos
-		await setupGitRepo(path.join(rootDir, "work1"));
-		await setupGitRepo(path.join(rootDir, "work2"));
-		await setupGitRepo(path.join(rootDir, "out1"));
-		await setupGitRepo(path.join(rootDir, "work3"));
-		
-		// Provide explicit config for work2
-		await mkdir(path.join(rootDir, "work2", ".wsagency"), { recursive: true });
-		await writeFile(path.join(rootDir, "work2", ".wsagency", "config.yaml"), `schema_version: 1\ntracker:\n  primary: jira\n  pull_requests: triage\njira:\n  project: CHILD\n  default_issue_type: Task\n  sync: disabled\n`);
+async function initRepository(root, name, { origin = `https://example.test/ws/${name}.git` } = {}) {
+	await mkdir(root, { recursive: true });
+	git(root, "init", "--quiet");
+	git(root, "config", "user.name", "WS Test");
+	git(root, "config", "user.email", "ws-test@example.test");
+	await writeFile(path.join(root, "README.md"), `# ${name}\n`);
+	git(root, "add", "README.md");
+	git(root, "commit", "--quiet", "-m", "test: seed repository");
+	if (origin) git(root, "remote", "add", "origin", origin);
+}
+
+function registryEntry({ name, repoPath = `./${name}`, type = "working", purpose, url = `https://example.test/ws/${name}.git` }) {
+	return [
+		`  - name: ${name}`,
+		`    path: ${repoPath}`,
+		`    url: ${url}`,
+		`    description: ${name} repository`,
+		`    type: ${type}`,
+		...(purpose ? [`    purpose: ${purpose}`] : []),
+	].join("\n");
+}
+
+async function createHub(entries, { create = [] } = {}) {
+	const parent = await mkdtemp(path.join(tmpdir(), "ws-hub-transaction-"));
+	temporaryRoots.push(parent);
+	const hubRoot = path.join(parent, "product-main");
+	await initRepository(hubRoot, "product-main");
+	for (const repository of create) {
+		if (repository.kind === "directory") await mkdir(path.join(hubRoot, repository.name), { recursive: true });
+		else if (repository.kind === "file") await writeFile(path.join(hubRoot, repository.name), "not a repository\n");
+		else await initRepository(path.join(hubRoot, repository.name), repository.name, { origin: repository.origin });
+	}
+	const ignored = create.filter(repository => repository.kind !== "file").map(repository => `/${repository.name}/`).join("\n");
+	await writeFile(path.join(hubRoot, ".gitignore"), `${ignored}${ignored ? "\n" : ""}`);
+	await writeFile(path.join(hubRoot, "project.yaml"), [
+		"project:",
+		"  name: product",
+		"  description: Test product",
+		"  conventions: 2",
+		"repos:",
+		...entries,
+		"",
+	].join("\n"));
+	git(hubRoot, "add", ".gitignore", "project.yaml");
+	git(hubRoot, "commit", "--quiet", "-m", "test: add hub registry");
+	return { parent, hubRoot };
+}
+
+afterEach(async () => {
+	await Promise.all(temporaryRoots.splice(0).map(root => rm(root, { recursive: true, force: true })));
+});
+
+describe("hub configuration materialization", () => {
+	test("valid explicit child values win over hub defaults", () => {
+		const child = CANONICAL_CONFIG_YAML.replace("primary: local", "primary: github");
+		const merged = mergeConfig(CANONICAL_CONFIG_YAML, child);
+		assert.match(merged, /primary: github/);
+		assert.match(merged, /layout: single_context/);
 	});
 
-	after(async () => {
-		if (rootDir) await rm(rootDir, { recursive: true, force: true });
-	});
-
-	const machine = { activeHarness: "omp", sessionDiscipline: true, dangerousGitGuard: true };
-
-	let initialDiscovery;
-	let initialPlan;
-
-	test("Hub discovery scope, registry rejection (implicit via working exclusions), and input/output exclusions", async () => {
-		initialDiscovery = await discoverHubTransaction(rootDir, machine);
-		
-		assert.strictEqual(initialDiscovery.registryError, null);
-		assert.strictEqual(initialDiscovery.hub.projectShape, "hub_root");
-		assert.strictEqual(initialDiscovery.working.length, 3);
-		assert.strictEqual(initialDiscovery.working[0].name, "work1");
-		assert.strictEqual(initialDiscovery.working[1].name, "work2");
-		assert.strictEqual(initialDiscovery.working[2].name, "work3");
-		
-		// Exclusions check
-		assert.strictEqual(initialDiscovery.excluded.length, 1);
-		assert.strictEqual(initialDiscovery.excluded[0].name, "out1");
-		assert.ok(initialDiscovery.excluded[0].reason.includes("output"));
-	});
-
-	test("Hub plan builds successfully and materializes configs", async () => {
-		const req = {
-			root: rootDir,
-			discovery: initialDiscovery,
-			choices: {
-				removedRepositories: ["work3"] // Selection removal
-			}
-		};
-		const res = await runHubTransaction(req);
-		initialPlan = res.plan;
-		
-		assert.ok(initialPlan);
-		assert.ok(res.report.includes("Awaiting authorization"));
-		assert.strictEqual(initialPlan.working.length, 2); // work3 removed
-		
-		const work2Plan = initialPlan.working.find(w => w.name === "work2").plan;
-		const work2ConfigEffect = work2Plan.effects.find(e => e.target === ".wsagency/config.yaml");
-		
-		assert.ok(work2ConfigEffect.after.includes("project: CHILD"));
-		assert.ok(work2ConfigEffect.after.includes("layout: single_context")); // from hub default
-	});
-
-	test("First-failure stop correctly aborts sequential writes", async () => {
-		const req = {
-			root: rootDir,
-			discovery: initialDiscovery,
-			authorization: initialPlan.hash,
-			choices: {
-				removedRepositories: ["work3"]
-			},
-			injectedFailure: {
-				targetRoot: path.join(rootDir, "work1"),
-				phase: "write",
-				target: ".wsagency/config.yaml"
-			}
-		};
-		
-		const res = await runHubTransaction(req);
-		assert.ok(res.report.includes("Injected write failure"));
-		assert.ok(res.report.includes("skipped due to previous failure"), "work2 should be skipped because work1 failed");
-	});
-
-	test("Interrupted hub transactions require a fresh plan, then aligned reruns stay prompt-free", async () => {
-		const resumedDiscovery = await discoverHubTransaction(rootDir, machine);
-		const resumedPlan = await runHubTransaction({
-			root: rootDir,
-			discovery: resumedDiscovery,
-			choices: { removedRepositories: ["work3"] },
-		});
-		const res = await runHubTransaction({
-			root: rootDir,
-			discovery: resumedDiscovery,
-			authorization: resumedPlan.plan.hash,
-			choices: { removedRepositories: ["work3"] },
-		});
-		assert.ok(res.report.includes("WS setup verified"));
-		assert.ok(!res.report.includes("skipped due to previous failure"));
-		
-		// Rediscover and run again (no-op)
-		const alignedDiscovery = await discoverHubTransaction(rootDir, machine);
-		const rerunReq = {
-			root: rootDir,
-			discovery: alignedDiscovery,
-			choices: { removedRepositories: ["work3"] }
-		};
-		const rerunRes = await runHubTransaction(rerunReq);
-		
-		assert.ok(rerunRes.report.includes("No changes required"));
+	test("known older canonical state is migrated to schema version one", async () => {
+		const { hubRoot } = await createHub([]);
+		await mkdir(path.join(hubRoot, ".wsagency"));
+		await writeFile(path.join(hubRoot, ".wsagency", "config.yaml"), "schema_version: 0\n");
+		git(hubRoot, "add", ".wsagency/config.yaml");
+		git(hubRoot, "commit", "--quiet", "-m", "test: add older canonical config");
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const planned = await runHubTransaction({ root: hubRoot, discovery });
+		assert.equal(
+			planned.plan.hub.effects.find(effect => effect.target === ".wsagency/config.yaml").classification,
+			"UPDATE",
+		);
+		const applied = await runHubTransaction({ root: hubRoot, discovery, authorization: planned.plan.hash });
+		assert.match(await readFile(path.join(hubRoot, ".wsagency", "config.yaml"), "utf8"), /^schema_version: 1$/m);
 	});
 });
 
-describe("Hub Sub-repository non-fan-out", () => {
-	let subRepoDir;
-	
-	before(async () => {
-		subRepoDir = await mkdtemp(path.join(tmpdir(), "ws-hub-sub-test-"));
-		await mkdir(subRepoDir, { recursive: true });
-		execFileSync("git", ["init"], { cwd: subRepoDir });
-		await writeFile(path.join(subRepoDir, "project.yaml"), "project:\n  name: ignored-if-ancestor");
-		
-		const nestedDir = path.join(subRepoDir, "nested");
-		await mkdir(nestedDir, { recursive: true });
-		execFileSync("git", ["init"], { cwd: nestedDir });
+describe("complete hub preflight", () => {
+	test("missing, escaping, non-git, inaccessible, invalid-origin, and duplicate selected targets block every write until explicitly excluded", async () => {
+		const outside = await mkdtemp(path.join(tmpdir(), "ws-hub-outside-"));
+		temporaryRoots.push(outside);
+		await initRepository(outside, "escape");
+		const entries = [
+			registryEntry({ name: "valid" }),
+			registryEntry({ name: "missing" }),
+			registryEntry({ name: "escape", repoPath: path.relative(path.join(outside, "placeholder"), outside) === "." ? "../escape" : "../../escape" }),
+			registryEntry({ name: "non-git" }),
+			registryEntry({ name: "not-directory" }),
+			registryEntry({ name: "bad-origin" }),
+			registryEntry({ name: "duplicate", repoPath: "./valid", url: "https://example.test/ws/valid.git" }),
+			registryEntry({ name: "delivery", type: "input" }),
+			registryEntry({ name: "product-docs", type: "output", purpose: "docs" }),
+		];
+		const { hubRoot } = await createHub(entries, {
+			create: [
+				{ name: "valid" },
+				{ name: "non-git", kind: "directory" },
+				{ name: "not-directory", kind: "file" },
+				{ name: "bad-origin", origin: null },
+			],
+		});
+
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		assert.deepEqual(discovery.working.map(repository => repository.name), [
+			"valid",
+			"missing",
+			"escape",
+			"non-git",
+			"not-directory",
+			"bad-origin",
+			"duplicate",
+		]);
+		assert.deepEqual(discovery.excluded.map(repository => repository.name), ["delivery", "product-docs"]);
+
+		const blocked = await runHubTransaction({ root: hubRoot, discovery });
+		assert.equal(blocked.requiresConfirmation, false);
+		assert.equal(blocked.operations.length, 0);
+		assert.deepEqual(new Set(blocked.blockers.map(blocker => blocker.repository)), new Set([
+			"missing",
+			"escape",
+			"non-git",
+			"not-directory",
+			"bad-origin",
+			"duplicate",
+		]));
+		assert.equal(await exists(path.join(hubRoot, ".wsagency")), false);
+		assert.equal(await exists(path.join(hubRoot, "valid", ".wsagency")), false);
+
+		const removedRepositories = ["missing", "escape", "non-git", "not-directory", "bad-origin", "duplicate"];
+		const selectable = await runHubTransaction({ root: hubRoot, discovery, choices: { removedRepositories } });
+		assert.equal(selectable.requiresConfirmation, true);
+		assert.equal(selectable.blockers.length, 0);
+		assert.deepEqual(
+			selectable.outcomes.filter(outcome => outcome.status === "excluded").map(outcome => outcome.repository),
+			["delivery", "product-docs", ...removedRepositories],
+		);
+	});
+});
+
+describe("dirty-path preflight", () => {
+	test("names and preserves tracked and untracked dirty paths outside the manifest", async () => {
+		const { hubRoot } = await createHub([registryEntry({ name: "work" })], { create: [{ name: "work" }] });
+		await writeFile(path.join(hubRoot, "notes.txt"), "baseline\n");
+		git(hubRoot, "add", "notes.txt");
+		git(hubRoot, "commit", "--quiet", "-m", "test: add authored notes");
+		await writeFile(path.join(hubRoot, "notes.txt"), "authored change\n");
+		await writeFile(path.join(hubRoot, "scratch.txt"), "untracked authored work\n");
+
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const result = await runHubTransaction({ root: hubRoot, discovery });
+		assert.equal(result.blockers.length, 0);
+		const hubPlan = result.plan.targets.find(target => target.name === "hub").core;
+		const preservedDirty = hubPlan.effects
+			.filter(effect => effect.classification === "PRESERVE" && effect.reason.includes("uncommitted"))
+			.map(effect => effect.target);
+		assert.deepEqual(preservedDirty, ["notes.txt", "scratch.txt"]);
 	});
 
-	after(async () => {
-		if (subRepoDir) await rm(subRepoDir, { recursive: true, force: true });
+	test("blocks dirty planned files and unprovable managed ranges before every repository write", async () => {
+		const { hubRoot } = await createHub([registryEntry({ name: "work" })], { create: [{ name: "work" }] });
+		await writeFile(path.join(hubRoot, "CONTEXT.md"), "# Authored context\n");
+		await writeFile(path.join(hubRoot, "AGENTS.md"), "# Authored instructions\n");
+		git(hubRoot, "add", "CONTEXT.md", "AGENTS.md");
+		git(hubRoot, "commit", "--quiet", "-m", "test: add authored setup paths");
+		await writeFile(path.join(hubRoot, "CONTEXT.md"), "# Dirty authored context\n");
+		await writeFile(path.join(hubRoot, "AGENTS.md"), "# Dirty authored instructions\n");
+
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const result = await runHubTransaction({ root: hubRoot, discovery });
+		assert.equal(result.requiresConfirmation, false);
+		assert.equal(result.operations.length, 0);
+		assert.deepEqual(
+			result.blockers.filter(blocker => blocker.repository === "hub").map(blocker => blocker.target),
+			["CONTEXT.md", "AGENTS.md"],
+		);
+		assert.equal(await exists(path.join(hubRoot, ".wsagency")), false);
+		assert.equal(await exists(path.join(hubRoot, "work", ".wsagency")), false);
+	});
+});
+
+describe("ordered hub apply", () => {
+	test("runs machine prerequisites once, every core in registry order, then every docs bootstrap", async () => {
+		const entries = [
+			registryEntry({ name: "work-a" }),
+			registryEntry({ name: "delivery", type: "input" }),
+			registryEntry({ name: "work-b" }),
+			registryEntry({ name: "product-docs", type: "output", purpose: "docs" }),
+		];
+		const { hubRoot } = await createHub(entries, { create: [{ name: "work-a" }, { name: "work-b" }] });
+		await writeFile(path.join(hubRoot, "CONTEXT.md"), "# Authored product context\n");
+		git(hubRoot, "add", "CONTEXT.md");
+		git(hubRoot, "commit", "--quiet", "-m", "test: add authored product context");
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const choices = { documentation: true };
+		const planned = await runHubTransaction({ root: hubRoot, discovery, choices });
+		let prerequisiteCalls = 0;
+		const applied = await runHubTransaction({
+			root: hubRoot,
+			discovery,
+			choices,
+			authorization: planned.plan.hash,
+			machinePrerequisite: async () => {
+				prerequisiteCalls += 1;
+			},
+		});
+
+		assert.equal(prerequisiteCalls, 1);
+		const boundaries = applied.operations
+			.map(operation => `${operation.repository}:${operation.phase}`)
+			.filter((boundary, index, all) => index === 0 || boundary !== all[index - 1]);
+		assert.deepEqual(boundaries, [
+			"machine:machine",
+			"hub:core",
+			"work-a:core",
+			"work-b:core",
+			"hub:docs",
+			"work-a:docs",
+			"work-b:docs",
+		]);
+		const firstDocs = applied.operations.findIndex(operation => operation.phase === "docs");
+		const lastCore = applied.operations.findLastIndex(operation => operation.phase === "core");
+		assert.ok(firstDocs > lastCore);
+		assert.equal(await readFile(path.join(hubRoot, "dev-docs/index.md"), "utf8"), "# Internal Documentation\n\nWelcome to the dev-docs.\n");
+		assert.equal(await readFile(path.join(hubRoot, "work-b", "dev-docs/index.md"), "utf8"), "# Internal Documentation\n\nWelcome to the dev-docs.\n");
+		assert.deepEqual(
+			new Set(applied.outcomes.map(outcome => outcome.status)),
+			new Set(["completed", "preserved", "skipped", "excluded", "no-op"]),
+		);
+	});
+});
+
+describe("drift and first-failure recovery", () => {
+	test("rediscovers the entire selected manifest at apply and writes nothing when registry state drifted", async () => {
+		const { hubRoot } = await createHub([registryEntry({ name: "work" })], { create: [{ name: "work" }] });
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const planned = await runHubTransaction({ root: hubRoot, discovery });
+		await writeFile(path.join(hubRoot, "project.yaml"), `${await readFile(path.join(hubRoot, "project.yaml"), "utf8")}# drift\n`);
+
+		const applied = await runHubTransaction({ root: hubRoot, discovery, authorization: planned.plan.hash });
+		assert.equal(applied.operations.length, 0);
+		assert.match(applied.report, /Authorization is stale/);
+		assert.equal(await exists(path.join(hubRoot, ".wsagency")), false);
+		assert.equal(await exists(path.join(hubRoot, "work", ".wsagency")), false);
 	});
 
-	test("A sub-repo invocation remains current-repo only", async () => {
-		// For a sub-repository, we wouldn't use discoverHubTransaction; we'd use discoverStandaloneRepository
-		// The test ensures the regular logic doesn't magically fan out.
-		const { discoverStandaloneRepository } = await import("./transaction.mjs");
-		const machine = { activeHarness: "omp", sessionDiscipline: true, dangerousGitGuard: true };
-		const nestedDir = path.join(subRepoDir, "nested");
-		const discovery = await discoverStandaloneRepository(nestedDir, machine);
-		
-		assert.strictEqual(discovery.projectShape, "hub_subrepository");
-		// Since it's evaluated as a standalone (subrepo), it does not fan out.
-		assert.ok(!discovery.working);
+	test("revalidates each root immediately before its first write", async t => {
+		for (const failingName of ["hub", "work-a", "work-b"]) {
+			await t.test(failingName, async () => {
+				const { hubRoot } = await createHub(
+					[registryEntry({ name: "work-a" }), registryEntry({ name: "work-b" })],
+					{ create: [{ name: "work-a" }, { name: "work-b" }] },
+				);
+				const roots = { hub: hubRoot, "work-a": path.join(hubRoot, "work-a"), "work-b": path.join(hubRoot, "work-b") };
+				const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+				const planned = await runHubTransaction({ root: hubRoot, discovery });
+				const applied = await runHubTransaction({
+					root: hubRoot,
+					discovery,
+					authorization: planned.plan.hash,
+					beforePhase: async boundary => {
+						if (boundary.phase === "core" && boundary.repository === failingName) {
+							await writeFile(path.join(boundary.root, "drift.txt"), "pre-write drift\n");
+						}
+					},
+				});
+
+				assert.equal(applied.outcomes.some(outcome => outcome.repository === failingName && outcome.phase === "core" && outcome.status === "failed"), true);
+				const failingIndex = ["hub", "work-a", "work-b"].indexOf(failingName);
+				for (const pendingName of ["hub", "work-a", "work-b"].slice(failingIndex + 1)) {
+					assert.equal(applied.outcomes.some(outcome => outcome.repository === pendingName && outcome.phase === "core" && outcome.status === "pending"), true);
+					assert.equal(await exists(path.join(roots[pendingName], ".wsagency")), false);
+				}
+			});
+		}
+	});
+
+	test("stops at a core failure at every repository boundary and fresh authorization recovers missing-only", async t => {
+		for (const failingName of ["hub", "work-a", "work-b"]) {
+			await t.test(failingName, async () => {
+				const { hubRoot } = await createHub(
+					[registryEntry({ name: "work-a" }), registryEntry({ name: "work-b" })],
+					{ create: [{ name: "work-a" }, { name: "work-b" }] },
+				);
+				const roots = { hub: hubRoot, "work-a": path.join(hubRoot, "work-a"), "work-b": path.join(hubRoot, "work-b") };
+				const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+				const planned = await runHubTransaction({ root: hubRoot, discovery });
+				const failed = await runHubTransaction({
+					root: hubRoot,
+					discovery,
+					authorization: planned.plan.hash,
+					injectedFailure: {
+						targetRoot: roots[failingName],
+						phase: "core_write",
+						target: ".wsagency/config.yaml",
+					},
+				});
+				const failingIndex = ["hub", "work-a", "work-b"].indexOf(failingName);
+				assert.equal(failed.outcomes.some(outcome =>
+					outcome.repository === failingName
+					&& outcome.phase === "core"
+					&& outcome.status === "failed"
+					&& outcome.target === ".wsagency/config.yaml"
+				), true);
+				for (const completedName of ["hub", "work-a", "work-b"].slice(0, failingIndex)) {
+					assert.equal(failed.outcomes.some(outcome =>
+						outcome.repository === completedName
+						&& outcome.phase === "core"
+						&& outcome.status === "completed"
+						&& outcome.target === ".wsagency/config.yaml"
+					), true);
+				}
+				assert.equal(failed.rerunInstruction, "/ws-setup");
+				for (const pendingName of ["hub", "work-a", "work-b"].slice(failingIndex + 1)) {
+					assert.equal(failed.outcomes.some(outcome => outcome.repository === pendingName && outcome.phase === "core" && outcome.status === "pending"), true);
+					assert.equal(failed.outcomes.some(outcome =>
+						outcome.repository === pendingName
+						&& outcome.phase === "core"
+						&& outcome.status === "pending"
+						&& outcome.target === ".wsagency/config.yaml"
+					), true);
+					assert.equal(await exists(path.join(roots[pendingName], ".wsagency")), false);
+				}
+
+				const recoveryDiscovery = await discoverHubTransaction(hubRoot, MACHINE);
+				const recoveryPlan = await runHubTransaction({ root: hubRoot, discovery: recoveryDiscovery });
+				assert.equal(recoveryPlan.requiresConfirmation, true);
+				const recovered = await runHubTransaction({
+					root: hubRoot,
+					discovery: recoveryDiscovery,
+					authorization: recoveryPlan.plan.hash,
+				});
+				assert.equal(recovered.outcomes.some(outcome => outcome.status === "failed"), false);
+				for (const root of Object.values(roots)) assert.equal(await exists(path.join(root, ".wsagency", "config.yaml")), true);
+			});
+		}
+	});
+});
+
+describe("documentation failure recovery", () => {
+	test("stops at a docs failure at every repository boundary and preserves authored content on missing-only recovery", async t => {
+		for (const failingName of ["hub", "work-a", "work-b"]) {
+			await t.test(failingName, async () => {
+				const { hubRoot } = await createHub(
+					[registryEntry({ name: "work-a" }), registryEntry({ name: "work-b" })],
+					{ create: [{ name: "work-a" }, { name: "work-b" }] },
+				);
+				const roots = { hub: hubRoot, "work-a": path.join(hubRoot, "work-a"), "work-b": path.join(hubRoot, "work-b") };
+				const authored = "# Authored contribution policy\n";
+				await writeFile(path.join(roots[failingName], "CONTRIBUTING.md"), authored);
+				git(roots[failingName], "add", "CONTRIBUTING.md");
+				git(roots[failingName], "commit", "--quiet", "-m", "test: add authored contribution policy");
+				const choices = { documentation: true };
+				const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+				const planned = await runHubTransaction({ root: hubRoot, discovery, choices });
+				const failed = await runHubTransaction({
+					root: hubRoot,
+					discovery,
+					choices,
+					authorization: planned.plan.hash,
+					injectedFailure: {
+						targetRoot: roots[failingName],
+						phase: "docs_write",
+						target: "CHANGELOG.md",
+					},
+				});
+				assert.equal(failed.outcomes.some(outcome =>
+					outcome.repository === failingName
+					&& outcome.phase === "docs"
+					&& outcome.status === "failed"
+					&& outcome.target === "CHANGELOG.md"
+				), true);
+				assert.equal(failed.operations.filter(operation => operation.phase === "core").length > 0, true);
+				const failingIndex = ["hub", "work-a", "work-b"].indexOf(failingName);
+				for (const pendingName of ["hub", "work-a", "work-b"].slice(failingIndex + 1)) {
+					assert.equal(failed.outcomes.some(outcome => outcome.repository === pendingName && outcome.phase === "docs" && outcome.status === "pending"), true);
+					assert.equal(failed.outcomes.some(outcome =>
+						outcome.repository === pendingName
+						&& outcome.phase === "docs"
+						&& outcome.status === "pending"
+						&& outcome.target === "CHANGELOG.md"
+					), true);
+				}
+
+				const recoveryDiscovery = await discoverHubTransaction(hubRoot, MACHINE);
+				const recoveryPlan = await runHubTransaction({ root: hubRoot, discovery: recoveryDiscovery, choices });
+				assert.equal(recoveryPlan.requiresConfirmation, true);
+				const recovered = await runHubTransaction({
+					root: hubRoot,
+					discovery: recoveryDiscovery,
+					choices,
+					authorization: recoveryPlan.plan.hash,
+				});
+				assert.equal(recovered.outcomes.some(outcome => outcome.status === "failed"), false);
+				assert.equal(await readFile(path.join(roots[failingName], "CONTRIBUTING.md"), "utf8"), authored);
+				for (const root of Object.values(roots)) assert.equal(await exists(path.join(root, "dev-docs", "index.md")), true);
+			});
+		}
+	});
+
+	test("an aligned rerun is an exact prompt-free no-op", async () => {
+		const { hubRoot } = await createHub([registryEntry({ name: "work" })], { create: [{ name: "work" }] });
+		const choices = { documentation: true };
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const planned = await runHubTransaction({ root: hubRoot, discovery, choices });
+		await runHubTransaction({ root: hubRoot, discovery, choices, authorization: planned.plan.hash });
+
+		const alignedDiscovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const aligned = await runHubTransaction({ root: hubRoot, discovery: alignedDiscovery, choices });
+		assert.equal(aligned.requiresConfirmation, false);
+		assert.equal(aligned.operations.length, 0);
+		assert.equal(aligned.blockers.length, 0);
+		assert.match(aligned.report, /No changes required/);
+		assert.equal(aligned.outcomes.some(outcome => outcome.status === "no-op"), true);
 	});
 });
