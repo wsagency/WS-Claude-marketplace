@@ -81,6 +81,8 @@ export interface SetupTransactionResult {
 	report: string;
 }
 
+
+export const CANONICAL_CONFIG_YAML: string;
 export const RECOMMENDED_LOCAL_CHOICES: Readonly<SetupChoices>;
 export function discoverStandaloneRepository(root: string, machine: RuntimeSnapshot): Promise<SetupDiscovery>;
 export function runSetupTransaction(request: SetupTransactionRequest): Promise<SetupTransactionResult>;
