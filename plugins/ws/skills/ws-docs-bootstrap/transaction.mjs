@@ -1,22 +1,54 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+	DEFAULT_CHANGELOG_POLICY,
+	DEFAULT_DOCUMENTATION_POLICY,
+} from "./policy.mjs";
 
 const SKILL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MISSING_FINGERPRINT = null;
 
-const DOCS_DIRECTORIES = ["docs", "docs/tutorials", "docs/how-to", "docs/reference", "docs/explanation", "docs/release-notes"];
-const DEV_DOCS_DIRECTORIES = ["dev-docs", "dev-docs/decisions", "dev-docs/scoping", "dev-docs/runbooks", "dev-docs/reference", "dev-docs/explanation"];
-
-const FILE_TARGETS = [
-	"CHANGELOG.md",
-	"CONTRIBUTING.md",
-	"docs/contributing.md",
-	"docs/index.md",
-	"dev-docs/development.md",
-	"dev-docs/index.md"
-];
+function documentationTargets(policy = {}) {
+	const docs = { ...DEFAULT_DOCUMENTATION_POLICY, ...(policy.docs ?? {}) };
+	const changelog = {
+		...DEFAULT_CHANGELOG_POLICY,
+		...(policy.changelog ?? {}),
+		skip_types: [...(policy.changelog?.skip_types ?? DEFAULT_CHANGELOG_POLICY.skip_types)],
+	};
+	const userDirectories = [
+		docs.user_track,
+		`${docs.user_track}/tutorials`,
+		`${docs.user_track}/how-to`,
+		`${docs.user_track}/reference`,
+		`${docs.user_track}/explanation`,
+		`${docs.user_track}/release-notes`,
+	];
+	const devDirectories = [
+		docs.dev_track,
+		`${docs.dev_track}/decisions`,
+		`${docs.dev_track}/scoping`,
+		`${docs.dev_track}/runbooks`,
+		`${docs.dev_track}/reference`,
+		`${docs.dev_track}/explanation`,
+	];
+	return {
+		docs,
+		changelog,
+		userDirectories,
+		devDirectories,
+		fileTargets: [
+			changelog.path,
+			"CONTRIBUTING.md",
+			`${docs.user_track}/contributing.md`,
+			`${docs.user_track}/index.md`,
+			`${docs.dev_track}/development.md`,
+			`${docs.dev_track}/index.md`,
+		],
+	};
+}
 
 function sha256(value) {
 	return createHash("sha256").update(value).digest("hex");
@@ -43,16 +75,18 @@ async function readSnapshotEntry(root, target, expectedKind) {
 	}
 }
 
-export async function discoverDocumentation(root, projectShape) {
+export async function discoverDocumentation(root, projectShape, policy = {}) {
 	const resolvedRoot = await realpath(path.resolve(root));
+	const targets = documentationTargets(policy);
 	const entries = {};
-	for (const target of DOCS_DIRECTORIES) entries[target] = await readSnapshotEntry(resolvedRoot, target, "directory");
-	for (const target of DEV_DOCS_DIRECTORIES) entries[target] = await readSnapshotEntry(resolvedRoot, target, "directory");
-	for (const target of FILE_TARGETS) entries[target] = await readSnapshotEntry(resolvedRoot, target, "file");
+	for (const target of targets.userDirectories) entries[target] = await readSnapshotEntry(resolvedRoot, target, "directory");
+	for (const target of targets.devDirectories) entries[target] = await readSnapshotEntry(resolvedRoot, target, "directory");
+	for (const target of targets.fileTargets) entries[target] = await readSnapshotEntry(resolvedRoot, target, "file");
 	return {
 		root: resolvedRoot,
 		projectShape,
-		entries
+		policy: { docs: targets.docs, changelog: targets.changelog },
+		entries,
 	};
 }
 function renderDiff(target, before, after) {
@@ -94,7 +128,6 @@ function directoryEffect(order, target, discovery) {
 	return baseEffect(order, target, "directory", "BLOCKING_CONFLICT", "A non-directory entry occupies the required path.", entry);
 }
 
-import { readFileSync } from "node:fs";
 
 function readTemplate(name) {
 	try {
@@ -130,47 +163,52 @@ function documentationPlanHash(scope, effects, configFragment) {
 export function planDocumentation(discovery) {
 	const effects = [];
 	const isStandalone = discovery.projectShape === "standalone" || discovery.projectShape === "not_git";
-	const includeDocs = isStandalone;
-	
+	const includeUserTrack = isStandalone;
+	const targets = documentationTargets(discovery.policy);
+	const configFragment = {
+		docs: { ...targets.docs },
+		changelog: { ...targets.changelog, skip_types: [...targets.changelog.skip_types] },
+	};
 	let order = 100;
 
-	const configFragment = {
-		docs: {
-			user_track: "docs",
-			dev_track: "dev-docs",
-			default_audience: "ask",
-			default_scope: "repo",
-			adr_for_arch_changes: true,
-		},
-		changelog: {
-			update_mode: "pull_request",
-			path: "CHANGELOG.md",
-			skip_types: ["docs", "chore", "test", "style", "build", "ci"],
-		},
-	};
-	// Base directories
-	if (includeDocs) {
-		for (const dir of DOCS_DIRECTORIES) effects.push(directoryEffect(order++, dir, discovery));
+	if (includeUserTrack) {
+		for (const directory of targets.userDirectories) effects.push(directoryEffect(order++, directory, discovery));
 	}
-	for (const dir of DEV_DOCS_DIRECTORIES) effects.push(directoryEffect(order++, dir, discovery));
+	for (const directory of targets.devDirectories) effects.push(directoryEffect(order++, directory, discovery));
 
-	// Base files
-	effects.push(fileEffect(order++, "CHANGELOG.md", "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\nThe format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).\n\n## [Unreleased]\n", discovery));
-	effects.push(fileEffect(order++, "CONTRIBUTING.md", readTemplate("CONTRIBUTING.md"), discovery));
-	
-	if (includeDocs) {
-		effects.push(fileEffect(order++, "docs/contributing.md", "# Contributing\n\nPlease refer to this guide when contributing.\n", discovery));
-		effects.push(fileEffect(order++, "docs/index.md", "# Documentation\n\nWelcome to the documentation.\n", discovery));
+	effects.push(fileEffect(
+		order++,
+		targets.changelog.path,
+		"# Changelog\n\nAll notable changes to this project will be documented in this file.\n\nThe format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).\n\n## [Unreleased]\n",
+		discovery,
+	));
+	const contributing = includeUserTrack
+		? readTemplate("CONTRIBUTING.md")
+			.replaceAll("docs/contributing.md", `${targets.docs.user_track}/contributing.md`)
+			.replaceAll("dev-docs/development.md", `${targets.docs.dev_track}/development.md`)
+		: `# Contributing\n\nSee the [development guide](${targets.docs.dev_track}/development.md) for contributor setup and conventions.\n`;
+	effects.push(fileEffect(order++, "CONTRIBUTING.md", contributing, discovery));
+
+	if (includeUserTrack) {
+		effects.push(fileEffect(order++, `${targets.docs.user_track}/contributing.md`, "# Contributing\n\nPlease refer to this guide when contributing.\n", discovery));
+		effects.push(fileEffect(order++, `${targets.docs.user_track}/index.md`, "# Documentation\n\nWelcome to the documentation.\n", discovery));
 	} else {
-		effects.push(baseEffect(order++, "docs", "directory", "SKIP", "Hub mode skips user docs tracking per conventions.", discovery.entries["docs"]));
+		effects.push(baseEffect(
+			order++,
+			targets.docs.user_track,
+			"directory",
+			"SKIP",
+			"Hub mode leaves product user documentation to an explicitly registered output repository.",
+			discovery.entries[targets.docs.user_track],
+		));
 	}
-	
-	effects.push(fileEffect(order++, "dev-docs/development.md", "# Development\n\nThis guide covers project setup and development.\n", discovery));
-	effects.push(fileEffect(order++, "dev-docs/index.md", "# Internal Documentation\n\nWelcome to the dev-docs.\n", discovery));
+
+	effects.push(fileEffect(order++, `${targets.docs.dev_track}/development.md`, "# Development\n\nThis guide covers project setup and development.\n", discovery));
+	effects.push(fileEffect(order++, `${targets.docs.dev_track}/index.md`, "# Internal Documentation\n\nWelcome to the dev-docs.\n", discovery));
 
 	const contextFragments = {
-		agents: "\n# Documentation maintenance\n\nThis project uses the WS dual-track-docs convention. Run `/ws-docs` to audit or scaffold documentation.\n",
-		claude: "<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n"
+		agents: "\n# Documentation maintenance\n\nDocumentation policy is read only from `.wsagency/config.yaml`. Run `/ws-docs` to inspect or maintain the configured tracks.\n",
+		claude: "<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n",
 	};
 
 	effects.sort((left, right) => left.order - right.order);

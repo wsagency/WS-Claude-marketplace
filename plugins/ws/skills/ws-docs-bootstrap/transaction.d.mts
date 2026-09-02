@@ -4,6 +4,7 @@ import type { ProjectShape, EffectClassification, SnapshotEntry, SetupOperation 
 export interface DocsDiscovery {
 	root: string;
 	projectShape: ProjectShape;
+	policy: Pick<CanonicalProjectConfig, "docs" | "changelog">;
 	entries: Record<string, SnapshotEntry>;
 }
 
@@ -45,6 +46,6 @@ export interface DocsTransactionResult {
 	report: string;
 }
 
-export function discoverDocumentation(root: string, projectShape: ProjectShape): Promise<DocsDiscovery>;
+export function discoverDocumentation(root: string, projectShape: ProjectShape, policy?: Partial<Pick<CanonicalProjectConfig, "docs" | "changelog">>): Promise<DocsDiscovery>;
 export function planDocumentation(discovery: DocsDiscovery): DocsPlan;
 export function applyDocumentation(root: string, plan: DocsPlan, authorization: string, failureInjection?: string): Promise<SetupOperation[]>;

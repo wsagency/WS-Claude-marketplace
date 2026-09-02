@@ -12,89 +12,86 @@ tools:
 
 **Artifact language:** Write every file, summary, finding, and proposed text in English, regardless of the conversation language.
 
-Inspect a project to report on the state of its documentation in the dual-track-docs convention. Your scope is artifact presence and staleness scanning — which artifacts exist, which are stale or behind, which are missing. You produce a status table, not file changes.
+Inspect one repository's documentation state. You are read-only and report
+presence, staleness, and capability blockers; never write or repair files.
 
-## Process
+## Canonical policy gate
 
-### 1. Read project state
+The caller passes the repository root and project shape. Import and run
+`inspectCanonicalPolicy(root)` from
+`plugins/ws/skills/ws-docs-bootstrap/policy.mjs`.
 
-Check existence and recency of:
+- Read policy only from `<root>/.wsagency/config.yaml`. Never walk to a hub
+  ancestor or merge hub values into a child.
+- If canonical policy is valid, take track paths, audience/scope defaults, ADR
+  maintenance behavior, changelog cadence/path, and skip types only from it.
+- If canonical policy is missing and either
+  `.claude/docs-config.yaml` or `.claude/ws-project.yaml` is detected, return a
+  blocking finding naming the legacy source and `/ws-setup`. Never read legacy
+  content.
+- Malformed/older canonical policy blocks with `/ws-setup`; a future schema
+  blocks with a plugin-update instruction.
+- A genuinely unconfigured repository reports canonical config as missing and
+  suggests `/ws-docs init` or `/ws-setup`.
 
-- `docs/` and each subfolder (`tutorials/`, `how-to/`, `reference/`, `explanation/`, `release-notes/`)
-- `dev-docs/` and each subfolder (`decisions/`, `runbooks/`, `reference/`, `explanation/`)
-- Root `CHANGELOG.md`
-- `docs/changelog.md` (the mirror)
-- Root `CONTRIBUTING.md` (and whether it's the thin router pattern)
-- `.claude/docs-config.yaml`
+## Inspection
 
-For each artifact gather:
-- present | missing | stale | empty (empty = directory exists but no content files)
-- file count (for directories)
-- last mtime (for files; oldest mtime for directories — use `stat -f %m` on macOS or `stat -c %Y` on Linux; fallback to `git log -1 --format=%ct` if `stat` not available)
-- relevant counts (e.g. for `CHANGELOG.md`: commits since last entry — derive by reading the file's last `## [` block and `git log --oneline <SHA>..HEAD` where SHA = latest CHANGELOG-modifying commit)
+For valid `docs` policy inspect:
 
-### 2. Determine "stale"
+- `config.docs.user_track` and its `index.md`, `tutorials/`, `how-to/`,
+  `reference/`, `explanation/`, and `release-notes/` only when the project
+  shape requires a local user track (standalone or explicit docs output);
+- `config.docs.dev_track` and its `decisions/`, `scoping/`, `runbooks/`,
+  `reference/`, and `explanation/` for standalone and working repositories;
+- root `CONTRIBUTING.md` and whether it routes to the configured tracks.
 
-- A file is `stale` if it hasn't been touched in 90+ days AND has at least one commit affecting `docs/` since its last modification.
-- A directory is `stale` if its newest file is stale.
-- `CHANGELOG.md` is `behind` if there are commits since its last entry that aren't in the skip-set (docs/chore/test/style/build/ci by default; read `skip_types` from `.claude/docs-config.yaml` if present).
+For valid `changelog` policy inspect `config.changelog.path` and, when a local
+user track applies, the derived mirror
+`<config.docs.user_track>/changelog.md`. Count commits using the configured
+`skip_types`; never substitute a default. `update_mode` determines maintenance
+cadence but an explicit audit still reports drift.
 
-### 3. Identify suggestions
+At a hub root, inspect hub-owned product internal artifacts under the hub
+`dev_track` and report the explicit `type: output, purpose: docs` repository
+as present, missing, or inaccessible. Do not create it and do not inspect it
+as a working repository. In a hub sweep, the caller runs one instance per
+working child; this agent uses only that child's materialized policy.
 
-Based on detected state:
-- No `.claude/docs-config.yaml` → suggest `/ws-docs init`
-- `CHANGELOG.md` behind → suggest `/ws-docs catchup` (with commit count)
-- Missing `dev-docs/` or `docs/changelog.md` → suggest `/ws-docs repair`
-- All clean → "no action needed"
-
-### 4. Audit mode (optional)
-
-If invoked with `mode: audit` in your prompt, additionally include:
-- Full list of commits since last CHANGELOG entry with subject lines
-
-Public API change detection and ADR-candidate detection are not your job — `/ws-docs audit` dispatches the `public-api-watcher` and `arch-watcher` agents alongside you and merges their findings into the report.
+For each applicable artifact report present, missing, stale, or empty; include
+file count and last modification evidence. A file is stale when untouched for
+90+ days and documentation commits exist since it changed. A directory is
+stale when its newest file is stale. The changelog is behind when non-skipped
+commits exist since its latest recorded entry.
 
 ## Inputs
 
-The invoking command may pass these structured inputs in your prompt:
-
-- **`mode`** — `discovery` (default) or `audit`. Audit adds the deep-dive section.
+- `root` — exact repository root.
+- `project_shape` — `standalone`, `hub_root`, or `hub_subrepository`.
+- `mode` — `discovery` (default) or `audit`; audit includes commit subjects.
+- `local_user_track` — true only for standalone or the explicit docs output.
 
 ## Output
 
-Return a structured markdown report with two sections:
-
-1. The artifact table, in exactly this format:
+Return a structured Markdown table using the configured paths:
 
 ```
 ws-docs status
 ─────────────────────────────────────────────────────────────────
-Artifact                  Status      Notes
+Artifact                                  Status      Notes
 ─────────────────────────────────────────────────────────────────
-docs/                     <state>     <note>
-  docs/index.md           <state>     <note>
-  docs/tutorials/         <state>     <note>
-  docs/how-to/            <state>     <note>
-  docs/reference/         <state>     <note>
-  docs/explanation/       <state>     <note>
-dev-docs/                 <state>     <note>
-CHANGELOG.md              <state>     <note>
-docs/changelog.md         <state>     <note>
-CONTRIBUTING.md           <state>     <note>
-.claude/docs-config.yaml  <state>     <note>
+<configured user track, when applicable>  <state>     <note>
+<configured dev track, when applicable>   <state>     <note>
+<configured changelog path>               <state>     <note>
+<derived changelog mirror, if applicable> <state>     <note>
+CONTRIBUTING.md                           <state>     <note>
+.wsagency/config.yaml                     <state>     <note>
 
+Blockers:
+  <exact source and remediation, or none>
 Suggested:
   <recommended verbs>
 ```
 
-State icons: `✓ present`, `⚠ stale|behind|empty`, `✗ missing`.
-
-2. The "Suggested:" list of recommended next verbs (as shown at the bottom of the table)
-
-Do NOT write any files. Read-only operation.
-
-## Constraints
-
-- Bash commands must succeed on macOS bash 3.2 and Linux bash 4+. Prefer `stat -f` on macOS, fall back gracefully.
-- Run independent checks in parallel where possible (e.g. one shell pipeline per top-level artifact).
-- Total runtime budget: ~10 seconds for discovery, ~30 seconds for audit.
+State icons are `✓ present`, `⚠ stale|behind|empty`, and `✗ missing`.
+Public API and ADR-candidate detection belong to the sibling watchers invoked
+by `/ws-docs audit`. Do not write files.

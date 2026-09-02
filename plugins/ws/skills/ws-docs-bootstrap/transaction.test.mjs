@@ -45,6 +45,38 @@ test("standalone plan creates both documentation tracks and returns canonical po
 	assert.equal(plan.contextFragments.claude, "<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n");
 });
 
+test("validated canonical policy controls every bootstrap path", async () => {
+	await withTemporaryRoot(async root => {
+		const policy = {
+			docs: {
+				user_track: "handbook",
+				dev_track: "engineering/docs",
+				default_audience: "dev",
+				default_scope: "product",
+				adr_for_arch_changes: false,
+			},
+			changelog: {
+				update_mode: "commit",
+				path: "changes/NEWS.md",
+				skip_types: ["docs", "chore"],
+			},
+		};
+		const discovery = await discoverDocumentation(root, "standalone", policy);
+		const plan = planDocumentation(discovery);
+		const creates = plan.effects.filter(effect => effect.classification === "CREATE").map(effect => effect.target);
+		assert.ok(creates.includes("handbook"));
+		assert.ok(creates.includes("engineering/docs"));
+		assert.ok(creates.includes("changes/NEWS.md"));
+		assert.ok(!creates.includes("docs"));
+		assert.ok(!creates.includes("dev-docs"));
+		assert.ok(!creates.includes("CHANGELOG.md"));
+		assert.deepEqual(plan.configFragment, policy);
+		const contributing = plan.effects.find(effect => effect.target === "CONTRIBUTING.md");
+		assert.match(contributing.after, /handbook\/contributing\.md/);
+		assert.match(contributing.after, /engineering\/docs\/development\.md/);
+	});
+});
+
 test("hub subrepositories and hub roots omit product user-track scaffolding", () => {
 	for (const projectShape of ["hub_subrepository", "hub_root"]) {
 		const plan = planDocumentation({ root: "/mock/root", projectShape, entries: {} });

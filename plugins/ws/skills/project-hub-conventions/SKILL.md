@@ -62,6 +62,28 @@ The rest of this file describes the **hub-root** shape in full; the sub-repo
 and standalone shapes reuse the same conventions, scoped to a single repo's
 own `dev-docs/` and `docs/`.
 
+## Canonical policy ownership
+
+`project.yaml` is the repository registry; `.wsagency/config.yaml` is the sole
+runtime policy source. At a hub root, the hub config governs hub workflows and
+hub-owned product artifacts. Every `type: working` child owns a complete,
+materialized config for repository-local work. Child values are never read
+from, merged with, or defaulted from the hub at runtime.
+
+Documentation consumers use the selected owner's `docs` and `changelog`
+sections for tracks, audience/scope, ADR maintenance, changelog path/cadence,
+and skip types. The `dev-docs/` and `docs/` names shown in this skill are the
+standard initialization proposal, not runtime fallbacks. If canonical policy
+is absent and `.claude/docs-config.yaml` or `.claude/ws-project.yaml` is
+detected, consumers fail closed, name the source, and direct `/ws-setup`; they
+never parse those files as policy.
+
+A missing `type: output, purpose: docs` repository blocks only product
+user-track operations. Product internal work remains hub-owned. Setup and docs
+consumers never create, clone, initialize, or substitute a missing output
+repository implicitly; `/ws-hub init` and `/ws-hub add` are the explicit
+ownership surfaces.
+
 ## Layout
 
 ```

@@ -351,7 +351,7 @@ async function buildComposite(discovery, choices) {
 	try {
 		hubConfig = mergeConfig(CANONICAL_CONFIG_YAML, existingHubConfig ? normalizeMigrationConfig(existingHubConfig) : undefined);
 		if (documentation && discovery.hub.preflightErrors.length === 0) {
-			const docsDiscovery = await discoverDocumentation(discovery.hub.root, discovery.hub.projectShape);
+			const docsDiscovery = await discoverDocumentation(discovery.hub.root, discovery.hub.projectShape, parseCanonicalConfigYaml(hubConfig));
 			hubConfig = configWithFragment(hubConfig, planDocumentation(docsDiscovery).configFragment);
 		}
 	} catch (error) {
@@ -378,7 +378,7 @@ async function buildComposite(discovery, choices) {
 			: { plan: undefined, operations: [], requiresConfirmation: false, report: "Preflight blocked." };
 		let docsPlan;
 		if (documentation && transaction.plan) {
-			const docsDiscovery = await discoverDocumentation(repository.root, repository.projectShape);
+			const docsDiscovery = await discoverDocumentation(repository.root, repository.projectShape, parseCanonicalConfigYaml(targetConfig));
 			docsPlan = planDocumentation(projectDocumentationDiscovery(docsDiscovery, transaction.plan));
 		}
 		const repositoryBlockers = transactionBlockers(plannedRepository, transaction, docsPlan);
@@ -611,7 +611,7 @@ export async function runHubTransaction(request) {
 					const boundaryPlan = await runSetupTransaction({ root: target.root, discovery: boundaryDiscovery, choices: target.coreChoices });
 					if (boundaryPlan.plan?.hash !== target.core.hash) throw new Error("Root fingerprint drifted immediately before documentation performed the first write.");
 				}
-				const docsDiscovery = await discoverDocumentation(target.root, target.core.scope.projectShape);
+				const docsDiscovery = await discoverDocumentation(target.root, target.core.scope.projectShape, parseCanonicalConfigYaml(target.coreChoices.targetConfig));
 				const docsPlan = planDocumentation(docsDiscovery);
 				if (docsPlan.hash !== target.docs.hash) throw new Error("Documentation fingerprint drifted immediately before its first write.");
 				const docsFailure = injectedFailureRoot === target.root && request.injectedFailure.phase === "docs_write"

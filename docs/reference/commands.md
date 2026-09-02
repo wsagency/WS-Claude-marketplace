@@ -31,36 +31,45 @@ Single entry for the skill graph.
 
 ## /ws-docs
 
-Dual-track documentation suite. All documentation operations route through the single `/ws-docs` entry.
+Dual-track documentation suite backed only by canonical
+`.wsagency/config.yaml`. The config's `docs` section owns user/contributor
+track paths, audience/scope, and ADR maintenance; `changelog` owns cadence,
+path, and skip types. Legacy documentation/setup files are migration signals,
+not fallbacks, and direct `/ws-setup`.
 
-Unified documentation command. Run with no verb for discovery (artifact status table, no writes).
-
-Position-aware in WS project hubs (repo types per ADR 0006): invoked **inside a sub-repo** it runs repo-level with product routing (user docs go to the `purpose: docs` output repo; product ADRs and architecture go to the hub's `dev-docs/`; local ADRs resolve to the repo root or a bounded context mapped by `CONTEXT-MAP.md`); invoked **at the hub root** it runs a **hub sweep** — `discovery`/`audit`/`catchup`/`repair` fan out per `type: working` sub-repo in parallel (`audit` dispatches three watchers — `docs-doctor`, `public-api-watcher`, `arch-watcher` — per repo) and aggregate (catchup commits per repo), `write`/`adr`/`architecture` default to product scope, `init` never scaffolds docs in the hub itself (offers per-repo init instead). Input and output repos are never swept.
+Run with no verb for read-only status. `init` and `repair` delegate
+missing-only writes to the shared docs-bootstrap worker.
 
 **Arguments:**
 | Name | Required | Description |
 |------|----------|-------------|
-| `verb` | No | One of: `init`, `audit`, `catchup`, `repair`, `write`, `adr`, `architecture`, `contributing`, `changelog`, `release-notes`, `explain`, `publish` |
-| `args` | No | Verb-specific (e.g. `write <type> [topic]`, `adr "<decision>"`, `changelog [version]`) |
+| `verb` | No | `init`, `audit`, `catchup`, `repair`, `write`, `adr`, `architecture`, `contributing`, `changelog`, `release-notes`, `explain`, or `publish` |
+| `args` | No | Verb-specific arguments |
 
 **Verbs:**
 | Verb | Destination / effect |
 |---|---|
-| (none) | Discovery — status table of docs artifacts |
-| `init` | Invoke the shared missing-only docs bootstrap, materialize documentation policy in `.wsagency/config.yaml`, and preserve every authored artifact |
-| `audit` | Verbose diagnosis (docs-doctor + arch-watcher + public-api-watcher in parallel) |
-| `catchup` | Propose CHANGELOG entries, reference updates, ADRs from git history; user triages |
-| `repair` | Create missing artifacts only (never deletes) |
-| `write <type> [topic]` | One Diátaxis doc; `tutorial \| howto \| explanation` → diataxis-writer, `reference` → api-documenter |
-| `adr "<decision>"` | New scope-routed ADR: hub product, repo-wide, or mapped bounded-context `dev-docs/decisions/`; lightweight by default, full MADR v4.0.0 for high-cost decisions |
-| `architecture` | Regenerate `dev-docs/architecture.md` (diff + confirm) |
-| `contributing` | Regenerate 3-file CONTRIBUTING set (diff + confirm) |
-| `changelog [version]` | Update `[Unreleased]` or cut version; mirrors to `docs/changelog.md` |
-| `release-notes [version]` | Linear-style notes → `docs/release-notes/<version>.md` |
-| `explain` | Regenerate `docs/explained.md` — generated Outline-safe onboarding page (not to be confused with `/ws-hub explained`, the `purpose: explained` HTML artefact) |
-| `publish` | Lint Outline-safe profile, push `docs/` to Outline (`outline-sync.py`; needs Python 3 + `OUTLINE_API_TOKEN`) |
+| (none) | Configured-artifact status and capability blockers; no writes |
+| `init` | Confirm canonical docs/changelog policy, invoke the shared missing-only docs bootstrap, and preserve every authored artifact |
+| `audit` | Verbose configured-state diagnosis with docs-doctor, arch-watcher, and public-api-watcher in parallel |
+| `catchup` | Propose canonical-policy changelog entries, reference updates, and ADRs for user triage |
+| `repair` | Create only missing configured artifacts; never deletes |
+| `write <type> [topic]` | One Diátaxis document in the configured audience track; `tutorial \| howto \| explanation` → diataxis-writer, `reference` → api-documenter |
+| `adr "<decision>"` | Scope-routed ADR under the selected owner's configured contributor track; lightweight by default, full MADR v4.0.0 for high-cost decisions |
+| `architecture` | Regenerate configured contributor architecture with diff + confirm |
+| `contributing` | Regenerate the router and configured contribution guides with diff + confirm |
+| `changelog [version]` | Update the configured changelog and derived user-track mirror |
+| `release-notes [version]` | Linear-style notes under the configured user track |
+| `explain` | Regenerate the configured user-track Outline-safe onboarding page |
+| `publish` | Lint the Outline-safe profile and publish the configured user track (`outline-sync.py`; needs Python 3 + `OUTLINE_API_TOKEN`) |
 
-In a hub, `/ws-docs` enters hub mode: user-audience writes route to the `type: output, purpose: docs` repo, while product-internal writes route to the hub's own `dev-docs/`; local ADRs route to the repo root or mapped bounded context (scope prompt, cacheable as `default_scope`).
+In a hub, hub policy governs product artifacts; every working repository uses
+its own materialized child policy for repository-local work. Hub-root
+discovery/audit/catchup/repair/init sweep only working repositories and report
+child blockers independently. Product user operations require the explicit
+`type: output, purpose: docs` repository. A missing output is never created or
+initialized implicitly; register it through `/ws-hub add`. Product-internal
+work remains in the hub's configured contributor track.
 
 **Examples:**
 ```
@@ -89,8 +98,12 @@ Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-h
 | `repos <pull\|clone>` | One git operation across all registered sub-repos |
 | `add [--scan]` | Register a sub-repo; `--scan` discovers unregistered repos first |
 | `describe` | Refresh `description`/`tech` fields from repo contents |
-| `docs` | Cross-repo docs via the hub-architect agent (+ wiki refresh offer) |
+| `docs` | Cross-repo synthesis under the hub config’s contributor track, via scratch/diff/confirmation |
 | `explained` | Generate the `purpose: explained` product explainer artefact (not to be confused with `/ws-docs explain`, the `docs/explained.md` onboarding page) |
+
+`/ws-hub docs` reads only the hub root's canonical policy. Working-repository
+inventories are source evidence, not policy inheritance; repo-local docs
+remain governed by each materialized child config.
 
 ### /ws-hub init
 
