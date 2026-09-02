@@ -1,4 +1,9 @@
 import { createHash } from "node:crypto";
+import { acceptConfirmedPartial, applyConfirmedPlan, createReconfigurePlan, resumeConfirmedPlan } from "./reconfigure.mjs";
+
+const DISPOSITIONS = new Set(["preserve-as-history", "copy-selected", "copy-open", "copy-all", "cancel"]);
+const SEMANTIC_FIELDS = Object.freeze(["title", "description", "acceptanceCriteria", "acceptance_criteria", "status", "comments", "priority", "type"]);
+const LOCAL_ONLY_FIELDS = new Set(["localMetadata", "claim", "claims", "shares", "map", "mapPointer", "agentState"]);
 
 export class TrackerOwnershipError extends Error {
 	constructor(message, code) {
@@ -7,183 +12,232 @@ export class TrackerOwnershipError extends Error {
 	}
 }
 
-export function planTrackerOwnership(config, localStore, syncState, choices) {
-	if (!choices) {
-		throw new TrackerOwnershipError("Tracker ownership choices are required.", "ERR_MISSING_CHOICES");
-	}
-	if (!choices.dispositions || choices.dispositions.length === 0) {
-		throw new TrackerOwnershipError("Dispositions for source stores are required.", "ERR_MISSING_DISPOSITIONS");
-	}
-	if (choices.dispositions.some(d => d.disposition === "cancel")) {
-		throw new TrackerOwnershipError("Migration cancelled by user disposition.", "ERR_MIGRATION_CANCELLED");
-	}
+function sha256(value) {
+	return createHash("sha256").update(value).digest("hex");
+}
 
-	const effects = [];
-	const blockers = [];
-	const { sourceTracker, targetTracker, sourceProject, targetProject, excludeBlocked } = choices;
-	
-	// We gather all local issues that belong to the source tracker/project.
-	// For simplicity, assume all keys starting with sourceProject belong to it, or all if no sourceProject is specified.
-	const prefix = sourceProject ? `${sourceProject}-` : "";
-	
-	for (const [id, ticket] of Object.entries(localStore || {})) {
-		if (prefix && !id.startsWith(prefix)) continue;
-		
-		// Determine blocked status
-		let isBlocked = false;
-		let blockedReason = "";
-		
-		// 1. Claimed local work (if ticket has localMetadata with claimed = true)
-		if (ticket.localMetadata?.claimed) {
-			isBlocked = true;
-			blockedReason = "claimed local work";
-		}
-		
-			// 2. Unresolved same-field conflicts
-			if (syncState?.conflicts?.some(c => c.localId === id)) {
-				isBlocked = true;
-				blockedReason = "unresolved conflict";
-			}
-			// 3. Pending synchronization
-		if (syncState?.pendingOperations?.some(op => op.localId === id)) {
-			isBlocked = true;
-			blockedReason = "pending synchronization";
-		}
-		
-		if (isBlocked) {
-			if (excludeBlocked) {
-				effects.push({
-					order: 5,
-					target: `tracker:${id}`,
-					kind: "state",
-					classification: "SKIP",
-					reason: `Excluded due to: ${blockedReason}`,
-					diff: "unchanged",
-					fingerprint: null
-				});
-				continue;
-			} else {
-				blockers.push(`Ticket ${id} is blocked: ${blockedReason}`);
-				effects.push({
-					order: 10,
-					target: `tracker:${id}`,
-					kind: "state",
-					classification: "BLOCKING_CONFLICT",
-					reason: blockedReason,
-					diff: "unchanged",
-					fingerprint: null
-				});
-				continue;
-			}
-		}
+function stableSemanticFields(ticket) {
+	return Object.fromEntries(SEMANTIC_FIELDS.filter(field => Object.hasOwn(ticket, field)).map(field => [field, ticket[field]]));
+}
 
-		// Apply disposition
-		const storeDisposition = choices.dispositions.find(d => d.storeId === sourceTracker || d.storeId === sourceProject);
-		const disp = storeDisposition?.disposition || "preserve-as-history";
-		
-		if (disp === "preserve-as-history") {
-			effects.push({
-				order: 20,
-				target: `tracker:${id}`,
-				kind: "state",
-				classification: "PRESERVE",
-				reason: "Preserved as inactive history",
-				diff: "unchanged",
-				fingerprint: null
-			});
-		} else if (disp === "copy-all" || (disp === "copy-open" && ticket.status !== "closed" && ticket.status !== "done") || (disp === "copy-selected" && storeDisposition.selectedItemIds?.includes(id))) {
-			effects.push({
-				order: 30,
-				target: `tracker:${id}`,
-				kind: "state",
-				classification: "CREATE",
-				reason: "Copied to new tracker/project",
-				diff: `Copy to ${targetTracker} ${targetProject || ''}`,
-				fingerprint: null,
-					// Track what we need to copy
-					payload: { sourceId: id, targetTracker, targetProject, semanticLoss: ["localMetadata"], correlationToken: createHash("sha256").update(`${targetTracker}:${targetProject}:${id}`).digest("hex") }
-			});
-		} else {
-			effects.push({
-				order: 20,
-				target: `tracker:${id}`,
-				kind: "state",
-				classification: "PRESERVE",
-				reason: "Not selected for copy, preserved",
-				diff: "unchanged",
-				fingerprint: null
-			});
-		}
-	}
-	
-	effects.sort((left, right) => left.order - right.order || left.target.localeCompare(right.target));
-	const changed = effects.some(effect => ["CREATE", "UPDATE"].includes(effect.classification));
-	const hash = createHash("sha256").update(JSON.stringify({ choices, effects })).digest("hex");
-	
+function remoteFingerprint(ticket) {
 	return {
-		effects,
-		hash,
-		requiresConfirmation: changed,
-		blockers,
-		report: blockers.length > 0 ? "Blocked by unresolved items." : changed ? "Plan created. Requires confirmation." : "No changes needed."
+		identity: ticket.remoteIdentity || ticket.key || ticket.id,
+		version: ticket.version ?? null,
+		updatedAt: ticket.updatedAt ?? ticket.updated_at ?? null,
+		mappedFieldHash: sha256(JSON.stringify(stableSemanticFields(ticket))),
 	};
 }
 
-import { executePhases } from "./reconfigure.mjs";
+function sourceStores(localStore, choices) {
+	const explicit = Array.isArray(choices.sourceStores) ? choices.sourceStores : [];
+	const discovered = Object.values(localStore || {}).map(ticket => ticket.storeId).filter(Boolean);
+	const candidates = [...explicit, ...discovered];
+	const fallback = choices.sourceProject || choices.sourceTracker;
+	return [...new Set(candidates.length > 0 ? candidates : fallback ? [fallback] : [])].sort();
+}
+
+function dispositionMap(stores, choices) {
+	if (!Array.isArray(choices.dispositions) || choices.dispositions.length === 0) {
+		throw new TrackerOwnershipError("An explicit disposition is required for every existing source store.", "ERR_MISSING_DISPOSITIONS");
+	}
+	const byStore = new Map();
+	for (const entry of choices.dispositions) {
+		if (!entry || typeof entry.storeId !== "string" || !DISPOSITIONS.has(entry.disposition)) {
+			throw new TrackerOwnershipError("Every store disposition must name a store and a supported disposition.", "ERR_INVALID_DISPOSITION");
+		}
+		if (byStore.has(entry.storeId)) throw new TrackerOwnershipError(`Duplicate disposition for ${entry.storeId}.`, "ERR_DUPLICATE_DISPOSITION");
+		byStore.set(entry.storeId, entry);
+	}
+	const missing = stores.filter(store => !byStore.has(store));
+	if (missing.length > 0) throw new TrackerOwnershipError(`Missing explicit disposition for: ${missing.join(", ")}.`, "ERR_MISSING_DISPOSITIONS");
+	if ([...byStore.values()].some(entry => entry.disposition === "cancel")) {
+		throw new TrackerOwnershipError("Migration cancelled by user disposition; source ownership remains unchanged.", "ERR_MIGRATION_CANCELLED");
+	}
+	return byStore;
+}
+
+function ticketStore(ticket, choices) {
+	return ticket.storeId || choices.sourceProject || choices.sourceTracker;
+}
+
+function shouldCopy(ticket, id, disposition) {
+	if (disposition.disposition === "copy-all") return true;
+	if (disposition.disposition === "copy-open") return !["closed", "done"].includes(ticket.status);
+	if (disposition.disposition === "copy-selected") return (disposition.selectedItemIds || []).includes(id);
+	return false;
+}
+
+function blockerReasons(id, ticket, syncState) {
+	const reasons = [];
+	if (ticket.localMetadata?.claimed || ticket.claimed === true) reasons.push("claimed local work");
+	if ((syncState?.conflicts || []).some(conflict => conflict.localId === id && conflict.resolved !== true)) reasons.push("unresolved same-field conflict");
+	if ((syncState?.pendingOperations || []).some(operation => operation.localId === id)) reasons.push("pending synchronization");
+	return reasons;
+}
+
+function unsupportedFields(ticket) {
+	const supported = new Set(["id", "key", "storeId", "remoteIdentity", "version", "updatedAt", "updated_at", "url", "sourceLink", ...SEMANTIC_FIELDS]);
+	return Object.keys(ticket).filter(field => !supported.has(field) || LOCAL_ONLY_FIELDS.has(field)).sort();
+}
+
+function sourceLink(store, id, ticket) {
+	return ticket.sourceLink || ticket.url || `tracker://${store}/${id}`;
+}
+
+function trackerSnapshot(localStore, choices) {
+	const entries = {};
+	for (const [id, ticket] of Object.entries(localStore || {})) {
+		entries[`tracker-source:${ticketStore(ticket, choices)}:${id}`] = {
+			kind: "state",
+			fingerprint: remoteFingerprint(ticket),
+		};
+	}
+	return { shape: choices.shape || "standalone", repositoryId: choices.repositoryId || "current", entries };
+}
+
+export function planTrackerOwnership(config, localStore, syncState, choices) {
+	if (!choices) throw new TrackerOwnershipError("Tracker ownership choices are required.", "ERR_MISSING_CHOICES");
+	if (!Array.isArray(choices.fields)) throw new TrackerOwnershipError("Concrete tracker/Jira field selection is required.", "ERR_MISSING_FIELD_SELECTION");
+	const stores = sourceStores(localStore, choices);
+	const dispositions = dispositionMap(stores, choices);
+	const effects = [];
+	const blockers = [];
+	const copiedIds = [];
+	const sourcePreservation = [];
+
+	for (const [id, ticket] of Object.entries(localStore || {}).sort(([left], [right]) => left.localeCompare(right))) {
+		const store = ticketStore(ticket, choices);
+		if (!stores.includes(store)) continue;
+		const disposition = dispositions.get(store);
+		const fingerprint = remoteFingerprint(ticket);
+		const preserveId = `preserve:tracker-source:${store}:${id}`;
+		effects.push({
+			id: preserveId,
+			order: 2,
+			phase: "prepare",
+			target: `tracker-source:${store}:${id}`,
+			kind: "state",
+			classification: "PRESERVE",
+			reason: "Preserve the source ticket, key, status, fields, and history without delete, close, move, reassignment, or stripping.",
+			diff: "unchanged",
+			fingerprint,
+		});
+		sourcePreservation.push({ store, id, disposition: disposition.disposition, sourceLink: sourceLink(store, id, ticket), fingerprint });
+
+		if (!shouldCopy(ticket, id, disposition)) continue;
+		const reasons = blockerReasons(id, ticket, syncState);
+		const explicitlyExcluded = (choices.excludedItemIds || []).includes(id) || (choices.excludeBlocked === true && reasons.length > 0);
+		if (reasons.length > 0) {
+			if (explicitlyExcluded) {
+				effects.push({
+					id: `skip:tracker-copy:${store}:${id}`,
+					order: 3,
+					phase: "prepare",
+					target: `tracker-copy:${store}:${id}`,
+					kind: "state",
+					classification: "SKIP",
+					reason: `Explicitly excluded affected migration: ${reasons.join(", ")}.`,
+					diff: "unchanged",
+					fingerprint,
+				});
+				continue;
+			}
+			const effect = {
+				id: `block:tracker-copy:${store}:${id}`,
+				order: 3,
+				phase: "prepare",
+				target: `tracker-copy:${store}:${id}`,
+				kind: "state",
+				classification: "BLOCKING_CONFLICT",
+				reason: `Affected migration blocked by ${reasons.join(", ")}.`,
+				diff: "blocked",
+				fingerprint,
+			};
+			effects.push(effect);
+			blockers.push({ id: effect.id, target: effect.target, reason: effect.reason });
+			continue;
+		}
+
+		const targetBinding = choices.targetProject || choices.targetTracker;
+		const correlationToken = sha256(`tracker-copy:${store}:${id}:${choices.targetTracker}:${targetBinding}`);
+		const createId = `prepare:remote:${choices.targetTracker}:${targetBinding}:copy:${store}:${id}`;
+		copiedIds.push(createId);
+		effects.push({
+			id: createId,
+			order: 5,
+			phase: "prepare",
+			target: `remote:${choices.targetTracker}:${targetBinding}:copy:${id}`,
+			kind: "state",
+			classification: "CREATE",
+			reason: "Create a verified copy with deterministic correlation while preserving the source item.",
+			diff: `copy ${store}/${id} -> ${choices.targetTracker}/${targetBinding}`,
+			fingerprint: null,
+			remoteFingerprint: choices.remoteFingerprints?.[id] ?? null,
+			correlationToken,
+			payload: {
+				operation: "create_tracker_copy",
+				external: true,
+				correlationToken,
+				sourceId: id,
+				sourceStore: store,
+				sourceLink: sourceLink(store, id, ticket),
+				targetTracker: choices.targetTracker,
+				targetProject: choices.targetProject || null,
+				fields: stableSemanticFields(ticket),
+				semanticLoss: unsupportedFields(ticket),
+			},
+		});
+	}
+
+	if (copiedIds.length > 0 || choices.sourceTracker !== choices.targetTracker || choices.sourceProject !== choices.targetProject) {
+		effects.push({
+			id: "cutover:tracker-ownership:activate",
+			order: 20,
+			phase: "cutover",
+			target: "tracker:active-ownership",
+			kind: "state",
+			classification: "UPDATE",
+			reason: "Switch canonical ownership and active mappings only after every selected copy identity is durable and verified.",
+			diff: `${choices.sourceTracker}/${choices.sourceProject || "default"} -> ${choices.targetTracker}/${choices.targetProject || "default"}`,
+			fingerprint: choices.ownershipFingerprint ?? null,
+			dependencies: copiedIds,
+			payload: {
+				operation: "activate_tracker_ownership",
+				sourceTracker: choices.sourceTracker,
+				targetTracker: choices.targetTracker,
+				sourceProject: choices.sourceProject || null,
+				targetProject: choices.targetProject || null,
+				preserveOldKeysAsInactiveHistory: true,
+			},
+		});
+	}
+
+	const normalizedChoices = { ...choices, domain: "tracker", values: choices.values || {} };
+	const snapshot = trackerSnapshot(localStore, choices);
+	const plan = createReconfigurePlan(config, snapshot, choices.machine || {}, normalizedChoices, {
+		effects,
+		blockers,
+		dependencyClosure: copiedIds.map(effectId => ({ field: "tracker.primary", reason: "Ownership cutover depends on a verified copied identity.", resolution: "selected", effectId })),
+		fieldDependencies: Object.fromEntries((choices.fields || []).map(field => [field, copiedIds])),
+	});
+	return { ...plan, stores, sourcePreservation };
+}
 
 export async function applyTrackerOwnership(config, localStore, syncState, choices, planHash, effects, adapters, injection = {}) {
 	const expected = planTrackerOwnership(config, localStore, syncState, choices);
 	if (expected.hash !== planHash || JSON.stringify(expected.effects) !== JSON.stringify(effects)) {
 		throw new TrackerOwnershipError("The confirmed plan no longer matches current inputs.", "ERR_PLAN_MISMATCH");
 	}
-	if (expected.blockers.length > 0) {
-		throw new TrackerOwnershipError("Cannot apply plan with blockers.", "ERR_HAS_BLOCKERS");
-	}
-	if (adapters.readJournal && await adapters.readJournal()) {
-		throw new TrackerOwnershipError("An interrupted migration must be resumed or accepted before starting another.", "ERR_JOURNAL_EXISTS");
-	}
-	if (!effects.some(effect => effect.classification === "UPDATE" || effect.classification === "CREATE")) {
-		return {
-			success: true,
-			phase: "done",
-			completedEffects: 0,
-			hash: planHash,
-			readiness: { configValid: true, engineeringReady: true, trackerReady: true, runtimeReady: true },
-			report: "Aligned migration completed with no changes."
-		};
-	}
+	return applyConfirmedPlan(expected, { config, localStore, syncState, choices }, adapters, injection);
+}
 
-	const state = {
-		hash: planHash,
-		effects,
-		completedEffects: 0,
-		phase: "prepare"
-	};
-	
-	// Create a dummy context object to pass into executePhases instead of snapshot.
-	// Since executePhases expects snapshot.entries for drift injection and snapshot.repositoryId,
-	// we will map localStore into something compatible.
-	const context = {
-		repositoryId: "current",
-		entries: {}
-	};
-	for (const [id, ticket] of Object.entries(localStore || {})) {
-		context.entries[`tracker:${id}`] = { fingerprint: null }; // We would put actual fingerprint here if we had it
-	}
+export async function resumeTrackerOwnership(config, localStore, syncState, choices, adapters, injection = {}) {
+	const expected = planTrackerOwnership(config, localStore, syncState, choices);
+	return resumeConfirmedPlan(expected, { config, localStore, syncState, choices }, adapters, injection);
+}
 
-	if (adapters.writeJournal) {
-		// Just a simple redact function for tracker state
-		const redact = s => ({ ...s, effects: s.effects.map(e => ({ ...e, diff: "redacted" })) });
-		await adapters.writeJournal(planHash, redact(state));
-	}
-	
-	const result = await executePhases(state, context, adapters, injection);
-	return {
-		success: result.success,
-		phase: result.phase,
-		completedEffects: result.completedEffects,
-		hash: result.hash,
-		readiness: result.readiness,
-		report: result.report
-	};
+export async function acceptPartialTrackerOwnership(config, localStore, syncState, choices, adapters) {
+	const expected = planTrackerOwnership(config, localStore, syncState, choices);
+	return acceptConfirmedPartial(config, expected, { config, localStore, syncState, choices }, adapters);
 }

@@ -1,75 +1,78 @@
-import type { CanonicalProjectConfig } from "../ws-project-bootstrap/config.d.mts";
-import type { DocsDiscovery, DocsEffect } from "./transaction.d.mts";
+import type { CanonicalProjectConfig, DerivedSetupReadiness } from "../ws-project-bootstrap/config.d.mts";
+import type {
+	ReconfigureAdapters as SharedReconfigureAdapters,
+	ReconfigureApplyResult,
+	ReconfigureEffect,
+	ReconfigureInjection,
+	ReconfigurePlanResult,
+} from "../ws-project-bootstrap/reconfigure.d.mts";
+import type { DocsDiscovery } from "./transaction.d.mts";
+
+export interface ManagedReferenceTransition {
+	target: string;
+	before?: string;
+	after: string;
+	fingerprint?: unknown;
+}
+
+export interface DocsPathTransition {
+	source: string;
+	destination: string;
+	intent: "copy" | "move";
+	managedReferences?: ManagedReferenceTransition[];
+	verificationSteps?: string[];
+}
 
 export interface ReconfigureChoices {
-    domain?: "docs" | "changelog";
-    fields?: string[];
-    values?: Record<string, unknown>;
-    enableDocs?: boolean;
-    disableDocs?: boolean;
-    pathTransitions?: Array<{ source: string; destination: string; intent: "copy" | "move" }>;
+	domain?: "docs" | "changelog";
+	fields?: string[];
+	values?: Record<string, unknown>;
+	enableDocs?: boolean;
+	disableDocs?: boolean;
+	pathTransitions?: DocsPathTransition[];
 }
 
-export interface ReconfigurePlan {
-    effects: DocsEffect[];
-    hash: string;
-    requiresConfirmation: boolean;
-    dependencyClosure: string[];
-    scope: string[];
-    report: string;
+export interface DocsContentManifest {
+	source: string;
+	destination: string;
+	intent: "copy" | "move";
+	collision: { kind: unknown; fingerprint: unknown } | null;
+	managedReferences: string[];
+	verificationSteps: string[];
+	field: string | null;
 }
 
-export interface ReconfigureReadiness {
-    configValid: boolean;
-    engineeringReady: boolean;
-    trackerReady: boolean;
-    docsReady: boolean;
-    runtimeReady: boolean;
+export interface ReconfigurePlan extends ReconfigurePlanResult {
+	contentManifest: DocsContentManifest[];
 }
 
-export interface ReconfigureResult {
-    success: boolean;
-    phase: "prepare" | "cutover" | "cleanup" | "done";
-    completedEffects: number;
-    hash: string;
-    readiness: ReconfigureReadiness;
-    report: string;
-    ownershipReport?: Record<string, "aligned" | "owned" | "partial">;
-}
-
-export interface ReconfigureAdapters {
-    writeJournal?: (hash: string, state: unknown) => Promise<void>;
-    readJournal?: () => Promise<{ hash: string; state: any } | null>;
-    removeJournal?: () => Promise<void>;
-    writeAudit?: (record: unknown) => Promise<void>;
-    applyEffect?: (effect: DocsEffect) => Promise<void>;
-    revalidateFingerprints?: (effects: DocsEffect[]) => Promise<boolean>;
-    now?: () => number;
-}
+export type ReconfigureReadiness = DerivedSetupReadiness;
+export type ReconfigureResult = ReconfigureApplyResult;
+export type ReconfigureAdapters = SharedReconfigureAdapters;
 
 export function plan(config: CanonicalProjectConfig, discovery: DocsDiscovery, choices: ReconfigureChoices): ReconfigurePlan;
 
 export function apply(
-    config: CanonicalProjectConfig,
-    discovery: DocsDiscovery,
-    choices: ReconfigureChoices,
-    planHash: string,
-    effects: DocsEffect[],
-    adapters: ReconfigureAdapters,
-    injection?: Record<string, unknown>
+	config: CanonicalProjectConfig,
+	discovery: DocsDiscovery,
+	choices: ReconfigureChoices,
+	planHash: string,
+	effects: ReconfigureEffect[],
+	adapters: ReconfigureAdapters,
+	injection?: ReconfigureInjection,
 ): Promise<ReconfigureResult>;
 
 export function resume(
-    config: CanonicalProjectConfig,
-    discovery: DocsDiscovery,
-    choices: ReconfigureChoices,
-    adapters: ReconfigureAdapters,
-    injection?: Record<string, unknown>
+	config: CanonicalProjectConfig,
+	discovery: DocsDiscovery,
+	choices: ReconfigureChoices,
+	adapters: ReconfigureAdapters,
+	injection?: ReconfigureInjection,
 ): Promise<ReconfigureResult>;
 
 export function acceptPartial(
-    config: CanonicalProjectConfig,
-    discovery: DocsDiscovery,
-    choices: ReconfigureChoices,
-    adapters: ReconfigureAdapters
+	config: CanonicalProjectConfig,
+	discovery: DocsDiscovery,
+	choices: ReconfigureChoices,
+	adapters: ReconfigureAdapters,
 ): Promise<ReconfigureResult>;

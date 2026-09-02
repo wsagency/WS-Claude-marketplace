@@ -2,364 +2,678 @@ import { createHash } from "node:crypto";
 import { validateCanonicalConfigObject } from "./config.mjs";
 import { planDomain, planTriage } from "./routing.mjs";
 
+const PHASES = Object.freeze(["prepare", "cutover", "cleanup"]);
+const MUTATION_CLASSIFICATIONS = new Set(["CREATE", "UPDATE", "DELETE"]);
+const TRACKER_FIELD_PREFIXES = Object.freeze(["tracker.", "jira.", "triage.", "domain.", "commit.jira.", "ui.session_start_dashboard"]);
 
 export class ReconfigureError extends Error {
-    constructor(message, code) {
-        super(message);
-        this.code = code;
-    }
+	constructor(message, code) {
+		super(message);
+		this.code = code;
+	}
+}
+
+function sha256(value) {
+	return createHash("sha256").update(value).digest("hex");
 }
 
 function leafPaths(value, prefix = "") {
-    const paths = [];
-    for (const key of Object.keys(value).sort()) {
-        if (key === "schema_version" && prefix === "") continue;
-        const fieldPath = prefix ? `${prefix}.${key}` : key;
-        const child = value[key];
-        if (child && typeof child === "object" && !Array.isArray(child)) paths.push(...leafPaths(child, fieldPath));
-        else paths.push(fieldPath);
-    }
-    return paths;
+	const paths = [];
+	for (const key of Object.keys(value).sort()) {
+		if (key === "schema_version" && prefix === "") continue;
+		const fieldPath = prefix ? `${prefix}.${key}` : key;
+		const child = value[key];
+		if (child && typeof child === "object" && !Array.isArray(child)) paths.push(...leafPaths(child, fieldPath));
+		else paths.push(fieldPath);
+	}
+	return paths;
 }
 
 function valueAtPath(value, fieldPath) {
-    return fieldPath.split(".").reduce((current, key) => current?.[key], value);
+	return fieldPath.split(".").reduce((current, key) => current?.[key], value);
 }
 
 function sameValue(left, right) {
-    return JSON.stringify(left) === JSON.stringify(right);
+	return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function validationError(config) {
-    if (config == null) return new ReconfigureError("Canonical configuration is missing. Run ordinary /ws-setup first.", "ERR_MISSING_CONFIG");
-    if (typeof config === "object" && config !== null && !Object.hasOwn(config, "schema_version") && (Object.hasOwn(config, "schema") || Object.hasOwn(config, "version"))) {
-        return new ReconfigureError("Legacy configuration detected. Run ordinary /ws-setup migration first.", "ERR_LEGACY_CONFIG");
-    }
-    const validation = validateCanonicalConfigObject(config);
-    if (validation.status === "older") return new ReconfigureError("Older schema detected. Run ordinary /ws-setup migration first.", "ERR_OLDER_SCHEMA");
-    if (validation.status === "future") return new ReconfigureError("Future schema detected. Update the WS package before reconfiguring.", "ERR_FUTURE_SCHEMA");
-    if (validation.status !== "valid") return new ReconfigureError("Canonical configuration is malformed or incomplete. Run ordinary /ws-setup repair first.", "ERR_MALFORMED_CONFIG");
-    return null;
+	if (config == null) return new ReconfigureError("Canonical configuration is missing. Run ordinary /ws-setup first.", "ERR_MISSING_CONFIG");
+	if (typeof config === "object" && config !== null && !Object.hasOwn(config, "schema_version") && (Object.hasOwn(config, "schema") || Object.hasOwn(config, "version"))) {
+		return new ReconfigureError("Legacy configuration detected. Run ordinary /ws-setup migration first.", "ERR_LEGACY_CONFIG");
+	}
+	const validation = validateCanonicalConfigObject(config);
+	if (validation.status === "older") return new ReconfigureError("Older schema detected. Run ordinary /ws-setup migration first.", "ERR_OLDER_SCHEMA");
+	if (validation.status === "future") return new ReconfigureError("Future schema detected. Update the WS package before reconfiguring.", "ERR_FUTURE_SCHEMA");
+	if (validation.status !== "valid") return new ReconfigureError("Canonical configuration is malformed or incomplete. Run ordinary /ws-setup repair first.", "ERR_MALFORMED_CONFIG");
+	return null;
+}
+
+function fieldBelongsToDomain(field, domain) {
+	if (domain === "tracker") return TRACKER_FIELD_PREFIXES.some(prefix => field === prefix || field.startsWith(prefix));
+	if (domain === "docs") return field.startsWith("docs.");
+	if (domain === "changelog") return field.startsWith("changelog.");
+	return field.startsWith(`${domain}.`);
+}
+
+function selectedRepositories(snapshot, choices) {
+	if (snapshot.shape !== "hub_root") return [snapshot.repositoryId || "current"];
+	const requested = Array.isArray(choices.repositories) && choices.repositories.length > 0 ? choices.repositories : ["hub"];
+	return [...new Set(requested)];
+}
+
+function phaseOrder(phase) {
+	return phase === "prepare" ? 10 : phase === "cutover" ? 20 : 30;
+}
+
+function inferPhase(effect) {
+	if (PHASES.includes(effect.phase)) return effect.phase;
+	if (effect.order < 10) return "prepare";
+	if (effect.order >= 30) return "cleanup";
+	return "cutover";
+}
+
+function normalizeEffect(effect, sequence) {
+	const phase = inferPhase(effect);
+	const operation = effect.operation || effect.payload?.operation || effect.classification.toLowerCase();
+	return {
+		...effect,
+		id: effect.id || `${phase}:${effect.target}:${operation}`,
+		phase,
+		order: effect.order ?? phaseOrder(phase) + sequence,
+	};
+}
+
+function runtimeEffects(snapshot, machine, choices, selectedRepos) {
+	const effects = [];
+	const selected = new Set(choices.fields || []);
+	if (!selected.has("runtime.session_discipline") && !selected.has("runtime.dangerous_git_guard")) return effects;
+
+	if (selected.has("runtime.session_discipline") && machine?.sessionDisciplineDelivered === false) {
+		effects.push({
+			id: "prepare:machine:session-discipline:deliver",
+			order: 1,
+			phase: "prepare",
+			target: "machine:session_discipline_delivery",
+			kind: "state",
+			classification: "CREATE",
+			reason: "Deliver required session discipline in the active harness before cutover.",
+			diff: "missing -> delivered",
+			fingerprint: machine.sessionDisciplineFingerprint ?? null,
+			payload: { operation: "deliver_runtime_policy" },
+		});
+	}
+
+	const proposedGuard = choices.values?.["runtime.dangerous_git_guard"];
+	if (proposedGuard === "enabled" && machine?.dangerousGitGuardDelivered === false) {
+		effects.push({
+			id: "prepare:machine:dangerous-git-guard:deliver",
+			order: 2,
+			phase: "prepare",
+			target: "machine:dangerous_git_guard_delivery",
+			kind: "state",
+			classification: "CREATE",
+			reason: "Deliver the required dangerous-git guard in the active harness before cutover.",
+			diff: "missing -> delivered",
+			fingerprint: machine.dangerousGitGuardFingerprint ?? null,
+			payload: { operation: "deliver_runtime_policy" },
+		});
+	}
+
+	if (proposedGuard !== "disabled") return effects;
+	const owners = machine?.sharedGuardsOwnedBy ?? [];
+	const foreignOwners = owners.filter(owner => !selectedRepos.includes(owner));
+	const exactOwnedDuplicate = machine?.sharedGuardExactGenerated === true && owners.length > 0 && foreignOwners.length === 0;
+	const authorized = choices.authorizeOwnedCleanup === true;
+	if (!exactOwnedDuplicate || !authorized) {
+		effects.push({
+			id: "cleanup:machine:shared-guard:preserve",
+			order: 30,
+			phase: "cleanup",
+			target: "machine:sharedGuard",
+			kind: "state",
+			classification: "PRESERVE",
+			reason: foreignOwners.length > 0
+				? "Shared protection is used by another repository."
+				: "Runtime cleanup is not an exact authorized repository-owned duplicate.",
+			diff: "unchanged",
+			fingerprint: machine?.sharedGuardFingerprint ?? null,
+		});
+		return effects;
+	}
+	effects.push({
+		id: "cleanup:machine:shared-guard:delete",
+		order: 30,
+		phase: "cleanup",
+		target: "machine:sharedGuard",
+		kind: "state",
+		classification: "DELETE",
+		reason: "Remove the exact authorized repository-owned generated duplicate after cutover.",
+		diff: "removed",
+		fingerprint: machine?.sharedGuardFingerprint ?? null,
+		destructive: true,
+		payload: { operation: "remove_exact_generated_duplicate" },
+	});
+	return effects;
+}
+
+function normalizedDependencyClosure(config, choices, contribution) {
+	const closure = [...(contribution.dependencyClosure || [])];
+	if ((choices.fields || []).includes("runtime.dangerous_git_guard")) {
+		closure.push({
+			field: "runtime.session_discipline",
+			reason: "Dangerous-git guard delivery depends on active session discipline.",
+			resolution: (choices.fields || []).includes("runtime.session_discipline") ? "selected" : "retained-compatible",
+			current: valueAtPath(config, "runtime.session_discipline"),
+		});
+	}
+	const unique = new Map();
+	for (const item of closure) {
+		const normalized = typeof item === "string" ? { field: item, reason: "Required dependency.", resolution: "retained-compatible" } : item;
+		unique.set(normalized.field, normalized);
+	}
+	if (choices.cancelDependent && unique.size > 0) {
+		throw new ReconfigureError("Required dependent choice cancelled. The proposed change was cancelled without resetting state.", "ERR_DEPENDENT_CANCELLED");
+	}
+	return [...unique.values()].sort((left, right) => left.field.localeCompare(right.field));
+}
+
+function effectAuthorizationView(effect) {
+	return {
+		id: effect.id,
+		target: effect.target,
+		kind: effect.kind,
+		classification: effect.classification,
+		phase: effect.phase,
+		operation: effect.operation || effect.payload?.operation || null,
+		dependencies: effect.dependencies || [],
+		correlationToken: effect.payload?.correlationToken || effect.correlationToken || null,
+		afterDigest: effect.after === undefined ? null : sha256(String(effect.after)),
+		payloadDigest: effect.payload === undefined ? null : sha256(JSON.stringify(effect.payload)),
+	};
+}
+
+function collectFingerprints(effects) {
+	const fingerprints = { local: {}, machine: {}, remote: {} };
+	for (const effect of effects.filter(isMutation)) {
+		if (effect.target.startsWith("machine:")) fingerprints.machine[effect.id] = effect.fingerprint ?? null;
+		else if (isRemoteEffect(effect)) fingerprints.remote[effect.id] = effect.remoteFingerprint ?? effect.fingerprint ?? null;
+		else fingerprints.local[effect.id] = effect.fingerprint ?? null;
+	}
+	return fingerprints;
+}
+
+function isMutation(effect) {
+	return MUTATION_CLASSIFICATIONS.has(effect.classification);
+}
+
+function isRemoteEffect(effect) {
+	return effect.remoteFingerprint !== undefined || effect.target.startsWith("remote:") || effect.payload?.external === true;
+}
+
+export function createReconfigurePlan(config, snapshot, machine, choices, contribution = {}) {
+	const error = validationError(config);
+	if (error) throw error;
+	if (!snapshot || !["standalone", "hub_root", "hub_subrepository"].includes(snapshot.shape)) {
+		throw new ReconfigureError("A validated repository scope is required.", "ERR_INVALID_SCOPE");
+	}
+	if (!choices || !Array.isArray(choices.fields)) {
+		throw new ReconfigureError("Concrete field selection is required.", "ERR_MISSING_FIELD_SELECTION");
+	}
+	if (!choices.domain || !["runtime", "tracker", "docs", "changelog"].includes(choices.domain)) {
+		throw new ReconfigureError("A selectable reconfiguration domain is required.", "ERR_INVALID_DOMAIN");
+	}
+
+	const scope = selectedRepositories(snapshot, choices);
+	const selectedFields = [...new Set(choices.fields)].sort();
+	if (selectedFields.some(field => !fieldBelongsToDomain(field, choices.domain))) {
+		throw new ReconfigureError("Selected fields must belong to the selected domain.", "ERR_FIELD_OUTSIDE_DOMAIN");
+	}
+	const knownFields = new Set(leafPaths(config));
+	if (selectedFields.some(field => !knownFields.has(field))) {
+		throw new ReconfigureError("Selected field is not present in the strict-valid baseline.", "ERR_UNKNOWN_FIELD");
+	}
+
+	const effects = [];
+	for (const field of [...knownFields].sort()) {
+		const target = `config:${field}`;
+		const current = valueAtPath(config, field);
+		if (!selectedFields.includes(field)) {
+			effects.push({
+				id: `preserve:${target}`,
+				order: 5,
+				phase: "prepare",
+				target,
+				kind: "state",
+				classification: "PRESERVE",
+				reason: "Unselected canonical field.",
+				diff: "unchanged",
+				fingerprint: snapshot.entries?.[target]?.fingerprint ?? null,
+			});
+			continue;
+		}
+		if (!Object.hasOwn(choices.values ?? {}, field)) {
+			throw new ReconfigureError(`A proposed value is required for ${field}.`, "ERR_MISSING_PROPOSED_VALUE");
+		}
+		const proposed = choices.values[field];
+		const aligned = sameValue(current, proposed);
+		effects.push({
+			id: `cutover:${target}:set`,
+			order: 20,
+			phase: "cutover",
+			target,
+			kind: "state",
+			classification: aligned ? "NO-OP" : "UPDATE",
+			reason: aligned ? "Selected field is already aligned." : "Apply only the selected canonical field while preserving the surrounding structure.",
+			diff: aligned ? "unchanged" : `${JSON.stringify(current)} -> ${JSON.stringify(proposed)}`,
+			fingerprint: snapshot.entries?.[target]?.fingerprint ?? null,
+			dependencies: [...(contribution.fieldDependencies?.[field] || [])],
+			payload: { operation: "set_config_field", field, value: proposed, preserveUnselected: true },
+		});
+	}
+
+	const contributedEffects = [
+		...(contribution.effects || []),
+		...runtimeEffects(snapshot, machine, choices, scope),
+	];
+	const contributedTargets = new Set(contributedEffects.map(effect => effect.target));
+	for (const target of Object.keys(snapshot.entries ?? {}).sort()) {
+		if (target.startsWith("config:") || contributedTargets.has(target)) continue;
+		effects.push({
+			id: `preserve:${target}`,
+			order: 5,
+			phase: "prepare",
+			target,
+			kind: "state",
+			classification: "PRESERVE",
+			reason: "Unselected artifact or managed fragment.",
+			diff: "unchanged",
+			fingerprint: snapshot.entries[target]?.fingerprint ?? null,
+		});
+	}
+	effects.push(...contributedEffects);
+
+	const normalizedEffects = effects.map(normalizeEffect);
+	normalizedEffects.sort((left, right) => phaseOrder(left.phase) - phaseOrder(right.phase) || left.order - right.order || left.id.localeCompare(right.id));
+	const blockerMap = new Map();
+	for (const blocker of contribution.blockers || []) blockerMap.set(blocker.id, blocker);
+	for (const effect of normalizedEffects.filter(effect => effect.classification === "BLOCKING_CONFLICT")) {
+		blockerMap.set(effect.id, { id: effect.id, target: effect.target, reason: effect.reason });
+	}
+	const blockers = [...blockerMap.values()];
+	const dependencyClosure = normalizedDependencyClosure(config, choices, contribution);
+	const authorizationPayload = {
+		scope,
+		domain: choices.domain,
+		selectedFields,
+		valuesDigest: sha256(JSON.stringify(choices.values || {})),
+		dependencyClosure,
+		effects: normalizedEffects.map(effectAuthorizationView),
+	};
+	const hash = sha256(JSON.stringify(authorizationPayload));
+	const changed = normalizedEffects.some(isMutation);
+	return {
+		effects: normalizedEffects,
+		hash,
+		choicesHash: sha256(JSON.stringify({ domain: choices.domain, fields: selectedFields, values: choices.values || {}, repositories: scope })),
+		requiresConfirmation: blockers.length === 0 && changed,
+		dependencyClosure,
+		scope,
+		fingerprints: collectFingerprints(normalizedEffects),
+		itemIds: normalizedEffects.map(effect => effect.id),
+		correlationTokens: normalizedEffects.map(effect => effect.payload?.correlationToken || effect.correlationToken).filter(Boolean),
+		blockers,
+		report: blockers.length > 0 ? "Reconfiguration is blocked before confirmation." : changed ? "Plan created. Requires confirmation." : "Aligned reconfiguration. No changes required.",
+	};
 }
 
 export function plan(config, snapshot, machine, choices) {
-    const error = validationError(config);
-    if (error) throw error;
-    if (!snapshot || !["standalone", "hub_root", "hub_subrepository"].includes(snapshot.shape)) {
-        throw new ReconfigureError("A validated repository scope is required.", "ERR_INVALID_SCOPE");
-    }
-    if (!choices || !Array.isArray(choices.fields)) {
-        throw new ReconfigureError("Concrete field selection is required.", "ERR_MISSING_FIELD_SELECTION");
-    }
-    if (snapshot.shape === "hub_root" && (!Array.isArray(choices.repositories) || choices.repositories.length === 0)) {
-        throw new ReconfigureError("Hub-root invocation requires repository selection.", "ERR_MISSING_REPO_SELECTION");
-    }
-
-    const selectedRepos = snapshot.shape === "hub_root"
-        ? [...new Set(choices.repositories)]
-        : [snapshot.repositoryId || "current"];
-    const selectedFields = [...new Set(choices.fields)].sort();
-    const expectedPrefix = choices.domain ? `${choices.domain}.` : null;
-    if (expectedPrefix && selectedFields.some(field => !field.startsWith(expectedPrefix))) {
-        throw new ReconfigureError("Selected fields must belong to the selected domain.", "ERR_FIELD_OUTSIDE_DOMAIN");
-    }
-    const knownFields = new Set(leafPaths(config));
-    if (selectedFields.some(field => !knownFields.has(field))) {
-        throw new ReconfigureError("Selected field is not present in the strict-valid baseline.", "ERR_UNKNOWN_FIELD");
-    }
-
-    const dependencyClosure = [];
-    if (selectedFields.includes("runtime.dangerous_git_guard")) dependencyClosure.push("runtime.session_discipline");
-    if (choices.cancelDependent && dependencyClosure.length > 0) {
-        throw new ReconfigureError("Required dependent choice cancelled.", "ERR_DEPENDENT_CANCELLED");
-    }
-
-    const effects = [];
-    for (const field of [...knownFields].sort()) {
-        const target = `config:${field}`;
-        const current = valueAtPath(config, field);
-        if (!selectedFields.includes(field)) {
-            effects.push({
-                order: 5,
-                target,
-                kind: "state",
-                classification: "PRESERVE",
-                reason: "Unselected canonical field",
-                diff: "unchanged",
-                fingerprint: snapshot.entries?.[target]?.fingerprint ?? null
-            });
-            continue;
-        }
-        if (!Object.hasOwn(choices.values ?? {}, field)) {
-            throw new ReconfigureError(`A proposed value is required for ${field}.`, "ERR_MISSING_PROPOSED_VALUE");
-        }
-        const proposed = choices.values[field];
-        const aligned = sameValue(current, proposed);
-        effects.push({
-            order: 10,
-            target,
-            kind: "state",
-            classification: aligned ? "NO-OP" : "UPDATE",
-            reason: aligned ? "Selected field is already aligned" : "User selected canonical field change",
-            diff: aligned ? "unchanged" : `${JSON.stringify(current)} -> ${JSON.stringify(proposed)}`,
-            fingerprint: snapshot.entries?.[target]?.fingerprint ?? null
-        });
-    }
-
-    for (const target of Object.keys(snapshot.entries ?? {}).sort()) {
-        if (target.startsWith("config:") || effects.some(effect => effect.target === target)) continue;
-        effects.push({
-            order: 5,
-            target,
-            kind: "state",
-            classification: "PRESERVE",
-            reason: "Unselected artifact or managed fragment",
-            diff: "unchanged",
-            fingerprint: snapshot.entries[target]?.fingerprint ?? null
-        });
-    }
-
-    const routing = choices.domain === "tracker" && choices.triageMappings
-        ? planTriage(config, snapshot, machine, choices)
-        : ["engineering", "docs"].includes(choices.domain) && choices.contextMap
-            ? planDomain(config, snapshot, machine, choices)
-            : null;
-    if (routing?.blocking) {
-        throw new ReconfigureError("Blocking conflict detected. Migration unsafe.", "ERR_BLOCKING_CONFLICT");
-    }
-    if (routing) {
-        effects.push(...routing.effects);
-        dependencyClosure.push(...routing.dependencyClosure);
-    }
-
-    if (choices.values?.["runtime.dangerous_git_guard"] === "disabled") {
-        const owners = machine?.sharedGuardsOwnedBy ?? [];
-        const shared = owners.some(owner => !selectedRepos.includes(owner));
-        effects.push({
-            order: 20,
-            target: "machine:sharedGuard",
-            kind: "state",
-            classification: shared ? "PRESERVE" : "UPDATE",
-            reason: shared ? "Shared protection is used by another repository" : "Exact authorized repository-owned duplicate may be cleaned up",
-            diff: shared ? "unchanged" : "removed",
-            fingerprint: machine?.sharedGuardFingerprint ?? null
-        });
-    }
-
-    effects.sort((left, right) => left.order - right.order || left.target.localeCompare(right.target));
-    const changed = effects.some(effect => ["CREATE", "UPDATE"].includes(effect.classification));
-    const hash = createHash("sha256").update(JSON.stringify({ selectedRepos, selectedFields, effects })).digest("hex");
-    return {
-        effects,
-        hash,
-        requiresConfirmation: changed,
-        dependencyClosure,
-        scope: selectedRepos,
-        report: changed ? "Plan created. Requires confirmation." : "Aligned reconfiguration. No changes needed."
-    };
+	let contribution = { effects: [], blockers: [], dependencyClosure: [] };
+	if (choices?.triageMappings) contribution = planTriage(config, snapshot, machine, choices);
+	else if (choices?.contextMap || choices?.artifactRoutes) contribution = planDomain(config, snapshot, machine, choices);
+	return {
+		...createReconfigurePlan(config, snapshot, machine, choices, contribution),
+		...(contribution.affectedItems ? { affectedItems: contribution.affectedItems } : {}),
+		...(contribution.collisions ? { collisions: contribution.collisions } : {}),
+	};
 }
 
-// Ensure the journal never contains config values, secrets, or field contents
-function stripSecretsFromState(state) {
-    return {
-        ...state,
-        effects: state.effects.map(e => ({
-            ...e,
-            diff: "redacted"
-        }))
-    };
+function requiredAdapter(adapters, names, code) {
+	const name = names.find(candidate => typeof adapters[candidate] === "function");
+	if (!name) throw new ReconfigureError(`Reconfiguration requires adapter ${names.join(" or ")}.`, code);
+	return adapters[name].bind(adapters);
+}
+
+function journalOperation(effect) {
+	return {
+		id: effect.id,
+		target: effect.target,
+		kind: effect.kind,
+		classification: effect.classification,
+		phase: effect.phase,
+		dependencies: [...(effect.dependencies || [])],
+		correlationToken: effect.payload?.correlationToken || effect.correlationToken || null,
+		remoteFingerprint: effect.remoteFingerprint ?? null,
+		destructive: effect.destructive === true || effect.classification === "DELETE",
+	};
+}
+
+function assertSecretFreeJournal(state) {
+	const forbiddenKeys = /^(token|password|secret|credential|authorization|before|after|diff|payload|content|value)$/i;
+	const visit = value => {
+		if (!value || typeof value !== "object") return;
+		for (const [key, child] of Object.entries(value)) {
+			if (forbiddenKeys.test(key)) throw new ReconfigureError(`Secret-bearing journal field is forbidden: ${key}.`, "ERR_UNSAFE_JOURNAL");
+			visit(child);
+		}
+	};
+	visit(state);
+}
+
+function initialJournalState(planResult, now) {
+	const state = {
+		schemaVersion: 1,
+		planHash: planResult.hash,
+		choicesHash: planResult.choicesHash,
+		scope: [...planResult.scope],
+		phase: "prepare",
+		status: "in_progress",
+		operations: planResult.effects.filter(isMutation).map(journalOperation),
+		completedIds: [],
+		verifiedIds: [],
+		returnedIdentities: {},
+		correlationTokens: [...planResult.correlationTokens],
+		fingerprints: planResult.fingerprints,
+		failed: null,
+		startedAt: now(),
+	};
+	assertSecretFreeJournal(state);
+	return state;
+}
+
+async function persistJournal(adapters, state) {
+	assertSecretFreeJournal(state);
+	const writeJournal = requiredAdapter(adapters, ["writeJournal"], "ERR_JOURNAL_ADAPTER_REQUIRED");
+	await writeJournal(state.planHash, structuredClone(state));
+}
+
+function actionableByPhase(planResult, state, phase) {
+	const completed = new Set(state.completedIds);
+	return planResult.effects.filter(effect => isMutation(effect) && effect.phase === phase && !completed.has(effect.id));
+}
+
+function pendingFingerprints(planResult, state, category) {
+	const completed = new Set(state.completedIds);
+	return Object.fromEntries(Object.entries(planResult.fingerprints[category] || {}).filter(([id]) => !completed.has(id)));
+}
+
+async function revalidateConfirmedFingerprints(planResult, state, adapters) {
+	const local = pendingFingerprints(planResult, state, "local");
+	const machine = pendingFingerprints(planResult, state, "machine");
+	if (Object.keys(local).length > 0) {
+		const validate = adapters.revalidateLocalFingerprints || adapters.revalidateFingerprints;
+		if (typeof validate !== "function" || await validate.call(adapters, local, planResult) !== true) {
+			throw new ReconfigureError("Local fingerprint drift requires a fresh authorization.", "ERR_LOCAL_DRIFT");
+		}
+	}
+	if (Object.keys(machine).length > 0) {
+		const validate = adapters.revalidateMachineFingerprints || adapters.revalidateFingerprints;
+		if (typeof validate !== "function" || await validate.call(adapters, machine, planResult) !== true) {
+			throw new ReconfigureError("Machine fingerprint drift requires a fresh authorization.", "ERR_MACHINE_DRIFT");
+		}
+	}
+}
+
+async function revalidateRemoteEffect(effect, adapters) {
+	if (!isRemoteEffect(effect)) return;
+	const refetch = requiredAdapter(adapters, ["refetchRemoteFingerprint"], "ERR_REMOTE_REFETCH_REQUIRED");
+	const fresh = await refetch(effect);
+	const expected = Object.hasOwn(effect, "remoteFingerprint") ? effect.remoteFingerprint : effect.fingerprint ?? null;
+	if (!sameValue(fresh, expected)) {
+		throw new ReconfigureError(`Remote drift detected for ${effect.target}; fresh authorization is required.`, "ERR_REMOTE_DRIFT");
+	}
+}
+
+function operationReport(planResult, state) {
+	const completed = new Set(state.completedIds);
+	const failedId = state.failed?.effectId || null;
+	return {
+		completed: state.operations.filter(operation => completed.has(operation.id)).map(operation => operation.id),
+		preserved: planResult.effects.filter(effect => effect.classification === "PRESERVE").map(effect => effect.id),
+		skipped: planResult.effects.filter(effect => effect.classification === "SKIP").map(effect => effect.id),
+		noOp: planResult.effects.filter(effect => effect.classification === "NO-OP").map(effect => effect.id),
+		pending: state.operations.filter(operation => !completed.has(operation.id) && operation.id !== failedId).map(operation => operation.id),
+		failed: failedId ? [failedId] : [],
+	};
+}
+
+async function derivedReadiness(adapters, state, planResult, fallbackReady) {
+	if (typeof adapters.deriveReadiness === "function") return await adapters.deriveReadiness(state, planResult);
+	return { configValid: fallbackReady, engineeringReady: fallbackReady, trackerReady: fallbackReady, docsReady: fallbackReady, runtimeReady: fallbackReady };
+}
+
+async function executeConfirmedPlan(planResult, context, adapters, injection, state) {
+	const applyEffect = requiredAdapter(adapters, ["applyEffect"], "ERR_APPLY_ADAPTER_REQUIRED");
+	const verifyEffect = requiredAdapter(adapters, ["verifyEffect"], "ERR_VERIFY_ADAPTER_REQUIRED");
+	const now = adapters.now ? adapters.now.bind(adapters) : Date.now;
+	let currentEffect = null;
+	try {
+		await revalidateConfirmedFingerprints(planResult, state, adapters);
+		let appliedIndex = state.completedIds.length;
+		for (const phase of PHASES.slice(PHASES.indexOf(state.phase))) {
+			state.phase = phase;
+			state.status = "in_progress";
+			await persistJournal(adapters, state);
+			if (injection.failAtPhase === phase) throw new Error(`Injected failure at phase ${phase}`);
+			if (phase === "cleanup" && typeof adapters.verifyCutover === "function" && await adapters.verifyCutover(state, planResult) !== true) {
+				throw new ReconfigureError("Cutover ownership, mappings, adapters, or active references did not verify before cleanup.", "ERR_CUTOVER_NOT_VERIFIED");
+			}
+			for (const effect of actionableByPhase(planResult, state, phase)) {
+				currentEffect = effect;
+				const completed = new Set(state.completedIds);
+				if ((effect.dependencies || []).some(id => !completed.has(id))) {
+					throw new ReconfigureError(`Effect ${effect.id} has an incomplete dependency.`, "ERR_INCOMPLETE_DEPENDENCY");
+				}
+				if (injection.failAtEffectIndex === appliedIndex || injection.failAtEffectId === effect.id) {
+					throw new Error(`Injected failure at effect ${effect.id}`);
+				}
+				await revalidateRemoteEffect(effect, adapters);
+				const outcome = await applyEffect(effect, { state: structuredClone(state), context });
+				state.completedIds.push(effect.id);
+				if (outcome?.identity !== undefined) state.returnedIdentities[effect.id] = outcome.identity;
+				await persistJournal(adapters, state);
+				if (await verifyEffect(effect, outcome, { state: structuredClone(state), context }) !== true) {
+					throw new ReconfigureError(`Verification failed for ${effect.target}.`, "ERR_EFFECT_VERIFICATION");
+				}
+				state.verifiedIds.push(effect.id);
+				await persistJournal(adapters, state);
+				appliedIndex += 1;
+			}
+			if (typeof adapters.verifyPhase === "function" && await adapters.verifyPhase(phase, state, planResult) !== true) {
+				throw new ReconfigureError(`Verification failed after ${phase}.`, "ERR_PHASE_VERIFICATION");
+			}
+			const nextIndex = PHASES.indexOf(phase) + 1;
+			state.phase = nextIndex < PHASES.length ? PHASES[nextIndex] : "done";
+			await persistJournal(adapters, state);
+		}
+		if (typeof adapters.verifyCompletion === "function" && await adapters.verifyCompletion(state, planResult) !== true) {
+			throw new ReconfigureError("Canonical ownership, mappings, adapters, readiness, or source preservation did not verify.", "ERR_COMPLETION_NOT_VERIFIED");
+		}
+	} catch (error) {
+		state.status = "failed";
+		state.failed = { effectId: currentEffect?.id || null, phase: state.phase, code: error.code || "ERR_RECONFIGURE_FAILED", message: error.message };
+		await persistJournal(adapters, state);
+		const report = operationReport(planResult, state);
+		return {
+			success: false,
+			phase: state.phase,
+			completedEffects: state.completedIds.length,
+			hash: state.planHash,
+			readiness: await derivedReadiness(adapters, state, planResult, false),
+			report: `Failed during ${state.phase}: ${error.message}. No rollback was performed.`,
+			operationReport: report,
+			ownershipReport: Object.fromEntries(state.scope.map(repository => [repository, "incomplete"])),
+		};
+	}
+
+	state.phase = "done";
+	state.status = "completed";
+	state.failed = null;
+	const report = operationReport(planResult, state);
+	const readiness = await derivedReadiness(adapters, state, planResult, true);
+	const ownershipReport = Object.fromEntries(state.scope.map(repository => [repository, "owned"]));
+	const audit = {
+		schemaVersion: 1,
+		planHash: state.planHash,
+		scope: state.scope,
+		status: "completed",
+		acceptedPartial: false,
+		completed: report.completed,
+		preserved: report.preserved,
+		skipped: report.skipped,
+		noOp: report.noOp,
+		pending: report.pending,
+		failed: report.failed,
+		ownershipReport,
+		noRollback: true,
+		timestamp: now(),
+	};
+	assertSecretFreeJournal(audit);
+	const appendAudit = requiredAdapter(adapters, ["appendAudit", "writeAudit"], "ERR_AUDIT_ADAPTER_REQUIRED");
+	await appendAudit(audit);
+	const removeJournal = requiredAdapter(adapters, ["removeJournal"], "ERR_JOURNAL_ADAPTER_REQUIRED");
+	await removeJournal();
+	return {
+		success: true,
+		phase: "done",
+		completedEffects: state.completedIds.length,
+		hash: state.planHash,
+		readiness,
+		report: "Prepare, cutover, and cleanup completed. Durable audit recorded before journal cleanup.",
+		operationReport: report,
+		ownershipReport,
+	};
+}
+
+function journalState(record) {
+	return record?.state || record || null;
+}
+
+function assertPlanMatchesJournal(planResult, state) {
+	if (state.planHash !== planResult.hash || state.choicesHash !== planResult.choicesHash || !sameValue(state.scope, planResult.scope)) {
+		throw new ReconfigureError("The confirmed journal does not match the requested scope and choices.", "ERR_PLAN_MISMATCH");
+	}
+	const plannedIds = new Set(planResult.effects.filter(isMutation).map(effect => effect.id));
+	const missingPending = state.operations.filter(operation => !state.completedIds.includes(operation.id) && !plannedIds.has(operation.id));
+	if (missingPending.length > 0) throw new ReconfigureError("The confirmed remainder cannot be reconstructed safely.", "ERR_PLAN_MISMATCH");
+}
+
+export async function applyConfirmedPlan(planResult, context, adapters, injection = {}) {
+	if (planResult.blockers.length > 0) throw new ReconfigureError("Cannot apply a reconfiguration plan with blockers.", "ERR_HAS_BLOCKERS");
+	if (!planResult.effects.some(isMutation)) {
+		return {
+			success: true,
+			phase: "done",
+			completedEffects: 0,
+			hash: planResult.hash,
+			readiness: await derivedReadiness(adapters, null, planResult, true),
+			report: "Aligned reconfiguration. No changes required.",
+			operationReport: {
+				completed: [],
+				preserved: planResult.effects.filter(effect => effect.classification === "PRESERVE").map(effect => effect.id),
+				skipped: planResult.effects.filter(effect => effect.classification === "SKIP").map(effect => effect.id),
+				noOp: planResult.effects.filter(effect => effect.classification === "NO-OP").map(effect => effect.id),
+				pending: [],
+				failed: [],
+			},
+			ownershipReport: Object.fromEntries(planResult.scope.map(repository => [repository, "aligned"])),
+		};
+	}
+	const readJournal = requiredAdapter(adapters, ["readJournal"], "ERR_JOURNAL_ADAPTER_REQUIRED");
+	if (await readJournal()) throw new ReconfigureError("An interrupted reconfiguration must be resumed or accepted before starting another.", "ERR_JOURNAL_EXISTS");
+	const now = adapters.now ? adapters.now.bind(adapters) : Date.now;
+	const state = initialJournalState(planResult, now);
+	await persistJournal(adapters, state);
+	return executeConfirmedPlan(planResult, context, adapters, injection, state);
+}
+
+export async function resumeConfirmedPlan(planResult, context, adapters, injection = {}) {
+	const readJournal = requiredAdapter(adapters, ["readJournal"], "ERR_JOURNAL_ADAPTER_REQUIRED");
+	const state = journalState(await readJournal());
+	if (!state) throw new ReconfigureError("No interrupted work found to resume.", "ERR_NO_JOURNAL");
+	assertSecretFreeJournal(state);
+	assertPlanMatchesJournal(planResult, state);
+	return executeConfirmedPlan(planResult, context, adapters, injection, state);
+}
+
+export async function acceptConfirmedPartial(config, planResult, context, adapters) {
+	const error = validationError(config);
+	if (error) throw error;
+	const readJournal = requiredAdapter(adapters, ["readJournal"], "ERR_JOURNAL_ADAPTER_REQUIRED");
+	const state = journalState(await readJournal());
+	if (!state) throw new ReconfigureError("No interrupted work found to accept.", "ERR_NO_JOURNAL");
+	assertSecretFreeJournal(state);
+	assertPlanMatchesJournal(planResult, state);
+	const cutoverCompleted = state.operations.some(operation => operation.phase === "cutover" && state.completedIds.includes(operation.id));
+	const destructiveCompleted = state.operations.some(operation => operation.destructive && state.completedIds.includes(operation.id));
+	if (!cutoverCompleted || destructiveCompleted) {
+		throw new ReconfigureError("Partial acceptance requires a verified cutover and cannot accept completed source or remote deletion.", "ERR_NOT_ELIGIBLE_PARTIAL");
+	}
+	const validatePartial = requiredAdapter(adapters, ["validatePartialState"], "ERR_PARTIAL_VALIDATION_REQUIRED");
+	const validation = await validatePartial({ state: structuredClone(state), plan: planResult, context });
+	if (!validation || validation.valid !== true) {
+		throw new ReconfigureError("Retained canonical configuration and adapters are not valid for partial acceptance.", "ERR_INVALID_PARTIAL_STATE");
+	}
+	const now = adapters.now ? adapters.now.bind(adapters) : Date.now;
+	const report = operationReport(planResult, state);
+	const ownershipReport = validation.ownershipReport || Object.fromEntries(state.scope.map(repository => [repository, "partial"]));
+	const audit = {
+		schemaVersion: 1,
+		planHash: state.planHash,
+		scope: state.scope,
+		status: "accepted_partial",
+		acceptedPartial: true,
+		completed: report.completed,
+		preserved: report.preserved,
+		skipped: report.skipped,
+		noOp: report.noOp,
+		pending: report.pending,
+		failed: report.failed,
+		ownershipReport,
+		noRollback: true,
+		timestamp: now(),
+	};
+	assertSecretFreeJournal(audit);
+	const appendAudit = requiredAdapter(adapters, ["appendAudit", "writeAudit"], "ERR_AUDIT_ADAPTER_REQUIRED");
+	await appendAudit(audit);
+	const removeJournal = requiredAdapter(adapters, ["removeJournal"], "ERR_JOURNAL_ADAPTER_REQUIRED");
+	await removeJournal();
+	return {
+		success: true,
+		phase: state.phase,
+		completedEffects: state.completedIds.length,
+		hash: state.planHash,
+		readiness: validation.readiness || await derivedReadiness(adapters, state, planResult, true),
+		report: "Reviewed valid partial state accepted. Durable audit recorded; no rollback or deletion was performed.",
+		operationReport: report,
+		ownershipReport,
+	};
 }
 
 export async function apply(config, snapshot, machine, choices, planHash, effects, adapters, injection = {}) {
-    const expected = plan(config, snapshot, machine, choices);
-    if (expected.hash !== planHash || JSON.stringify(expected.effects) !== JSON.stringify(effects)) {
-        throw new ReconfigureError("The confirmed plan no longer matches current inputs.", "ERR_PLAN_MISMATCH");
-    }
-    if (adapters.readJournal && await adapters.readJournal()) {
-        throw new ReconfigureError("An interrupted reconfiguration must be resumed or accepted before starting another.", "ERR_JOURNAL_EXISTS");
-    }
-    if (!effects.some(effect => effect.classification === "UPDATE" || effect.classification === "CREATE")) {
-        return {
-            success: true,
-            phase: "done",
-            completedEffects: 0,
-            hash: planHash,
-            readiness: { configValid: true, engineeringReady: true, trackerReady: true, runtimeReady: true },
-            report: "Aligned reconfiguration completed with no changes.",
-            ownershipReport: { [snapshot.repositoryId || "current"]: "aligned" }
-        };
-    }
-
-    const state = {
-        hash: planHash,
-        effects,
-        completedEffects: 0,
-        phase: "prepare"
-    };
-    if (adapters.writeJournal) await adapters.writeJournal(planHash, stripSecretsFromState(state));
-    return await executePhases(state, snapshot, adapters, injection);
-}
-
-export async function executePhases(state, snapshot, adapters, injection) {
-    const phases = ["prepare", "cutover", "cleanup", "done"];
-    let currentPhaseIdx = phases.indexOf(state.phase);
-    
-    const now = adapters.now ? adapters.now : Date.now;
-    let ownershipReport = {};
-
-    try {
-        const actionable = state.effects.filter(e => e.classification === "UPDATE" || e.classification === "CREATE");
-        actionable.sort((a, b) => a.order - b.order);
-        const prepareMax = actionable.filter(e => e.order < 10).length;
-        const cutoverMax = prepareMax + actionable.filter(e => e.order >= 10 && e.order < 30).length;
-        const cleanupMax = actionable.length;
-
-        // Prepare phase: validate fingerprints and drift, then run prepare effects
-        if (state.phase === "prepare") {
-            if (injection.failAtPhase === "prepare") {
-                throw new Error("Injected failure at phase prepare");
-            }
-            if (adapters.revalidateFingerprints && !await adapters.revalidateFingerprints(state.effects)) {
-                throw new Error("Drift detected while revalidating confirmed fingerprints");
-            }
-            if (injection.driftEntries) {
-                for (const [target, expectedHash] of Object.entries(injection.driftEntries)) {
-                    const entry = snapshot.entries[target];
-                    if (!entry || entry.fingerprint !== expectedHash) {
-                        throw new Error(`Drift detected for ${target}`);
-                    }
-                }
-            }
-            while (state.completedEffects < prepareMax) {
-                if (injection.failAtEffectIndex === state.completedEffects) {
-                     throw new Error(`Injected failure at effect ${state.completedEffects}`);
-                }
-                const effect = actionable[state.completedEffects];
-                if (adapters.applyEffect) {
-                    await adapters.applyEffect(effect);
-                }
-                state.completedEffects++;
-            }
-            state.phase = "cutover";
-            currentPhaseIdx++;
-            if (adapters.writeJournal) await adapters.writeJournal(state.hash, stripSecretsFromState(state));
-        }
-
-        // Cutover phase: apply normal updates and creates
-        if (state.phase === "cutover") {
-            if (injection.failAtPhase === "cutover") {
-                throw new Error("Injected failure at phase cutover");
-            }
-            while (state.completedEffects < cutoverMax) {
-                if (injection.failAtEffectIndex === state.completedEffects) {
-                     throw new Error(`Injected failure at effect ${state.completedEffects}`);
-                }
-                const effect = actionable[state.completedEffects];
-                if (adapters.applyEffect) {
-                    await adapters.applyEffect(effect);
-                }
-                state.completedEffects++;
-            }
-            state.phase = "cleanup";
-            currentPhaseIdx++;
-            if (adapters.writeJournal) await adapters.writeJournal(state.hash, stripSecretsFromState(state));
-        }
-
-        // Cleanup phase: run cleanup effects (order >= 30)
-        if (state.phase === "cleanup") {
-            if (injection.failAtPhase === "cleanup") {
-                throw new Error("Injected failure at phase cleanup");
-            }
-            while (state.completedEffects < cleanupMax) {
-                if (injection.failAtEffectIndex === state.completedEffects) {
-                     throw new Error(`Injected failure at effect ${state.completedEffects}`);
-                }
-                const effect = actionable[state.completedEffects];
-                if (adapters.applyEffect) {
-                    await adapters.applyEffect(effect);
-                }
-                state.completedEffects++;
-            }
-            state.phase = "done";
-            currentPhaseIdx++;
-            ownershipReport = { [snapshot.repositoryId || "current"]: "owned" };
-        }
-
-    } catch (err) {
-        // Stop on the first failure without rollback
-        if (adapters.writeJournal) {
-            await adapters.writeJournal(state.hash, stripSecretsFromState(state));
-        }
-        return {
-            success: false,
-            phase: state.phase,
-            completedEffects: state.completedEffects,
-            hash: state.hash,
-            readiness: { configValid: false, engineeringReady: false, trackerReady: false, runtimeReady: false },
-            report: `Failed during ${state.phase}: ${err.message}`
-        };
-    }
-    
-    // Durable audit record MUST be written BEFORE transient journal is removed
-    if (adapters.writeAudit) {
-        await adapters.writeAudit({ hash: state.hash, completed: state.completedEffects, timestamp: now() });
-    }
-    
-    if (adapters.removeJournal) {
-        await adapters.removeJournal();
-    }
-    
-    return {
-        success: true,
-        phase: "done",
-        completedEffects: state.completedEffects,
-        hash: state.hash,
-        readiness: { configValid: true, engineeringReady: true, trackerReady: true, runtimeReady: true },
-        report: "Cutover completed.",
-        ownershipReport
-    };
+	const expected = plan(config, snapshot, machine, choices);
+	if (expected.hash !== planHash || !sameValue(expected.effects, effects)) {
+		throw new ReconfigureError("The confirmed plan no longer matches current inputs.", "ERR_PLAN_MISMATCH");
+	}
+	return applyConfirmedPlan(expected, { config, snapshot, machine, choices }, adapters, injection);
 }
 
 export async function resume(config, snapshot, machine, choices, adapters, injection = {}) {
-    if (!adapters.readJournal) throw new Error("readJournal adapter required");
-    const record = await adapters.readJournal();
-    if (!record) {
-        throw new Error("No interrupted work found to resume.");
-    }
-    
-    return await executePhases(record.state, snapshot, adapters, injection);
+	const expected = plan(config, snapshot, machine, choices);
+	return resumeConfirmedPlan(expected, { config, snapshot, machine, choices }, adapters, injection);
 }
 
 export async function acceptPartial(config, snapshot, machine, choices, adapters) {
-    if (!adapters.readJournal) throw new Error("readJournal adapter required");
-    const record = await adapters.readJournal();
-    if (!record) {
-        throw new Error("No interrupted work found to accept.");
-    }
-    
-    const state = record.state;
-    
-    // Check eligibility: user can only accept if some cutover effects landed (state partially applied)
-    if (state.completedEffects === 0 && state.phase !== "cleanup") {
-        throw new ReconfigureError("Cannot accept partial state with 0 completed effects.", "ERR_NOT_ELIGIBLE_PARTIAL");
-    }
-    
-    const now = adapters.now ? adapters.now : Date.now;
-
-    if (adapters.writeAudit) {
-        await adapters.writeAudit({ hash: state.hash, completed: state.completedEffects, acceptedPartial: true, timestamp: now() });
-    }
-    if (adapters.removeJournal) {
-        await adapters.removeJournal();
-    }
-    
-    return {
-        success: true,
-        phase: state.phase,
-        completedEffects: state.completedEffects,
-        hash: state.hash,
-        readiness: { configValid: true, engineeringReady: true, trackerReady: true, runtimeReady: true },
-        report: "Partial state explicitly accepted.",
-        ownershipReport: { [snapshot.repositoryId || "current"]: "partial" }
-    };
+	const expected = plan(config, snapshot, machine, choices);
+	return acceptConfirmedPartial(config, expected, { config, snapshot, machine, choices }, adapters);
 }
