@@ -83,6 +83,7 @@ export interface NativeTicketSyncOperation {
 	localId: string;
 	payload: Record<string, unknown>;
 	perform: (effectivePayload?: Record<string, unknown>) => Promise<string>;
+	isLocalApplied?: (effectivePayload?: Record<string, unknown>) => Promise<boolean>;
 }
 
 export type NativeTicketSyncBoundary = (request: {
@@ -169,12 +170,37 @@ export function registerTicketTool(pi: ExtensionAPI, dependencies: TicketToolDep
 				const slug = params.slug ? slugify(params.slug) : slugify(params.title);
 				if (slug === "") return textResult("ws_ticket: title produced an empty slug.", true);
 				const { open, done } = ticketPaths(ticketsDir, slug);
-				if (await exists(open)) {
+				if (!synchronize && await exists(open)) {
 					return textResult(`Ticket already exists: ${open}. Use a different slug or edit the file directly.`, true);
 				}
-				if (await exists(done)) {
+				if (!synchronize && await exists(done)) {
 					return textResult(`Slug already archived: ${done}. Reopen it with op=move to=open, or pick a different slug.`, true);
 				}
+				const expected = renderTicket({
+					title: params.title,
+					body: params.body,
+					blockedBy: params.blocked_by,
+					share: params.share,
+					criteria: params.criteria,
+					jiraFields: {
+						type: config.jira?.default_issue_type ?? "Task",
+					},
+				});
+				const createIsApplied = async () => {
+					const [openExists, doneExists] = await Promise.all([exists(open), exists(done)]);
+					if (openExists && doneExists) {
+						throw new Error(`Ticket exists in both open/ and done/: ${slug}`);
+					}
+					if (doneExists) {
+						throw new Error(`Slug already archived: ${done}. Reopen it with op=move to=open, or pick a different slug.`);
+					}
+					if (!openExists) return false;
+					const current = await fs.readFile(open, "utf8");
+					if (current !== expected) {
+						throw new Error(`Existing Local ticket does not match the durable create intent: ${open}`);
+					}
+					return true;
+				};
 				return runMutation({
 					action: "create",
 					localId: slug,
@@ -187,22 +213,11 @@ export function registerTicketTool(pi: ExtensionAPI, dependencies: TicketToolDep
 						status: "ready-for-agent",
 						type: config.jira?.default_issue_type ?? "Task",
 					},
+					isLocalApplied: createIsApplied,
 					perform: async () => {
+						if (await createIsApplied()) return `Kept ${open}`;
 						await fs.mkdir(path.dirname(open), { recursive: true });
-						await fs.writeFile(
-							open,
-							renderTicket({
-								title: params.title!,
-								body: params.body!,
-								blockedBy: params.blocked_by,
-								share: params.share,
-								criteria: params.criteria,
-								jiraFields: {
-									type: config.jira?.default_issue_type ?? "Task",
-								},
-							}),
-							"utf8",
-						);
+						await fs.writeFile(open, expected, { encoding: "utf8", flag: "wx" });
 						return `Created ${open}`;
 					},
 				});
@@ -221,54 +236,62 @@ export function registerTicketTool(pi: ExtensionAPI, dependencies: TicketToolDep
 			const target = params.op === "close" ? "done" : (params.to ?? "done");
 			const [from, to] = target === "done" ? [open, done] : [done, open];
 
-			if (!(await exists(from))) {
+			if (!synchronize && !(await exists(from))) {
 				const where = target === "done" ? "open/" : "done/";
 				return textResult(`Ticket not found in ${where}: ${from}`, true);
 			}
-			if (await exists(to)) {
+			if (!synchronize && await exists(to)) {
 				return textResult(`Destination already exists: ${to}. Resolve the slug collision first (rename one of the tickets).`, true);
 			}
+			const statusLocalState = async (effectivePayload?: Record<string, unknown>) => {
+				let effectiveStatus = target === "done" ? "done" : "ready-for-agent";
+				if (effectivePayload?.status === "done" || effectivePayload?.status === "ready-for-agent") {
+					effectiveStatus = effectivePayload.status;
+				}
+				const effectiveState = effectiveStatus === "done" ? "done" : "open";
+				const [currentOpen, currentDone] = await Promise.all([exists(open), exists(done)]);
+				if (currentOpen === currentDone) {
+					throw new Error(currentOpen
+						? `Ticket exists in both open/ and done/: ${slug}`
+						: `Ticket disappeared before the status write: ${slug}`);
+				}
+				const current = currentOpen ? open : done;
+				const destination = effectiveState === "done" ? done : open;
+				const source = await fs.readFile(current, "utf8");
+				let updated = source;
+				if (params.share && !updated.includes(`share: ${params.share}`)) {
+					const lines = updated.split("\n");
+					lines.splice(1, 0, "", `share: ${params.share}`);
+					updated = lines.join("\n");
+				}
+				updated = updateTicketText(updated, { status: effectiveStatus });
+				return { current, destination, effectiveStatus, source, updated };
+			};
 			return runMutation({
 				action: "status",
 				localId: slug,
 				payload: { status: target === "done" ? "done" : "ready-for-agent" },
+				isLocalApplied: async effectivePayload => {
+					const state = await statusLocalState(effectivePayload);
+					return state.current === state.destination && state.source === state.updated;
+				},
 				perform: async effectivePayload => {
-					let effectiveStatus = target === "done" ? "done" : "ready-for-agent";
-					if (effectivePayload?.status === "done" || effectivePayload?.status === "ready-for-agent") {
-						effectiveStatus = effectivePayload.status;
-					}
-					const effectiveState = effectiveStatus === "done" ? "done" : "open";
-					const currentOpen = await exists(open);
-					const currentDone = await exists(done);
-					if (currentOpen === currentDone) {
-						throw new Error(currentOpen
-							? `Ticket exists in both open/ and done/: ${slug}`
-							: `Ticket disappeared before the status write: ${slug}`);
-					}
-					const current = currentOpen ? open : done;
-					const destination = effectiveState === "done" ? done : open;
-					let text = await fs.readFile(current, "utf8");
-					if (params.share && !text.includes(`share: ${params.share}`)) {
-						const lines = text.split("\n");
-						lines.splice(1, 0, "", `share: ${params.share}`);
-						text = lines.join("\n");
-					}
-					text = updateTicketText(text, { status: effectiveStatus });
-					await fs.writeFile(current, text, "utf8");
-					if (current !== destination) {
-						await fs.mkdir(path.dirname(destination), { recursive: true });
-						if (await exists(destination)) throw new Error(`Destination already exists: ${destination}`);
-						await fs.link(current, destination);
+					const state = await statusLocalState(effectivePayload);
+					if (state.updated !== state.source) await fs.writeFile(state.current, state.updated, "utf8");
+					if (state.current !== state.destination) {
+						await fs.mkdir(path.dirname(state.destination), { recursive: true });
+						if (await exists(state.destination)) throw new Error(`Destination already exists: ${state.destination}`);
+						await fs.link(state.current, state.destination);
 						try {
-							await fs.unlink(current);
+							await fs.unlink(state.current);
 						} catch (error) {
-							await fs.rm(destination, { force: true }).catch(() => undefined);
+							await fs.rm(state.destination, { force: true }).catch(() => undefined);
 							throw error;
 						}
 					}
-					return current === destination
-						? `Kept ${current} at ${effectiveStatus}`
-						: `Moved ${current} -> ${destination}`;
+					return state.current === state.destination
+						? `Kept ${state.current} at ${state.effectiveStatus}`
+						: `Moved ${state.current} -> ${state.destination}`;
 				},
 			});
 		},

@@ -50,11 +50,45 @@ function cloneSyncState(state) {
 	};
 }
 
+function requestCorrelationId(pending) {
+	return pending.requestCorrelationId ?? pending.correlationId;
+}
+
 function pendingMatches(candidate, expected) {
 	return candidate.correlationId === expected.correlationId &&
+		requestCorrelationId(candidate) === requestCorrelationId(expected) &&
 		candidate.localId === expected.localId &&
 		candidate.action === expected.action &&
 		hashField(candidate.payload) === hashField(expected.payload);
+}
+
+function pendingRequestMatches(candidate, requested) {
+	return requestCorrelationId(candidate) === requested.correlationId &&
+		candidate.localId === requested.localId &&
+		candidate.action === requested.action;
+}
+
+function pendingPhase(pending) {
+	return pending.phase ?? "local_applied";
+}
+
+function operationCorrelationId(operation) {
+	return hashField({
+		localId: operation.localId,
+		action: operation.action,
+		payload: operation.payload,
+	});
+}
+
+function localOperationAppearsApplied(pending, localStore) {
+	const current = localStore[pending.localId];
+	if (!current || hashField(current) === pending.localBeforeHash) return false;
+	if (pending.action === "comment") {
+		return (current.comments || []).some(comment => hashField(comment.text) === hashField(pending.payload.text));
+	}
+	return Object.entries(pending.payload).every(([field, value]) =>
+		hashField(current[field]) === hashField(value)
+	);
 }
 
 class DurabilityError extends Error {
@@ -136,9 +170,9 @@ export async function runTrackerOperation({
 			}
 			return jiraAdapter.updateStatus(id, status);
 		},
-		addComment: async (id, text) => {
-			logCall("addComment", { id, text });
-			return jiraAdapter.addComment(id, text);
+		addComment: async (id, text, correlationId) => {
+			logCall("addComment", { id, text, correlationId });
+			return jiraAdapter.addComment(id, text, correlationId);
 		},
 	};
 
@@ -250,11 +284,58 @@ export async function runTrackerOperation({
 		const existing = result.nextSyncState.pendingOperations.find(candidate =>
 			candidate.correlationId === pending.correlationId
 		);
+		if (existing && !pendingMatches(existing, pending)) {
+			throw new DurabilityError(`Pending operation identity collision for ${pending.localId}.`);
+		}
 		if (!existing) result.nextSyncState.pendingOperations.push(pending);
 		await persistSyncAndReadBack(state =>
 			state.pendingOperations.some(candidate => pendingMatches(candidate, pending))
 		);
 		return result.nextSyncState.pendingOperations.find(candidate => candidate.correlationId === pending.correlationId);
+	};
+	const persistPendingPhase = async (pending, phase) => {
+		const current = result.nextSyncState.pendingOperations.find(candidate =>
+			candidate.correlationId === pending.correlationId
+		);
+		if (!current) throw new DurabilityError("Pending operation disappeared before its Local phase was journaled.");
+		current.phase = phase;
+		await persistSyncAndReadBack(state =>
+			state.pendingOperations.some(candidate =>
+				candidate.correlationId === pending.correlationId && candidate.phase === phase
+			)
+		);
+		return result.nextSyncState.pendingOperations.find(candidate => candidate.correlationId === pending.correlationId);
+	};
+	const cancelPending = async pending => {
+		result.nextSyncState.pendingOperations = result.nextSyncState.pendingOperations.filter(candidate =>
+			candidate.correlationId !== pending.correlationId
+		);
+		await persistSyncAndReadBack(state =>
+			!state.pendingOperations.some(candidate => candidate.correlationId === pending.correlationId)
+		);
+	};
+	const replacePendingIntent = async (pending, replacement) => {
+		const index = result.nextSyncState.pendingOperations.findIndex(candidate =>
+			candidate.correlationId === pending.correlationId
+		);
+		if (index === -1) throw new DurabilityError("Pending operation disappeared before its prepared intent was updated.");
+		const collision = result.nextSyncState.pendingOperations.find((candidate, candidateIndex) =>
+			candidateIndex !== index && candidate.correlationId === replacement.correlationId
+		);
+		if (collision) throw new DurabilityError(`Pending operation identity collision for ${replacement.localId}.`);
+		result.nextSyncState.pendingOperations[index] = replacement;
+		await persistSyncAndReadBack(state =>
+			state.pendingOperations.some(candidate =>
+				pendingMatches(candidate, replacement) &&
+				candidate.phase === "prepared" &&
+				candidate.localBeforeHash === replacement.localBeforeHash
+			) &&
+			(pending.correlationId === replacement.correlationId ||
+				!state.pendingOperations.some(candidate => candidate.correlationId === pending.correlationId))
+		);
+		return result.nextSyncState.pendingOperations.find(candidate =>
+			candidate.correlationId === replacement.correlationId
+		);
 	};
 	const persistReturned = async (pending, returnedId, returnedVersion) => {
 		const correlationId = pending.correlationId;
@@ -293,10 +374,81 @@ export async function runTrackerOperation({
 		});
 	};
 
+	const completedRequestCorrelations = new Set();
+	const blockPreparedLocal = (pending, reason) => {
+		const message = `Pending Local ${pending.action} for ${pending.localId} ${reason}`;
+		if (!result.blockers.includes(message)) result.blockers.push(message);
+	};
+	const inspectPreparedLocal = async (pending, requestedOperation) => {
+		if (!pending.requiresLocalVerification) {
+			return {
+				applied: localOperationAppearsApplied(pending, result.nextLocalStore),
+				reason: "does not match the durable Local state.",
+			};
+		}
+		if (
+			!requestedOperation ||
+			typeof requestedOperation.isLocalApplied !== "function" ||
+			!pendingRequestMatches(pending, {
+				correlationId: operationCorrelationId(requestedOperation),
+				localId: requestedOperation.localId,
+				action: requestedOperation.action,
+			})
+		) {
+			return {
+				applied: false,
+				reason: "requires the matching Local request to verify recovery.",
+			};
+		}
+		try {
+			const persistedEffectiveOperation = {
+				...requestedOperation,
+				payload: structuredClone(pending.payload),
+			};
+			return {
+				applied: Boolean(await requestedOperation.isLocalApplied(
+					result.nextLocalStore,
+					persistedEffectiveOperation,
+				)),
+				reason: "does not match the durable Local state.",
+			};
+		} catch (error) {
+			return {
+				applied: false,
+				reason: `failed Local recovery verification: ${String(error instanceof Error ? error.message : error)}.`,
+			};
+		}
+	};
 	const reconcilePending = async () => {
 		while (result.nextSyncState.pendingOperations.length > 0) {
 			let pending = result.nextSyncState.pendingOperations[0];
 			try {
+				if (pendingPhase(pending) === "prepared") {
+					if (typeof pending.localBeforeHash !== "string") {
+						throw new DurabilityError(`Prepared operation for ${pending.localId} has no Local baseline hash.`);
+					}
+					const currentLocalHash = hashField(result.nextLocalStore[pending.localId]);
+					if (currentLocalHash === pending.localBeforeHash) {
+						return {
+							conflict: false,
+							outage: false,
+							durabilityFailure: false,
+							awaitingLocal: pending,
+						};
+					}
+					const inspection = await inspectPreparedLocal(pending, effectiveOperation);
+					if (!inspection.applied) {
+						blockPreparedLocal(pending, inspection.reason);
+						return {
+							conflict: false,
+							outage: false,
+							durabilityFailure: false,
+							localMismatch: true,
+						};
+					}
+					pending = await persistPendingPhase(pending, "local_applied");
+				}
+
 				let mapping = result.nextSyncState.mappings[pending.localId];
 				if (pending.action === "create") {
 					pending = await persistIntent(pending);
@@ -311,6 +463,7 @@ export async function runTrackerOperation({
 						jiraId: jiraTicket.id,
 						jiraVersion: jiraTicket.version,
 					}, hashTicketFields(pending.payload));
+					completedRequestCorrelations.add(requestCorrelationId(pending));
 					continue;
 				}
 
@@ -346,6 +499,7 @@ export async function runTrackerOperation({
 						jiraId: mapping.jiraId,
 						jiraVersion: updatedTicket.version,
 					}, hashTicketFields(payload));
+					completedRequestCorrelations.add(requestCorrelationId(pending));
 					continue;
 				}
 
@@ -358,7 +512,11 @@ export async function runTrackerOperation({
 							throw new Error(`Returned Jira comment ${pending.returnedId} is unavailable on ${mapping.jiraId}`);
 						}
 					} else {
-						const comment = await adapter.addComment(mapping.jiraId, pending.payload.text);
+						const comment = await adapter.addComment(
+							mapping.jiraId,
+							pending.payload.text,
+							pending.correlationId,
+						);
 						if (!comment?.id || comment.version === undefined) {
 							throw new Error(`Jira did not return a comment identity and version for ${mapping.jiraId}`);
 						}
@@ -377,6 +535,7 @@ export async function runTrackerOperation({
 						jiraId: mapping.jiraId,
 						jiraVersion: updatedTicket.version,
 					}, { comments: hashField(comments) });
+					completedRequestCorrelations.add(requestCorrelationId(pending));
 					continue;
 				}
 			} catch (error) {
@@ -390,85 +549,169 @@ export async function runTrackerOperation({
 		return { conflict: false, outage: false, durabilityFailure: false };
 	};
 
-	const before = await reconcilePending();
-	if (before.conflict || before.durabilityFailure || !operation) return result;
-
-	const effectiveOperation = {
+	const effectiveOperation = operation ? {
 		...operation,
 		payload: sanitizeOperationPayload(operation.action, operation.payload),
-	};
-	const mapping = result.nextSyncState.mappings[effectiveOperation.localId];
-	if (!before.outage && mapping) {
-		try {
-			const jiraTicket = await adapter.getTicket(mapping.jiraId);
-			if (jiraTicket) {
-				const inspected = await inspectMappedTicket(
-					effectiveOperation.localId,
-					mapping,
-					jiraTicket,
-					effectiveOperation.action === "comment" ? {} : effectiveOperation.payload,
-				);
-				if (inspected.blocked) return result;
-				effectiveOperation.payload = effectiveOperation.action === "comment"
-					? effectiveOperation.payload
-					: inspected.payload;
-			}
-		} catch (error) {
-			if (error instanceof DurabilityError) {
-				failDurability(error);
-				return result;
-			}
-			// Jira outages degrade synchronization, but do not block the Local operation.
-		}
+	} : null;
+	const requestedPending = effectiveOperation ? {
+		correlationId: operationCorrelationId(effectiveOperation),
+		localId: effectiveOperation.localId,
+		action: effectiveOperation.action,
+		payload: effectiveOperation.payload,
+	} : null;
+	const before = await reconcilePending();
+	if (before.conflict || before.durabilityFailure || before.localMismatch) return result;
+	if (!effectiveOperation) {
+		if (before.awaitingLocal) blockPreparedLocal(before.awaitingLocal, "has not been applied.");
+		return result;
 	}
+	if (completedRequestCorrelations.has(requestedPending.correlationId)) return result;
 
-	if (typeof operation.perform === "function") {
-		const performedStore = await operation.perform(result.nextLocalStore, effectiveOperation);
-		if (!performedStore || typeof performedStore !== "object") {
-			throw new TypeError("Tracker operation perform() must return the resulting Local store.");
-		}
-		result.nextLocalStore = cloneLocalStore(performedStore);
-	} else if (effectiveOperation.action === "comment") {
-		const current = result.nextLocalStore[effectiveOperation.localId] || {
-			id: effectiveOperation.localId,
-			comments: [],
-			localMetadata: {},
-		};
-		const comments = [...(current.comments || []), {
-			id: `c-${hashField({
-				localId: effectiveOperation.localId,
-				text: effectiveOperation.payload.text,
-				count: current.comments?.length || 0,
-			}).slice(0, 12)}`,
-			text: effectiveOperation.payload.text,
-		}];
-		result.nextLocalStore[effectiveOperation.localId] = { ...current, comments };
-	} else {
-		mergeLocalFields(effectiveOperation.localId, effectiveOperation.payload);
+	let pending = result.nextSyncState.pendingOperations.find(candidate =>
+		pendingRequestMatches(candidate, requestedPending)
+	);
+	if (before.awaitingLocal && !pendingRequestMatches(before.awaitingLocal, requestedPending)) {
+		blockPreparedLocal(before.awaitingLocal, "must be resumed before another Local operation.");
+		return result;
 	}
-
-	try {
-		const expectedLocalHash = hashField(result.nextLocalStore[effectiveOperation.localId]);
-		await persistLocalAndReadBack(store =>
-			hashField(store[effectiveOperation.localId]) === expectedLocalHash
+	if (!pending && effectiveOperation.action === "create" && result.nextLocalStore[effectiveOperation.localId]) {
+		result.blockers.push(
+			`Local ticket ${effectiveOperation.localId} already exists without a matching durable create intent.`
 		);
-		const pending = {
-			correlationId: hashField({
-				localId: effectiveOperation.localId,
-				action: effectiveOperation.action,
-				payload: effectiveOperation.payload,
-			}),
-			localId: effectiveOperation.localId,
-			action: effectiveOperation.action,
-			payload: effectiveOperation.payload,
+		return result;
+	}
+
+	const freshPending = !pending;
+	if (!pending) {
+		pending = {
+			...requestedPending,
+			requestCorrelationId: requestedPending.correlationId,
+			phase: "prepared",
+			localBeforeHash: hashField(result.nextLocalStore[effectiveOperation.localId]),
+			requiresLocalVerification: typeof operation.isLocalApplied === "function",
 		};
-		await persistIntent(pending);
+	}
+	if (pending) effectiveOperation.payload = structuredClone(pending.payload);
+	try {
+		pending = await persistIntent(pending);
 	} catch (error) {
 		if (error instanceof DurabilityError) {
 			failDurability(error);
 			return result;
 		}
 		throw error;
+	}
+
+	if (freshPending) {
+		const mapping = result.nextSyncState.mappings[effectiveOperation.localId];
+		if (!before.outage && mapping) {
+			try {
+				const jiraTicket = await adapter.getTicket(mapping.jiraId);
+				if (jiraTicket) {
+					const inspected = await inspectMappedTicket(
+						effectiveOperation.localId,
+						mapping,
+						jiraTicket,
+						effectiveOperation.action === "comment" ? {} : effectiveOperation.payload,
+					);
+					if (inspected.blocked) {
+						await cancelPending(pending);
+						return result;
+					}
+					effectiveOperation.payload = effectiveOperation.action === "comment"
+						? effectiveOperation.payload
+						: inspected.payload;
+					pending = await replacePendingIntent(pending, {
+						correlationId: operationCorrelationId(effectiveOperation),
+						requestCorrelationId: requestCorrelationId(pending),
+						localId: effectiveOperation.localId,
+						action: effectiveOperation.action,
+						payload: effectiveOperation.payload,
+						phase: "prepared",
+						localBeforeHash: hashField(result.nextLocalStore[effectiveOperation.localId]),
+						requiresLocalVerification: typeof operation.isLocalApplied === "function",
+					});
+				}
+			} catch (error) {
+				if (error instanceof DurabilityError) {
+					failDurability(error);
+					return result;
+				}
+				// Jira outages degrade synchronization, but do not block the Local operation.
+			}
+		}
+	}
+
+	if (pendingPhase(pending) === "prepared") {
+		const currentLocalHash = hashField(result.nextLocalStore[pending.localId]);
+		if (currentLocalHash !== pending.localBeforeHash) {
+			const inspection = await inspectPreparedLocal(pending, effectiveOperation);
+			if (!inspection.applied) {
+				blockPreparedLocal(pending, inspection.reason);
+				return result;
+			}
+		} else {
+			try {
+				if (typeof operation.perform === "function") {
+					const performedStore = await operation.perform(result.nextLocalStore, effectiveOperation);
+					if (!performedStore || typeof performedStore !== "object") {
+						throw new TypeError("Tracker operation perform() must return the resulting Local store.");
+					}
+					result.nextLocalStore = cloneLocalStore(performedStore);
+				} else if (effectiveOperation.action === "comment") {
+					const current = result.nextLocalStore[effectiveOperation.localId] || {
+						id: effectiveOperation.localId,
+						comments: [],
+						localMetadata: {},
+					};
+					const comments = [...(current.comments || []), {
+						id: `c-${hashField({
+							localId: effectiveOperation.localId,
+							text: effectiveOperation.payload.text,
+							count: current.comments?.length || 0,
+						}).slice(0, 12)}`,
+						text: effectiveOperation.payload.text,
+					}];
+					result.nextLocalStore[effectiveOperation.localId] = { ...current, comments };
+				} else {
+					mergeLocalFields(effectiveOperation.localId, effectiveOperation.payload);
+				}
+
+				const expectedLocalHash = hashField(result.nextLocalStore[effectiveOperation.localId]);
+				await persistLocalAndReadBack(store =>
+					hashField(store[effectiveOperation.localId]) === expectedLocalHash
+				);
+			} catch (error) {
+				try {
+					const durableLocalStore = cloneLocalStore(await persistence.readLocalStore());
+					replaceLocalStore(durableLocalStore);
+					if (hashField(durableLocalStore[pending.localId]) === pending.localBeforeHash) {
+						await cancelPending(pending);
+					}
+				} catch (recoveryError) {
+					const durabilityError = recoveryError instanceof DurabilityError
+						? recoveryError
+						: new DurabilityError("Durable Local-store recovery after a failed operation failed.", recoveryError);
+					failDurability(durabilityError);
+					return result;
+				}
+				if (error instanceof DurabilityError) {
+					failDurability(error);
+					return result;
+				}
+				throw error;
+			}
+		}
+
+		try {
+			pending = await persistPendingPhase(pending, "local_applied");
+		} catch (error) {
+			if (error instanceof DurabilityError) {
+				failDurability(error);
+				return result;
+			}
+			throw error;
+		}
 	}
 
 	await reconcilePending();

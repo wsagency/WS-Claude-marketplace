@@ -303,6 +303,79 @@ describe("ws_ticket", () => {
 		expect(JSON.stringify(operations)).not.toContain("local-only-blocker");
 	});
 
+	test("synchronized create and close retries accept matching already-applied Local state", async () => {
+		await writeCanonicalPolicy({ jiraSync: "all_local_tickets" });
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "open"), { recursive: true });
+		const attempts = { create: 0, status: 0 };
+		const synchronizedTool = collectTools(pi => registerTicketTool(pi, {
+			runSynchronizedOperation: async ({ operation }) => {
+				attempts[operation.action] += 1;
+				const message = await operation.perform(operation.payload);
+				if (attempts[operation.action] === 1) {
+					throw new Error(`simulated crash after Local ${operation.action}`);
+				}
+				return message;
+			},
+		})).get("ws_ticket") as FakeTool;
+		const createParams = {
+			op: "create",
+			title: "Retry durable write",
+			body: "Resume without repeating Local state.",
+			criteria: ["One Local result"],
+			share: "https://example.com/retry",
+		};
+
+		const interruptedCreate = await call(synchronizedTool, createParams);
+		expect(interruptedCreate.isError).toBe(true);
+		const resumedCreate = await call(synchronizedTool, createParams);
+		expect(resumedCreate.isError).toBeFalsy();
+		expect(attempts.create).toBe(2);
+
+		const closeParams = { op: "close", slug: "retry-durable-write", share: "https://example.com/retry" };
+		const interruptedClose = await call(synchronizedTool, closeParams);
+		expect(interruptedClose.isError).toBe(true);
+		const resumedClose = await call(synchronizedTool, closeParams);
+		expect(resumedClose.isError).toBeFalsy();
+		expect(attempts.status).toBe(2);
+		expect(await fs.readFile(
+			path.join(cwd, "dev-docs", "tickets", "done", "retry-durable-write.md"),
+			"utf8",
+		)).toContain("**Status:** done");
+	});
+
+	test("synchronized retries reject mismatched creates and status collisions without overwriting", async () => {
+		await writeCanonicalPolicy({ jiraSync: "all_local_tickets" });
+		const openDir = path.join(cwd, "dev-docs", "tickets", "open");
+		const doneDir = path.join(cwd, "dev-docs", "tickets", "done");
+		await fs.mkdir(openDir, { recursive: true });
+		await fs.mkdir(doneDir, { recursive: true });
+		const synchronizedTool = collectTools(pi => registerTicketTool(pi, {
+			runSynchronizedOperation: async ({ operation }) => operation.perform(operation.payload),
+		})).get("ws_ticket") as FakeTool;
+
+		const mismatchedPath = path.join(openDir, "mismatch.md");
+		await fs.writeFile(mismatchedPath, "# Existing\n", "utf8");
+		const mismatch = await call(synchronizedTool, {
+			op: "create",
+			title: "Replacement",
+			body: "Must not overwrite.",
+			slug: "mismatch",
+		});
+		expect(mismatch.isError).toBe(true);
+		expect(mismatch.content[0]?.text).toContain("does not match");
+		expect(await fs.readFile(mismatchedPath, "utf8")).toBe("# Existing\n");
+
+		const collisionOpen = path.join(openDir, "collision.md");
+		const collisionDone = path.join(doneDir, "collision.md");
+		await fs.writeFile(collisionOpen, "# Open\n", "utf8");
+		await fs.writeFile(collisionDone, "# Done\n", "utf8");
+		const collision = await call(synchronizedTool, { op: "close", slug: "collision" });
+		expect(collision.isError).toBe(true);
+		expect(collision.content[0]?.text).toContain("both open/ and done/");
+		expect(await fs.readFile(collisionOpen, "utf8")).toBe("# Open\n");
+		expect(await fs.readFile(collisionDone, "utf8")).toBe("# Done\n");
+	});
+
 	test("resolves the repository root before accessing canonical tickets", async () => {
 		const git = Bun.spawn(["git", "init", "-q"], { cwd, stdout: "ignore", stderr: "ignore" });
 		expect(await git.exited).toBe(0);

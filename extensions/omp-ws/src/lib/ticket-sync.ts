@@ -50,6 +50,7 @@ interface ManagedJiraFields {
 interface ParsedIssue {
 	ticket: JiraTicket;
 	correlationId?: string;
+	commentCorrelations?: Map<string, string>;
 }
 
 export interface ParsedTicket extends TicketFields {
@@ -312,6 +313,25 @@ function validateSyncState(value: unknown, fallbackRepositoryIdentity: string): 
 			throw new Error(`Invalid pending sync operation ${index + 1}.`);
 		}
 		assertBareLocalId(candidate.localId);
+		if (
+			candidate.requestCorrelationId !== undefined &&
+			(typeof candidate.requestCorrelationId !== "string" || candidate.requestCorrelationId === "")
+		) {
+			throw new Error(`Invalid request correlation identity for pending operation ${index + 1}.`);
+		}
+		const phase = candidate.phase ?? "local_applied";
+		if (phase !== "prepared" && phase !== "local_applied") {
+			throw new Error(`Invalid phase for pending operation ${index + 1}.`);
+		}
+		if (phase === "prepared" && (typeof candidate.localBeforeHash !== "string" || candidate.localBeforeHash === "")) {
+			throw new Error(`Prepared pending operation ${index + 1} must include a Local baseline hash.`);
+		}
+		if (candidate.localBeforeHash !== undefined && (typeof candidate.localBeforeHash !== "string" || candidate.localBeforeHash === "")) {
+			throw new Error(`Invalid Local baseline hash for pending operation ${index + 1}.`);
+		}
+		if (candidate.requiresLocalVerification !== undefined && typeof candidate.requiresLocalVerification !== "boolean") {
+			throw new Error(`Invalid Local verifier flag for pending operation ${index + 1}.`);
+		}
 		if (candidate.returnedId !== undefined && (typeof candidate.returnedId !== "string" || candidate.returnedId === "")) {
 			throw new Error(`Invalid returned Jira identity for pending operation ${index + 1}.`);
 		}
@@ -321,8 +341,16 @@ function validateSyncState(value: unknown, fallbackRepositoryIdentity: string): 
 		return {
 			correlationId: candidate.correlationId,
 			localId: candidate.localId,
+			...(candidate.requestCorrelationId !== undefined
+				? { requestCorrelationId: candidate.requestCorrelationId }
+				: {}),
 			action: candidate.action as SyncState["pendingOperations"][number]["action"],
 			payload: structuredClone(candidate.payload),
+			phase,
+			...(candidate.localBeforeHash !== undefined ? { localBeforeHash: candidate.localBeforeHash } : {}),
+			...(candidate.requiresLocalVerification !== undefined
+				? { requiresLocalVerification: candidate.requiresLocalVerification }
+				: {}),
 			...(candidate.returnedId !== undefined ? { returnedId: candidate.returnedId } : {}),
 			...(candidate.returnedVersion !== undefined ? { returnedVersion: candidate.returnedVersion } : {}),
 		};
@@ -507,7 +535,7 @@ function canonicalStatus(fields: Record<string, unknown>): string | undefined {
 	return status ? "ready-for-agent" : undefined;
 }
 
-function parseIssue(raw: unknown): ParsedIssue {
+function parseIssue(raw: unknown, commentCorrelation?: JiraCommentCorrelationEnvelope): ParsedIssue {
 	if (!isUnknownRecord(raw) || typeof raw.key !== "string" || raw.key === "" || !isUnknownRecord(raw.fields)) {
 		throw new Error("Jira returned an issue without a stable key or fields.");
 	}
@@ -516,19 +544,33 @@ function parseIssue(raw: unknown): ParsedIssue {
 	const envelope = parseDescriptionEnvelope(raw.fields.description);
 	const commentContainer = isUnknownRecord(raw.fields.comment) ? raw.fields.comment : null;
 	const rawComments = Array.isArray(commentContainer?.comments) ? commentContainer.comments : [];
-	const comments = rawComments.flatMap(candidate => {
-		if (!isUnknownRecord(candidate) || (typeof candidate.id !== "string" && typeof candidate.id !== "number")) return [];
+	const comments: JiraComment[] = [];
+	const commentCorrelations = new Map<string, string>();
+	for (const candidate of rawComments) {
+		if (!isUnknownRecord(candidate) || (typeof candidate.id !== "string" && typeof candidate.id !== "number")) continue;
+		const id = String(candidate.id);
+		const text = normalizeAdfText(candidate.body);
+		const commentEnvelope = commentCorrelation?.parse(text, id) ?? { text };
+		if (commentEnvelope.correlationId) {
+			const existingOwner = commentCorrelations.get(commentEnvelope.correlationId);
+			if (existingOwner) {
+				throw new Error(
+					`Jira comment correlation ${commentEnvelope.correlationId} is ambiguously owned by ${existingOwner} and ${id}.`
+				);
+			}
+			commentCorrelations.set(commentEnvelope.correlationId, id);
+		}
 		const authorRecord = isUnknownRecord(candidate.author) ? candidate.author : null;
 		const author = typeof authorRecord?.displayName === "string"
 			? authorRecord.displayName
 			: typeof authorRecord?.accountId === "string" ? authorRecord.accountId : undefined;
-		return [{
-			id: String(candidate.id),
-			text: normalizeAdfText(candidate.body),
+		comments.push({
+			id,
+			text: commentEnvelope.text,
 			...(author ? { author } : {}),
 			...(typeof candidate.created === "string" ? { createdAt: candidate.created } : {}),
-		}];
-	});
+		});
+	}
 	const priority = isUnknownRecord(raw.fields.priority) && typeof raw.fields.priority.name === "string" ? raw.fields.priority.name : undefined;
 	const type = isUnknownRecord(raw.fields.issuetype) && typeof raw.fields.issuetype.name === "string" ? raw.fields.issuetype.name : undefined;
 	const status = canonicalStatus(raw.fields);
@@ -545,6 +587,7 @@ function parseIssue(raw: unknown): ParsedIssue {
 			comments,
 		},
 		...(envelope.correlationId ? { correlationId: envelope.correlationId } : {}),
+		commentCorrelations,
 	};
 }
 
@@ -574,10 +617,17 @@ function changed(left: unknown, right: unknown): boolean {
 	return JSON.stringify(left) !== JSON.stringify(right);
 }
 
+export interface JiraCommentCorrelationEnvelope {
+	resolve(sourceCorrelationId: string): string | Promise<string>;
+	format(text: string, correlationId: string): string;
+	parse(text: string, commentId: string): { text: string; correlationId?: string };
+}
+
 export function createJiraAdapter(
 	root: string,
 	config: CanonicalProjectConfig,
 	runExec: typeof defaultRun = defaultRun,
+	commentCorrelation?: JiraCommentCorrelationEnvelope,
 ): JiraAdapter {
 	const project = config.jira?.project;
 	if (!project) throw new Error("Missing Jira project in canonical policy.");
@@ -593,7 +643,7 @@ export function createJiraAdapter(
 	};
 	const getParsed = async (id: string): Promise<ParsedIssue> => {
 		const result = await invoke(["issue", "view", id, "--raw", "--comments", "100"], `Jira view ${id}`);
-		return parseIssue(parseJsonOutput(`Jira view ${id}`, result.stdout));
+		return parseIssue(parseJsonOutput(`Jira view ${id}`, result.stdout), commentCorrelation);
 	};
 	const adapter: JiraAdapter = {
 		async getTicket(id) {
@@ -690,22 +740,41 @@ export function createJiraAdapter(
 			await invoke(["issue", "move", id, target], `Jira transition ${id}`);
 			return (await getParsed(id)).ticket;
 		},
-		async addComment(id, text) {
+		async addComment(id, text, sourceCorrelationId) {
+			if (!commentCorrelation) {
+				throw new Error("Scoped Jira comment correlation envelope is unavailable.");
+			}
+			const correlationId = await commentCorrelation.resolve(sourceCorrelationId);
+			if (typeof correlationId !== "string" || correlationId === "") {
+				throw new Error("Scoped Jira comment correlation resolver returned no identity.");
+			}
+			const body = commentCorrelation.format(text, correlationId);
 			const before = await getParsed(id);
-			const existingIds = new Set(before.ticket.comments?.map(comment => comment.id) ?? []);
-			await invoke(["issue", "comment", "add", id, text, "--no-input"], `Jira comment ${id}`);
+			const existingId = before.commentCorrelations?.get(correlationId);
+			if (existingId) {
+				const existing = before.ticket.comments?.find(comment => comment.id === existingId);
+				if (!existing || existing.text !== text.trim()) {
+					throw new Error(`Jira comment correlation ${correlationId} has mismatched ownership on ${id}.`);
+				}
+				return { id: existing.id, version: before.ticket.version };
+			}
+			await invoke(["issue", "comment", "add", id, body, "--no-input"], `Jira comment ${id}`);
 			const after = await getParsed(id);
-			const created = [...(after.ticket.comments ?? [])]
-				.reverse()
-				.find(comment => !existingIds.has(comment.id) && comment.text === text);
-			if (!created) throw new Error(`Jira comment on ${id} could not be verified by identity and content.`);
+			const createdId = after.commentCorrelations?.get(correlationId);
+			const created = after.ticket.comments?.find(comment => comment.id === createdId);
+			if (!created || created.text !== text.trim()) {
+				throw new Error(`Jira comment on ${id} could not be verified by correlation identity and content.`);
+			}
 			return { id: created.id, version: after.ticket.version };
 		},
 	};
 	return adapter;
 }
 
-export function createSynchronizedOperation(runExec: typeof defaultRun = defaultRun): NativeTicketSyncBoundary {
+export function createSynchronizedOperation(
+	runExec: typeof defaultRun = defaultRun,
+	commentCorrelation?: JiraCommentCorrelationEnvelope,
+): NativeTicketSyncBoundary {
 	return async ({ root, policy, operation }) => {
 		if (!policy.config) throw new Error("Canonical project policy is unavailable.");
 		const persistence = createTicketPersistence(root);
@@ -722,8 +791,16 @@ export function createSynchronizedOperation(runExec: typeof defaultRun = default
 					performedMessage = await operation.perform(effective.payload);
 					return persistence.readLocalStore();
 				},
+				...(operation.isLocalApplied
+					? {
+						isLocalApplied: async (
+							_store: Record<string, LocalTicket>,
+							effective: { payload: Record<string, unknown> },
+						) => operation.isLocalApplied!(effective.payload),
+					}
+					: {}),
 			},
-			jiraAdapter: createJiraAdapter(root, policy.config, runExec),
+			jiraAdapter: createJiraAdapter(root, policy.config, runExec, commentCorrelation),
 			persistence,
 			conflictChoices: [],
 		});

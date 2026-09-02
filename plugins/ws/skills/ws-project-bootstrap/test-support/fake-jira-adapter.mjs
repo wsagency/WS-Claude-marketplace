@@ -8,6 +8,7 @@ export class FakeJiraAdapter {
 		this.callLog = [];
 		this.idCounter = 1;
 		this.correlatedTickets = new Map();
+		this.correlatedComments = new Map();
 		for (const ticket of Object.values(this.existingData)) {
 			if (ticket.correlationId) this.correlatedTickets.set(ticket.correlationId, ticket.id);
 		}
@@ -77,10 +78,19 @@ export class FakeJiraAdapter {
 		return structuredClone(this.existingData[id]);
 	}
 
-	async addComment(id, text) {
-		this.callLog.push({ method: "addComment", args: { id, text } });
+	async addComment(id, text, correlationId) {
+		this.callLog.push({ method: "addComment", args: { id, text, correlationId } });
 		if (this.outage) throw new Error("Jira is unreachable");
 		if (!this.existingData[id]) throw new Error(`Unknown Jira ticket ${id}`);
+		const correlationKey = `${id}:${correlationId}`;
+		const existingId = this.correlatedComments.get(correlationKey);
+		if (existingId) {
+			const existing = (this.existingData[id].comments || []).find(comment => comment.id === existingId);
+			if (!existing || existing.text !== text) {
+				throw new Error(`Comment correlation ${correlationId} has mismatched ownership on ${id}`);
+			}
+			return { id: existing.id, version: this.existingData[id].version };
+		}
 		const commentId = `comment-${this.idCounter++}`;
 		const comments = [...(this.existingData[id].comments || []), { id: commentId, text }];
 		this.existingData[id] = {
@@ -88,6 +98,7 @@ export class FakeJiraAdapter {
 			comments,
 			version: this.existingData[id].version + 1,
 		};
+		this.correlatedComments.set(correlationKey, commentId);
 		return { id: commentId, version: this.existingData[id].version };
 	}
 }

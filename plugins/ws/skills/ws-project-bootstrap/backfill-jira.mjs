@@ -192,7 +192,8 @@ export async function executeBackfill({ plan, syncState, jiraAdapter, persistenc
 					correlationId: item.correlationId,
 					localId: item.localId,
 					action: "create",
-					payload: mappedFields
+					payload: mappedFields,
+					phase: "local_applied"
 				};
 				nextSyncState.pendingOperations.push(pending);
 				await persistAndReadBack(state => state.pendingOperations.some(operation =>

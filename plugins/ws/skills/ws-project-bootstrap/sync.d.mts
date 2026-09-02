@@ -29,8 +29,12 @@ export interface SyncMapping {
 export interface PendingSyncOperation {
 	correlationId: string;
 	localId: string;
+	requestCorrelationId?: string;
 	action: "create" | "update" | "comment" | "status";
 	payload: Record<string, unknown>;
+	phase?: "prepared" | "local_applied";
+	localBeforeHash?: string;
+	requiresLocalVerification?: boolean;
 	returnedVersion?: JiraVersion;
 	returnedId?: string;
 }
@@ -52,6 +56,10 @@ export interface TrackerOperation extends EffectiveTrackerOperation {
 		localStore: Record<string, LocalTicket>,
 		operation: EffectiveTrackerOperation,
 	) => Record<string, LocalTicket> | Promise<Record<string, LocalTicket>>;
+	isLocalApplied?: (
+		localStore: Record<string, LocalTicket>,
+		operation: EffectiveTrackerOperation,
+	) => boolean | Promise<boolean>;
 }
 
 export interface ConflictChoice {
@@ -67,7 +75,7 @@ export interface JiraAdapter {
 	createTicket(fields: TicketFields, correlationId: string): Promise<JiraTicket>;
 	updateTicket(id: string, fields: Partial<TicketFields>): Promise<JiraTicket | void>;
 	updateStatus(id: string, status: string): Promise<JiraTicket | void>;
-	addComment(id: string, text: string): Promise<{ id: string; version: JiraVersion }>;
+	addComment(id: string, text: string, correlationId: string): Promise<{ id: string; version: JiraVersion }>;
 }
 
 export interface TrackerPersistence {

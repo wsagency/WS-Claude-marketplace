@@ -360,6 +360,283 @@ test("create and comment synchronization never disclose Local workflow metadata"
 	assert.equal(jiraAdapter.existingData[created.nextSyncState.mappings["local-7"].jiraId].comments[0].text, "Hello");
 });
 
+test("refuses the Local operation when prepared-intent persistence fails", async () => {
+	const jiraAdapter = new FakeJiraAdapter();
+	const persistence = durablePersistence({}, { mappings: {}, pendingOperations: [] });
+	const persistSyncState = persistence.persistSyncState.bind(persistence);
+	let failPreparedIntent = true;
+	persistence.persistSyncState = async state => {
+		if (failPreparedIntent && state.pendingOperations.some(pending => pending.phase === "prepared")) {
+			failPreparedIntent = false;
+			throw new Error("simulated prepared-intent persistence failure");
+		}
+		return persistSyncState(state);
+	};
+	let localCalls = 0;
+
+	const result = await runOperation({
+		config: CONFIG,
+		localStore: {},
+		syncState: { mappings: {}, pendingOperations: [] },
+		operation: {
+			action: "create",
+			localId: "intent-first",
+			payload: { title: "Intent first" },
+			perform: store => {
+				localCalls += 1;
+				return { ...store, "intent-first": { id: "intent-first", title: "Intent first" } };
+			},
+		},
+		jiraAdapter,
+		persistence,
+	});
+
+	assert.equal(result.readiness.ready, false);
+	assert.equal(localCalls, 0);
+	assert.deepEqual(persistence.localSnapshot(), {});
+	assert.deepEqual(persistence.syncSnapshot().pendingOperations, []);
+	assert.deepEqual(jiraAdapter.getCallLog(), []);
+});
+
+test("a Local failure cancels its prepared intent before any Jira mutation", async () => {
+	const jiraAdapter = new FakeJiraAdapter();
+	const persistence = durablePersistence({}, { mappings: {}, pendingOperations: [] });
+
+	await assert.rejects(
+		runOperation({
+			config: CONFIG,
+			localStore: {},
+			syncState: { mappings: {}, pendingOperations: [] },
+			operation: {
+				action: "create",
+				localId: "local-failure",
+				payload: { title: "Must stay Local" },
+				perform: () => {
+					throw new Error("simulated Local failure");
+				},
+			},
+			jiraAdapter,
+			persistence,
+		}),
+		/simulated Local failure/,
+	);
+
+	const syncWrites = persistence.events.filter(event => event.type === "persist-sync");
+	assert.equal(syncWrites[0]?.state.pendingOperations[0]?.phase, "prepared");
+	assert.deepEqual(persistence.syncSnapshot().pendingOperations, []);
+	assert.deepEqual(persistence.localSnapshot(), {});
+	assert.deepEqual(jiraAdapter.getCallLog(), []);
+
+	const retryPass = await runOperation({
+		config: CONFIG,
+		localStore: persistence.localSnapshot(),
+		syncState: persistence.syncSnapshot(),
+		operation: null,
+		jiraAdapter,
+		persistence,
+	});
+	assert.deepEqual(retryPass.externalCallLog, []);
+});
+
+test("resumes after the Local write without performing the Local operation twice", async () => {
+	const jiraAdapter = new FakeJiraAdapter();
+	const persistence = durablePersistence({}, { mappings: {}, pendingOperations: [] });
+	const persistSyncState = persistence.persistSyncState.bind(persistence);
+	let failPhaseAdvance = true;
+	persistence.persistSyncState = async state => {
+		if (failPhaseAdvance && state.pendingOperations.some(pending => pending.phase === "local_applied")) {
+			failPhaseAdvance = false;
+			throw new Error("simulated crash before phase advance");
+		}
+		return persistSyncState(state);
+	};
+	let localCalls = 0;
+	const operation = {
+		action: "create",
+		localId: "local-crash-before-phase",
+		payload: { title: "Recover Local write" },
+		perform: store => {
+			localCalls += 1;
+			return {
+				...store,
+				"local-crash-before-phase": { id: "local-crash-before-phase", title: "Recover Local write" },
+			};
+		},
+	};
+
+	const interrupted = await runOperation({
+		config: CONFIG,
+		localStore: {},
+		syncState: { mappings: {}, pendingOperations: [] },
+		operation,
+		jiraAdapter,
+		persistence,
+	});
+	assert.equal(interrupted.readiness.ready, false);
+	assert.equal(localCalls, 1);
+	assert.equal(persistence.localSnapshot()["local-crash-before-phase"].title, "Recover Local write");
+	assert.equal(persistence.syncSnapshot().pendingOperations[0]?.phase, "prepared");
+	assert.equal(jiraAdapter.getCallLog().some(call => call.method === "createTicket"), false);
+
+	const resumed = await runOperation({
+		config: CONFIG,
+		localStore: persistence.localSnapshot(),
+		syncState: persistence.syncSnapshot(),
+		operation,
+		jiraAdapter,
+		persistence,
+	});
+	assert.equal(localCalls, 1);
+	assert.equal(resumed.readiness.ready, true);
+	assert.deepEqual(resumed.nextSyncState.pendingOperations, []);
+	assert.equal(jiraAdapter.getCallLog().filter(call => call.method === "createTicket").length, 1);
+});
+
+
+test("retries a reconciled request by its original identity and persisted effective payload", async () => {
+	const localId = "local-reconciled-request";
+	const originalPayload = { title: "Local choice" };
+	const effectivePayload = { title: "Jira choice" };
+	const requestCorrelationId = hashField({ localId, action: "update", payload: originalPayload });
+	const effectiveCorrelationId = hashField({ localId, action: "update", payload: effectivePayload });
+	const jiraAdapter = new FakeJiraAdapter({
+		"WCM-RECONCILED": { id: "WCM-RECONCILED", version: 2, title: effectivePayload.title },
+	});
+	const persistence = durablePersistence(
+		{ [localId]: { id: localId, title: "Before" } },
+		{
+			mappings: {
+				[localId]: {
+					...mapping("WCM-RECONCILED", { title: "Before" }),
+					jiraVersion: 1,
+				},
+			},
+			pendingOperations: [],
+		},
+	);
+	const readSyncState = persistence.readSyncState.bind(persistence);
+	let interruptAfterReplacement = true;
+	persistence.readSyncState = async () => {
+		const pending = persistence.syncSnapshot().pendingOperations[0];
+		if (
+			interruptAfterReplacement &&
+			pending?.requestCorrelationId === requestCorrelationId &&
+			pending.correlationId === effectiveCorrelationId
+		) {
+			interruptAfterReplacement = false;
+			throw new Error("simulated crash after reconciliation");
+		}
+		return readSyncState();
+	};
+	const seenPayloads = [];
+	let localCalls = 0;
+	const operation = {
+		action: "update",
+		localId,
+		payload: originalPayload,
+		perform: (store, effective) => {
+			localCalls += 1;
+			seenPayloads.push(structuredClone(effective.payload));
+			return { ...store, [localId]: { ...store[localId], ...effective.payload } };
+		},
+	};
+
+	const interrupted = await runOperation({
+		config: CONFIG,
+		localStore: persistence.localSnapshot(),
+		syncState: persistence.syncSnapshot(),
+		operation,
+		jiraAdapter,
+		persistence,
+		conflictChoices: [{ localId, field: "title", resolution: "jira" }],
+	});
+	assert.equal(interrupted.readiness.ready, false);
+	assert.equal(localCalls, 0);
+	assert.deepEqual(persistence.syncSnapshot().pendingOperations[0], {
+		correlationId: effectiveCorrelationId,
+		requestCorrelationId,
+		localId,
+		action: "update",
+		payload: effectivePayload,
+		phase: "prepared",
+		localBeforeHash: hashField({ id: localId, title: effectivePayload.title }),
+		requiresLocalVerification: false,
+	});
+
+	const resumed = await runOperation({
+		config: CONFIG,
+		localStore: persistence.localSnapshot(),
+		syncState: persistence.syncSnapshot(),
+		operation,
+		jiraAdapter,
+		persistence,
+		conflictChoices: [{ localId, field: "title", resolution: "jira" }],
+	});
+	assert.equal(resumed.readiness.ready, true);
+	assert.equal(localCalls, 1);
+	assert.deepEqual(seenPayloads, [effectivePayload]);
+	assert.deepEqual(resumed.nextSyncState.pendingOperations, []);
+	assert.equal(persistence.localSnapshot()[localId].title, effectivePayload.title);
+});
+
+test("passes the persisted effective payload to Local recovery verification", async () => {
+	const localId = "local-effective-verification";
+	const requestPayload = { title: "Requested title" };
+	const effectivePayload = { title: "Reconciled title" };
+	const requestCorrelationId = hashField({ localId, action: "update", payload: requestPayload });
+	const jiraAdapter = new FakeJiraAdapter({
+		"WCM-VERIFY": { id: "WCM-VERIFY", version: 2, title: effectivePayload.title },
+	});
+	const persistence = durablePersistence(
+		{ [localId]: { id: localId, title: effectivePayload.title } },
+		{
+			mappings: {
+				[localId]: {
+					...mapping("WCM-VERIFY", { title: effectivePayload.title }),
+					jiraVersion: 2,
+				},
+			},
+			pendingOperations: [{
+				correlationId: hashField({ localId, action: "update", payload: effectivePayload }),
+				requestCorrelationId,
+				localId,
+				action: "update",
+				payload: effectivePayload,
+				phase: "prepared",
+				localBeforeHash: hashField({ id: localId, title: "Before" }),
+				requiresLocalVerification: true,
+			}],
+		},
+	);
+	let localCalls = 0;
+	let verifiedPayload;
+
+	const recovered = await runOperation({
+		config: CONFIG,
+		localStore: persistence.localSnapshot(),
+		syncState: persistence.syncSnapshot(),
+		operation: {
+			action: "update",
+			localId,
+			payload: requestPayload,
+			perform: store => {
+				localCalls += 1;
+				return store;
+			},
+			isLocalApplied: (_store, effective) => {
+				verifiedPayload = structuredClone(effective.payload);
+				return true;
+			},
+		},
+		jiraAdapter,
+		persistence,
+	});
+
+	assert.equal(recovered.readiness.ready, true);
+	assert.equal(localCalls, 0);
+	assert.deepEqual(verifiedPayload, effectivePayload);
+	assert.deepEqual(recovered.nextSyncState.pendingOperations, []);
+});
 test("durably journals each remote intent and returned version before the next mutation", async () => {
 	const jiraAdapter = new FakeJiraAdapter();
 	const persistence = durablePersistence({}, { mappings: {}, pendingOperations: [] });
@@ -472,6 +749,65 @@ test("recovers a create that crashed after Jira accepted it by correlation", asy
 	assert.equal(resumed.nextSyncState.pendingOperations.length, 0);
 	assert.equal(resumed.nextSyncState.mappings["local-crash"].jiraId, "PROJ-1");
 	assert.ok(resumed.externalCallLog.some(call => call.method === "findTicketByCorrelation"));
+});
+
+test("recovers an accepted comment without posting it twice when its result was not journaled", async () => {
+	const localId = "local-comment-crash";
+	const jiraId = "WCM-COMMENT";
+	const jiraAdapter = new FakeJiraAdapter({
+		[jiraId]: { id: jiraId, version: 1, title: "Comment recovery", comments: [] },
+	});
+	const persistence = durablePersistence(
+		{ [localId]: { id: localId, title: "Comment recovery", comments: [] } },
+		{
+			mappings: {
+				[localId]: {
+					...mapping(jiraId, { title: "Comment recovery", comments: [] }),
+					jiraVersion: 1,
+				},
+			},
+			pendingOperations: [],
+		},
+	);
+	const addComment = jiraAdapter.addComment.bind(jiraAdapter);
+	let interruptAfterAcceptance = true;
+	jiraAdapter.addComment = async (...args) => {
+		const comment = await addComment(...args);
+		if (interruptAfterAcceptance) {
+			interruptAfterAcceptance = false;
+			throw new Error("connection dropped after Jira accepted the comment");
+		}
+		return comment;
+	};
+
+	const interrupted = await runOperation({
+		config: CONFIG,
+		localStore: persistence.localSnapshot(),
+		syncState: persistence.syncSnapshot(),
+		operation: { action: "comment", localId, payload: { text: "Accepted once" } },
+		jiraAdapter,
+		persistence,
+	});
+	assert.equal(interrupted.readiness.ready, true);
+	assert.equal(persistence.syncSnapshot().pendingOperations[0]?.phase, "local_applied");
+	assert.equal(persistence.syncSnapshot().pendingOperations[0]?.returnedId, undefined);
+	assert.equal(jiraAdapter.existingData[jiraId].comments.length, 1);
+
+	const resumed = await runOperation({
+		config: CONFIG,
+		localStore: persistence.localSnapshot(),
+		syncState: persistence.syncSnapshot(),
+		operation: null,
+		jiraAdapter,
+		persistence,
+	});
+	assert.deepEqual(resumed.nextSyncState.pendingOperations, []);
+	assert.equal(jiraAdapter.existingData[jiraId].comments.length, 1);
+	assert.equal(jiraAdapter.getCallLog().filter(call => call.method === "addComment").length, 2);
+	assert.deepEqual(
+		persistence.localSnapshot()[localId].comments,
+		[{ id: jiraAdapter.existingData[jiraId].comments[0].id, text: "Accepted once" }],
+	);
 });
 
 test("pulls Jira-only mapped changes before applying the Local operation", async () => {
