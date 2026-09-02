@@ -95,7 +95,7 @@ description: What the skill knows and when to use it
 
 JSON-based hook configurations for PreToolUse and Stop callbacks. Enables plugins to intercept tool calls or session state changes.
 
-**Example:** `ws/hooks/hooks.json` wires `enforce-changelog.sh` (PreToolUse on Bash) and `enforce-stop.sh` (Stop) — opt-in enforcement that blocks commits and session stops when CHANGELOG.md is out of sync — plus `session-start-dashboard.sh` (SessionStart Jira dashboard) and `openwiki-freshness.sh`. The watcher agents (arch-watcher, public-api-watcher) are not hooks; they are Task-dispatched by `/ws-docs audit`.
+**Example:** `ws/hooks/hooks.json` wires `enforce-changelog.sh` (PreToolUse on Bash) and `enforce-stop.sh` (Stop) — opt-in enforcement that blocks commits and session stops when CHANGELOG.md is out of sync — plus the canonical-consumer `session-start-dashboard.mjs` (SessionStart Jira context) and `openwiki-freshness.sh`. The watcher agents (arch-watcher, public-api-watcher) are not hooks; they are Task-dispatched by `/ws-docs audit`.
 
 ### `templates/` (Optional)
 
@@ -113,11 +113,11 @@ Scripts the plugin's commands shell out to for deterministic work.
 
 `/ws-setup` owns one discover → choose → plan → confirm → apply → verify transaction. Its internal `ws-project-bootstrap` worker applies only the confirmed core manifest, while `transaction.mjs` is the shared behavioral seam: a plan hash binds target paths, payloads, and discovery fingerprints; preflight invalidates stale authorization; each ordered write is read back before readiness is derived from repository and active-runtime state.
 
-Marketplace files under `plugins/ws/` remain authoritative. The native omp generator copies the command, worker skill, canonical JSON Schema, templates, and transaction helper as one skill tree, so Claude Code and omp expose the same setup contract rather than separate implementations.
+Marketplace files under `plugins/ws/` remain authoritative. The native omp generator produces exactly seven commands and 30 consumer skills, including the command, both internal bootstrap skills, canonical JSON Schema, migration fixtures, templates, and transaction helpers, so Claude Code and omp expose the same setup contract rather than separate implementations. The repository-only `ws-repo-maintenance` maintainer workflow is deliberately excluded from the native consumer package. The native manifest declares only its extension entry point; package settings are not repository policy.
 
 ### The ws-matt skill graph (inside the ws plugin)
 
-The ws plugin vendors [Matt Pocock's engineering skills](https://github.com/mattpocock/skills) (MIT, with attribution) as a graph-engineered skill set: 19 interlinked `ws-*` skill nodes in two tiers (user-invoked entry orchestrators, model-invoked worker disciplines), a single `/ws-matt` entry command, and worker agents (`ws-reviewer`, `researcher`, `tdd-runner` — canonical `ws:<agent>`). Beyond the standard directories the plugin adds `rules/` (the omp edge-discipline rule installed by `/ws-matt setup`) and `docs/` (`graph.md`, the mermaid graph map; `UPSTREAM.md` at the plugin root tracks upstream sync).
+The ws plugin vendors [Matt Pocock's engineering skills](https://github.com/mattpocock/skills) (MIT, with attribution) as an 18-node graph-engineered skill set: eight user-invoked entry orchestrators, nine model-invoked worker disciplines, and the `ws-graph-engineering` foundation. `/ws-matt` routes only this engineering graph; project setup stays outside it and is owned solely by `/ws-setup`. Worker agents are `ws-reviewer`, `researcher`, and `tdd-runner` (canonical `ws:<agent>`). Beyond the standard directories the plugin adds `rules/` (the omp edge-discipline rule shipped with the WS distribution) and `docs/` (`graph.md`, the mermaid graph map; `UPSTREAM.md` at the plugin root tracks upstream sync).
 
 ## Registration Mechanics
 

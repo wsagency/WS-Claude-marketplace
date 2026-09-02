@@ -222,8 +222,8 @@ carries graph primitives directly (verified against omp docs, 2026-07):
   tiers — matches this skill's classify → workers → synthesize shape.
 - Task agents also support `spawns` chains and `autoloadSkills` (workers
   auto-load their paired discipline skill). Edge discipline is reinforced by
-  the installed `omp-edge-discipline` rule — `/ws-matt setup` copies it into
-  the project's `.omp/rules/`.
+  the `omp-edge-discipline` rule shipped with the WS distribution; `/ws-setup`
+  verifies that the selected runtime satisfies the canonical repository policy.
 
 **Codex** — skills follow the Agent Skills SKILL.md standard; the model orchestrates
 exactly as in Claude Code, minus Task-based workers (run workers inline, still

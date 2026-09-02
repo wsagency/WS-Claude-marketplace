@@ -39,7 +39,7 @@ Marketplace source is authoritative. Do not reproduce schemas, templates, defaul
 ## Invariants
 
 - Discover, collect choices, validate, and plan without writing or performing an external mutation.
-- Read committed policy only from `.wsagency/config.yaml`. Repository-local legacy configuration is migration input, never a runtime fallback. User-global or package settings may prove a machine capability or suggest an explicitly confirmed choice; they never become repository policy implicitly.
+- Read committed policy only from `.wsagency/config.yaml`. Repository-local legacy configuration is migration input, never a runtime fallback. Explicit machine capabilities may prove availability for a choice; they never become repository policy implicitly.
 - Store no secret, Jira site or identity, token, user name, home path, detected installation state, or origin identity in canonical configuration.
 - Classify every local, machine, worker, and external effect as `CREATE`, `UPDATE`, `PRESERVE`, `SKIP`, `NO-OP`, or `BLOCKING_CONFLICT`. Show exact before/after content and a precise diff for every existing managed file or range that changes.
 - Ask exactly one final confirmation after the complete cross-worker manifest is stable. The confirmation authorizes only that manifest hash. Re-discover and revalidate fingerprints immediately before the first write in each target; changed scope, payload, or fingerprint invalidates authorization.

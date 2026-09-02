@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { checkEngineeringCleanupEligibility, discoverEngineeringState, planEngineeringMigration } from "./migration-engineering.mjs";
 
-const LEGACY_ROOT = new URL("../ws-setup-matt-pocock-skills/", import.meta.url);
+const LEGACY_ROOT = new URL("./fixtures/pre-5-engineering/", import.meta.url);
 const template = name => readFileSync(new URL(name, LEGACY_ROOT), "utf8");
 const canonical = () => ({
 	schema_version: 1,

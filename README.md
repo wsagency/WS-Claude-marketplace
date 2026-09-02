@@ -77,8 +77,8 @@ omp's **user plugin registry** — `installed_plugins.json` under omp's plugins
 dir, whose path the warning prints exactly (`OMP_PROFILE`/`PI_PROFILE` and
 `XDG_DATA_HOME` relocate it off the default `~/.omp`) — when it came from
 Claude Code. omp reads both registries.
-Details, settings, and off-switches:
-[extensions/omp-ws/README.md](./extensions/omp-ws/README.md).
+Native runtime policy, duplicate-install handling, and machine guard
+strengthening: [extensions/omp-ws/README.md](./extensions/omp-ws/README.md).
 
 Compat alternative (no bun, no checkout): omp also reads this registry in
 Claude-plugin format — `/marketplace add git@github.com:wsagency/WS-Claude-marketplace.git`

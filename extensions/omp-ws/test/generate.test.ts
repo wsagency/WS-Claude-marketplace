@@ -240,15 +240,15 @@ describe("generate runtime assets", () => {
 			const counts = await generate(sourceRoot, outRoot);
 			expect(counts.runtimeScripts).toBe(RUNTIME_SCRIPT_FILES.length);
 			expect((await fs.readdir(path.join(outRoot, "scripts"))).sort()).toEqual([...RUNTIME_SCRIPT_FILES].sort());
-			expect(counts.commands).toBe(8);
-			expect(counts.skills).toBe(31);
+			expect(counts.commands).toBe(7);
+			expect(counts.skills).toBe(30);
 			expect(counts.agents).toBe(14);
 			expect(counts.rules).toBe(4);
 			const setupCommand = await fs.readFile(path.join(outRoot, "commands", "ws-setup.md"), "utf8");
-			expect(setupCommand).toContain("recommended Local Markdown");
+			expect(setupCommand).toContain("the only public WS project-setup entry point");
 			const projectBootstrapRoot = path.join(outRoot, "skills", "ws-project-bootstrap");
 			expect(await fs.readFile(path.join(projectBootstrapRoot, "SKILL.md"), "utf8")).toContain(
-				"confirmed core manifest",
+				"confirmed WS setup manifest",
 			);
 			expect(
 				JSON.parse(await fs.readFile(path.join(projectBootstrapRoot, "references", "project-config.schema.json"), "utf8")),

@@ -162,20 +162,16 @@ describe("canonical native runtime policy", () => {
 		expect(repositoryPolicyProblem(state, "ws-guard")).toContain("/ws-setup");
 	});
 
-	test("ignores unrelated repository settings and legacy package policy overrides", async () => {
+	test("never treats plugin override files as repository policy", async () => {
 		await fs.mkdir(path.join(root, ".omp"), { recursive: true });
 		await fs.writeFile(
 			path.join(root, ".omp", "plugin-overrides.json"),
-			JSON.stringify({ settings: { "unrelated-plugin": { dashboard: true } } }),
+			JSON.stringify({ settings: { "@wsagency/omp-ws": { removedPolicy: "ignored" } } }),
 		);
 		const missing = await loadRepositoryPolicyFromRoot(root);
 		expect(missing.legacySources).toEqual([]);
 		expect(repositoryPolicyProblem(missing, "ws-dashboard")).toBeUndefined();
 
-		await fs.writeFile(
-			path.join(root, ".omp", "plugin-overrides.json"),
-			JSON.stringify({ settings: { "@wsagency/omp-ws": { dashboard: true, jiraProject: "WRONG", guard: true } } }),
-		);
 		await writePolicy(canonicalPolicy({
 			changelog: { update_mode: "disabled", path: "HISTORY.md", skip_types: [] },
 			runtime: { session_discipline: "required", dangerous_git_guard: "disabled" },

@@ -6,7 +6,7 @@
 import * as path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { splitSegments, tokenize } from "./guard";
-import { hasCodeChanges, touchesChangelog } from "./lib/docs-config";
+import { hasCodeChanges, touchesChangelog } from "./lib/changelog-files";
 import {
 	loadRepositoryPolicyFromRoot,
 	missingPolicyCapability,

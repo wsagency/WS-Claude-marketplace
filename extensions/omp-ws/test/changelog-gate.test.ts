@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { describe, expect, test } from "bun:test";
 import { evaluateChangelogGate, extractCommitType, isGitCommitCommand, resolveCommitCwd } from "../src/changelog-gate";
-import { touchesChangelog } from "../src/lib/docs-config";
+import { touchesChangelog } from "../src/lib/changelog-files";
 import type { ChangelogPolicy } from "../src/lib/project-policy";
 
 const DEFAULT_SKIP_TYPES = ["docs", "chore", "test", "style", "build", "ci"];

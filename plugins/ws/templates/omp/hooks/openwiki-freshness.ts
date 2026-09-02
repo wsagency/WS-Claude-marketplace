@@ -153,9 +153,8 @@ async function readWorkingRepos(cwd: string): Promise<HubRepo[] | undefined> {
 		const line = raw.replace(/\r$/, ""); // tolerate CRLF project.yaml
 		// Strip an inline comment for top-level-key recognition: a `#` at column 0
 		// or preceded by whitespace starts a YAML comment, so `repos: # note` still
-		// opens the block. Comment-only/blank lines never open or close a block, so
-		// a column-0 comment inside `repos:` does not terminate it (lib/yaml-lite.ts
-		// uses this rule).
+		// opens the block. Comment-only/blank lines never open or close a block,
+		// matching the repository registry's simple indentation contract.
 		const cmt = line.search(/(^|\s)#/);
 		const code = cmt === -1 ? line : line.slice(0, cmt);
 		// A column-0 key ends the current top-level block — but a block sequence

@@ -14,16 +14,6 @@ const LEGACY_POLICY_FILES = [
 	".claude/docs-config.yaml",
 ] as const;
 
-const LEGACY_OVERRIDE_FILES = [
-	".omp/plugin-overrides.json",
-	".claude/plugin-overrides.json",
-	".codex/plugin-overrides.json",
-	".gemini/plugin-overrides.json",
-] as const;
-
-const LEGACY_PACKAGE_SETTING_KEYS = ["jiraProject", "guard", "dashboard"] as const;
-const PLUGIN_NAME = "@wsagency/omp-ws";
-
 export type RepositoryPolicyStatus = "valid" | "missing" | "invalid" | "older" | "future";
 
 export interface RepositoryPolicyState {
@@ -70,28 +60,12 @@ async function readIfExists(filePath: string): Promise<string | undefined> {
 	}
 }
 
-async function detectsLegacyPackageSettings(filePath: string): Promise<boolean> {
-	const source = await readIfExists(filePath);
-	if (source === undefined) return false;
-	try {
-		const parsed = JSON.parse(source) as Record<string, unknown>;
-		const settings = parsed.settings;
-		if (!settings || typeof settings !== "object" || Array.isArray(settings)) return false;
-		const own = (settings as Record<string, unknown>)[PLUGIN_NAME];
-		if (!own || typeof own !== "object" || Array.isArray(own)) return false;
-		return LEGACY_PACKAGE_SETTING_KEYS.some(key => Object.hasOwn(own, key));
-	} catch {
-		return false;
-	}
-}
-
 async function detectLegacyPolicySources(root: string): Promise<string[]> {
 	const sources: string[] = [];
 	for (const relativePath of LEGACY_POLICY_FILES) {
-		if (await readIfExists(path.join(root, relativePath)) !== undefined) sources.push(relativePath);
-	}
-	for (const relativePath of LEGACY_OVERRIDE_FILES) {
-		if (await detectsLegacyPackageSettings(path.join(root, relativePath))) sources.push(relativePath);
+		if (await readIfExists(path.join(root, relativePath)) !== undefined) {
+			sources.push(relativePath);
+		}
 	}
 	return sources;
 }

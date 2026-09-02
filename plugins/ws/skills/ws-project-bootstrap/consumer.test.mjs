@@ -288,6 +288,8 @@ describe("canonical Local/Jira operation boundary", () => {
 
 describe("tracker and engineering source consumers", () => {
 	const source = relative => readFileSync(new URL(relative, import.meta.url), "utf8");
+	const retiredSetupCommand = new RegExp(["/ws", "init"].join("-"));
+	const retiredSetupSkill = new RegExp(["ws", "setup", "matt", "pocock", "skills"].join("-"));
 
 	test("tracker-facing commands and help load canonical policy without legacy shell reads", () => {
 		for (const command of ["../../commands/ws-status.md", "../../commands/ws-commit.md", "../../commands/ws-help.md"]) {
@@ -295,7 +297,7 @@ describe("tracker and engineering source consumers", () => {
 			assert.match(content, /\.wsagency\/config\.yaml/);
 			assert.match(content, /ws-project-bootstrap\/consumer\.mjs/);
 			assert.doesNotMatch(content, /!`cat [^`]*(?:~\/\.claude\/ws\/config|\.\/\.claude\/ws-project)/);
-			assert.doesNotMatch(content, /\/ws-init/);
+			assert.doesNotMatch(content, retiredSetupCommand);
 		}
 	});
 
@@ -316,7 +318,7 @@ describe("tracker and engineering source consumers", () => {
 			const content = source(`../${skill}/SKILL.md`);
 			assert.match(content, /ws-project-bootstrap\/consumer\.mjs/);
 			assert.match(content, /capability/);
-			assert.doesNotMatch(content, /ws-setup-matt-pocock-skills/);
+			assert.doesNotMatch(content, retiredSetupSkill);
 		}
 	});
 
@@ -332,6 +334,6 @@ describe("tracker and engineering source consumers", () => {
 	test("engineering topology no longer routes to legacy setup", () => {
 		const content = source("../ws-graph-engineering/SKILL.md");
 		assert.match(content, /`\/ws-setup`/);
-		assert.doesNotMatch(content, /ws-setup-matt-pocock-skills/);
+		assert.doesNotMatch(content, retiredSetupSkill);
 	});
 });

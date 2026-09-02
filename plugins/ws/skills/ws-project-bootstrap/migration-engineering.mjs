@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-const LEGACY_ROOT = new URL("../ws-setup-matt-pocock-skills/", import.meta.url);
+const LEGACY_ROOT = new URL("./fixtures/pre-5-engineering/", import.meta.url);
 const TRACKER_TEMPLATES = Object.freeze({
 	local: readFileSync(new URL("issue-tracker-local.md", LEGACY_ROOT), "utf8"),
 	github: readFileSync(new URL("issue-tracker-github.md", LEGACY_ROOT), "utf8"),

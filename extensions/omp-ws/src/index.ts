@@ -17,8 +17,8 @@
  * 0.2.0 additions:
  *   - both-installed: warns when ws@ws-marketplace duplicates this package
  *   - compaction: preserves canonical Local-ticket and changelog state
- *   - machine/package settings only resolve installation capability and
- *     explicit shared guard strengthening; repository policy stays canonical
+ *   - generic profile/XDG plugin-path resolution supports duplicate detection;
+ *     OMP_WS_GUARD is the only machine-wide guard-strengthening input
  *
  * Tier 2 (conventions as tools): ws_ticket, ws_changelog, ws_adr.
  *

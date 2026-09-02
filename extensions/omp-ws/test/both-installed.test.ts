@@ -132,8 +132,8 @@ describe("duplicateMessage", () => {
 });
 
 // Pin the path both-installed itself passes to its registry reader and remedy.
-// lib/settings owns the resolver algorithm; exporting this narrow adapter keeps
-// a future hardcoded ~/.omp/plugins regression observable here.
+// lib/plugin-paths owns the resolver algorithm; exporting this narrow adapter
+// keeps a future hardcoded ~/.omp/plugins regression observable here.
 describe("userOmpRegistryPath", () => {
 	test("follows OMP_PROFILE instead of a hardcoded ~/.omp path", () => {
 		const home = "/home/u";

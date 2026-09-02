@@ -457,9 +457,9 @@ Skills provide knowledge and templates, loaded on demand. All ship in the ws plu
 | Skill | Purpose |
 |-------|---------|
 | `ws-graph-engineering` | Node/edge/state contract, fan-out/synthesize, file-handoff protocol |
-| `ws-ask-matt` + 8 entry nodes | User-invoked orchestrators (implement, to-spec, to-tickets, triage, grill-with-docs, improve-codebase-architecture, wayfinder, setup) |
-| `ws-tdd` + 8 worker nodes | Model-invoked disciplines (code-review, research, prototype, diagnosing-bugs, domain-modeling, codebase-design, resolving-merge-conflicts, grilling) |
-| `ws-project-bootstrap` | Internal `/ws-setup` worker that applies the confirmed core manifest and returns verified readiness |
+| `ws-ask-matt` + 7 other entry nodes | User-invoked orchestrators (implement, to-spec, to-tickets, triage, grill-with-docs, improve-codebase-architecture, wayfinder) |
+| `ws-tdd` + 8 other worker nodes | Model-invoked disciplines (code-review, research, prototype, diagnosing-bugs, domain-modeling, codebase-design, resolving-merge-conflicts, grilling) |
+| `ws-project-bootstrap` + `ws-docs-bootstrap` | Internal `/ws-setup` workers that apply the confirmed core and documentation manifests and return verified readiness |
 
 
 ### Project Hub Skills

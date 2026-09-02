@@ -4,7 +4,7 @@
  * policy without preventing the session from stopping.
  */
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { hasCodeChanges, touchesChangelog } from "./lib/docs-config";
+import { hasCodeChanges, touchesChangelog } from "./lib/changelog-files";
 import {
 	loadRepositoryPolicy,
 	missingPolicyCapability,

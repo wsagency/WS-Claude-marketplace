@@ -246,9 +246,10 @@ export async function generate(
 		await fs.writeFile(path.join(outRoot, "commands", name), transformCommand(content, name));
 	}
 
-	// skills (verbatim tree copy + description validation)
+	// Skills ship verbatim except the repository-maintenance workflow, which is
+	// intentionally available only from a source checkout.
 	const skillEntries = (await fs.readdir(path.join(sourceRoot, "skills"), { withFileTypes: true }))
-		.filter(entry => entry.isDirectory())
+		.filter(entry => entry.isDirectory() && entry.name !== "ws-repo-maintenance")
 		.map(entry => entry.name)
 		.sort();
 	const offenders: string[] = [];

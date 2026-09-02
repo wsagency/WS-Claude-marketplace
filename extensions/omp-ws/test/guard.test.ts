@@ -1,8 +1,24 @@
 import { describe, expect, test } from "bun:test";
-import { evaluateGuard, isInsideCwd, resolveGuardPolicyCwd, splitSegments, tokenize } from "../src/guard";
+import {
+	evaluateGuard,
+	hasExplicitMachineGuardProtection,
+	isInsideCwd,
+	resolveGuardPolicyCwd,
+	splitSegments,
+	tokenize,
+} from "../src/guard";
 
 const CWD = "/Users/dev/project";
 const HOME = "/Users/dev";
+
+describe("machine guard capability", () => {
+	test("only explicit force-on values strengthen repository policy", () => {
+		expect(hasExplicitMachineGuardProtection({ OMP_WS_GUARD: "on" })).toBe(true);
+		expect(hasExplicitMachineGuardProtection({ OMP_WS_GUARD: "required" })).toBe(true);
+		expect(hasExplicitMachineGuardProtection({ OMP_WS_GUARD: "off" })).toBe(false);
+		expect(hasExplicitMachineGuardProtection({})).toBe(false);
+	});
+});
 
 function blocked(command: string): boolean {
 	return evaluateGuard(command, CWD, HOME) !== undefined;

@@ -57,9 +57,9 @@ Rules:
 
 ## Smart Commits (optional record, not the mechanism)
 
-Since the jira-cli migration, worklogs/transitions/comments are applied by **explicit jira-cli calls** (`jira issue worklog add`, `jira issue move`, `jira issue comment add`) — the trailer below is a human-readable record in the commit body, included when `defaults.smart_commit_trailer: true` (default).
+Since the jira-cli migration, worklogs/transitions/comments are applied by **explicit jira-cli calls** (`jira issue worklog add`, `jira issue move`, `jira issue comment add`) — the trailer below is a human-readable record in the commit body, included when canonical `commit.jira.smart_commit_trailer` is `true`.
 
-⚠️ If your Jira has an active dev-connector that ingests Smart Commits from this repo, set `smart_commit_trailer: false` in `~/.claude/ws/config.yaml` — otherwise the connector and the CLI would apply worklogs/transitions twice.
+If your Jira has an active dev-connector that ingests Smart Commits from this repo, use `/ws-setup reconfigure` to set `commit.jira.smart_commit_trailer: false`; otherwise the connector and the CLI would apply worklogs/transitions twice.
 
 The trailer is a single line in the commit body:
 
@@ -96,7 +96,7 @@ Changelog updates happen at **PR time** (`/ws-commit pr`), not on every commit �
 - Follows [Keep a Changelog](https://keepachangelog.com/) format, entries go under `[Unreleased]`
 - `CHANGELOG.md` is auto-created if missing
 - CC type → section: `feat`→Added, `fix`→Fixed, `perf`/`refactor`/`revert`→Changed, security→Security, breaking→Changed (prefixed `**BREAKING:**`)
-- Skipped by default: `docs, chore, test, style, build, ci` — configurable per-project via `changelog.skip_types` in `.claude/ws-project.yaml`
+- Skipped by default: `docs, chore, test, style, build, ci` — configurable through canonical `changelog.skip_types` in `.wsagency/config.yaml`
 - Entry text includes the ticket key: `- Add OTP screen for login (WSC-142)`
 
 The `keep-a-changelog` skill (ws plugin) auto-loads on the word "CHANGELOG" and guides formatting — no manual invocation needed.

@@ -39,8 +39,8 @@ names=""
 hub=0
 if [[ -f "./project.yaml" ]]; then
 	hub=1
-	# Parse only the `repos:` block (a column-0 key ends it — the rule
-	# lib/yaml-lite.ts uses). Keep working repos: explicit `type: working`, or
+	# Parse only the `repos:` block (a column-0 key ends it). Keep working
+	# repos: explicit `type: working`, or
 	# legacy entries with neither type nor role; an entry carrying `purpose:` is
 	# an output repo and never counts. Prints two tab-separated fields: path, name.
 	repos=$(awk '

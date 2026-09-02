@@ -1,7 +1,7 @@
 # ws-matt skill graph
 
-The full 19-node graph of the ws plugin's ws-matt skill set: 18 skills vendored from Matt
-Pocock's skills repo — 17 engineering skills + the grilling productivity skill —
+The full 18-node graph of the ws plugin's ws-matt skill set: 17 skills vendored from Matt
+Pocock's skills repo — 16 engineering skills + the grilling productivity skill —
 plus the foundational `ws-graph-engineering` skill that
 carries the node/edge/state contract every node follows. Each node's precise
 contract (reads, emits, edges, handoff protocol) lives in the `## Graph node`
@@ -20,7 +20,6 @@ graph TD
     TRIAGE["ws-triage"]
     WAY["ws-wayfinder"]
     ICA["ws-improve-codebase-architecture"]
-    SETUP["ws-setup-matt-pocock-skills"]
   end
 
   subgraph WORKER["Model-invoked worker nodes"]
@@ -45,7 +44,6 @@ graph TD
   ASK -. "issues piling up" .-> TRIAGE
   ASK -. "huge foggy effort" .-> WAY
   ASK -. "codebase upkeep" .-> ICA
-  ASK -. "first run in repo" .-> SETUP
   ASK -. "single discipline" .-> WORKER
 
   GRILL -->|"drives the interview"| GRILLING
@@ -81,11 +79,6 @@ graph TD
   WAY -. "map clear: hand off" .-> TOSPEC
   RESEARCH -. "findings file" .-> GRILL
 
-  SETUP -. "config" .-> TRIAGE
-  SETUP -. "config" .-> TOSPEC
-  SETUP -. "config" .-> TOTICKETS
-  SETUP -. "config" .-> WAY
-  SETUP -. "config" .-> CR
 ```
 
 ## Legend
@@ -125,11 +118,10 @@ graph TD
     exploration and design-it-twice sub-agents (not graph nodes).
 - **Edges into WS commands** are declared in a node's `## Graph node` section
   but are **not drawn** — this map models skills only, and a WS command is not
-  a skill node. The one such edge is `ws-implement` → `/ws-commit pr` at branch
-  completion (a user-mediated handoff: `ws-implement` recommends the command in
-  its exit report; the user invokes it). Were it drawn it would be a dotted
-  edge like every other user-mediated handoff above; it is listed here rather
-  than drawn only because this map has no command nodes.
+  a skill node. `ws-ask-matt` points incomplete canonical project capability
+  to `/ws-setup`; `ws-implement` points branch completion to `/ws-commit pr`.
+  Both are user-mediated handoffs: the source recommends the command and the
+  user invokes it.
 - **ADR placement (per ADR 0006).** Where a decision the spec didn't cover gets
   filed depends on scope, not on which node minted it: a **product-level ADR**
   (cross-repo, synthesized at the hub) lands in the parent hub's

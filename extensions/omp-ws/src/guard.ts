@@ -26,11 +26,17 @@ import {
 	NATIVE_RUNTIME_CAPABILITIES,
 	repositoryPolicyProblem,
 } from "./lib/project-policy";
-import { hasSharedDangerousGitProtection } from "./lib/settings";
 
 export interface GuardVerdict {
 	block: true;
 	reason: string;
+}
+
+/** Explicit machine capability that may strengthen repository guard policy. */
+export function hasExplicitMachineGuardProtection(
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	return env.OMP_WS_GUARD === "on" || env.OMP_WS_GUARD === "required";
 }
 
 /**
@@ -274,7 +280,7 @@ export function registerGuard(pi: ExtensionAPI): void {
 			const policyProblem = repositoryPolicyProblem(state, "ws-guard");
 			if (policyProblem !== undefined) return { block: true, reason: policyProblem };
 
-			const sharedProtection = await hasSharedDangerousGitProtection();
+			const sharedProtection = hasExplicitMachineGuardProtection();
 			if (state.status === "missing") {
 				return sharedProtection ? verdict : undefined;
 			}

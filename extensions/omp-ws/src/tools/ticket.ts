@@ -1,8 +1,8 @@
 /**
  * ws_ticket: schema-validated operations on the WS local issue tracker
  * (dev-docs/tickets/open|done), per the issue-tracker-local convention of
- * the ws plugin. The tool is an OPTIONAL convenience — the prose convention
- * (ws-to-tickets / ws-setup-matt-pocock-skills) remains authoritative.
+ * the ws plugin. The tool is an OPTIONAL convenience — canonical tracker
+ * policy from `/ws-setup` and the ws-to-tickets flow remain authoritative.
  */
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -55,7 +55,7 @@ function textResult(text: string, isError = false) {
 }
 
 const MISSING_TRACKER_MESSAGE =
-	"dev-docs/tickets/ does not exist — this repo has no local issue tracker configured. Run /ws-matt setup to configure a tracker (or create dev-docs/tickets/open/ manually) before using ws_ticket.";
+	"dev-docs/tickets/ does not exist — this repo has no canonical Local tracker configured. Run /ws-setup before using ws_ticket.";
 
 interface TicketToolParams {
 	op: "create" | "move" | "close";

@@ -52,7 +52,7 @@ describe("ws_ticket", () => {
 	test("refuses when dev-docs/tickets is missing", async () => {
 		const result = await call(tool, { op: "create", title: "X", body: "Y" });
 		expect(result.isError).toBe(true);
-		expect(result.content[0]?.text).toContain("/ws-matt setup");
+		expect(result.content[0]?.text).toContain("/ws-setup");
 	});
 
 	test("create -> close lifecycle", async () => {
