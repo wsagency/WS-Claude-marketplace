@@ -13,8 +13,8 @@ const RETIRED_SKILL = ["ws", "setup", "matt", "pocock", "skills"].join("-");
 
 export const REQUIRED_INSTALLED_ASSETS = Object.freeze([
 	"commands/ws-setup.md",
-	"agents/ws-project-bootstrap.md",
-	"agents/ws-docs-bootstrap.md",
+	"skills/ws-project-bootstrap/SKILL.md",
+	"skills/ws-docs-bootstrap/SKILL.md",
 	"skills/ws-project-bootstrap/references/project-config.schema.json",
 	"skills/ws-project-bootstrap/manifest-contract.mjs",
 	"skills/ws-project-bootstrap/manifest-contract.d.mts",

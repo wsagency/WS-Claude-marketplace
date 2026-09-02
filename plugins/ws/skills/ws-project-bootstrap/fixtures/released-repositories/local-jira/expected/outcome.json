@@ -1,7 +1,7 @@
 {
   "effects": [
     { "phase": "migration", "target": ".wsagency/config.yaml", "classification": "CREATE" },
-    { "phase": "migration", "target": "dev-docs/agents/issue-tracker.md", "classification": "PRESERVE" },
+    { "phase": "migration", "target": "dev-docs/agents/issue-tracker.md", "classification": "UPDATE" },
     { "phase": "cleanup", "target": ".claude/ws-project.yaml", "classification": "UPDATE" }
   ],
   "readiness": {

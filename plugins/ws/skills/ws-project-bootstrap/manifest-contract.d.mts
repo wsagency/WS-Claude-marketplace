@@ -1,6 +1,6 @@
 import type { CanonicalProjectConfig, DerivedSetupReadiness } from "./config.d.mts";
 import type { HubChoices, HubDiscovery, HubOutcome, HubOperation, HubTransactionResult } from "./hub-transaction.d.mts";
-import type { LegacyCleanupReadiness, LegacyDiscovery, LegacyMigrationOptions, LegacyMigrationPlan } from "./migration.d.mts";
+import type { LegacyDiscovery, LegacyMigrationOptions, LegacyMigrationPlan } from "./migration.d.mts";
 import type {
 	ReconfigureAdapters,
 	ReconfigureApplyResult,
@@ -13,6 +13,7 @@ import type {
 } from "./reconfigure.d.mts";
 import type {
 	EffectClassification,
+	OriginVerifier,
 	SetupChoices,
 	SetupDiscovery,
 	SetupOperation,
@@ -47,12 +48,23 @@ export interface DeterministicManifest {
 	delegated: unknown;
 }
 
+export interface MigrationManifestReadiness {
+	configValid: boolean;
+	semanticReadBack: boolean;
+	engineeringReady: boolean;
+	contextReady: boolean;
+	runtimeReady: boolean;
+	fingerprintsReady: boolean;
+	docsReady: boolean;
+	jiraReady: boolean;
+}
+
 export interface ManifestResult {
 	manifest: DeterministicManifest;
 	requiresAuthorization: boolean;
 	applied: boolean;
 	operations: SetupOperation[] | HubOperation[] | ReconfigureApplyResult["operationReport"];
-	readiness?: SetupReadiness | LegacyCleanupReadiness | DerivedSetupReadiness | HubTransactionResult["readiness"];
+	readiness?: SetupReadiness | MigrationManifestReadiness | DerivedSetupReadiness | HubTransactionResult["readiness"];
 	report: string;
 	failure?: SetupTransactionFailure;
 	outcomes?: HubOutcome[];
@@ -61,7 +73,7 @@ export interface ManifestResult {
 }
 
 export interface ManifestInjection {
-	originValidation?: { origin: string; isValid: boolean; reason?: string };
+	docsFailure?: string;
 	failure?: { phase: "write" | "verify"; target: string } | {
 		targetRoot: string;
 		phase: "write" | "verify" | "core_write" | "core_verify" | "docs_write";
@@ -77,6 +89,7 @@ export interface SetupManifestRequest {
 	choices: SetupChoices;
 	authorization?: string;
 	injection?: ManifestInjection;
+	adapters?: { originVerifier?: OriginVerifier };
 }
 
 export interface MigrationManifestRequest {
@@ -91,7 +104,7 @@ export interface MigrationManifestRequest {
 			manifest: DeterministicManifest;
 			legacyPlan: LegacyMigrationPlan;
 			coreResult: unknown;
-		}) => LegacyCleanupReadiness | Promise<LegacyCleanupReadiness>;
+		}) => Partial<MigrationManifestReadiness> | Promise<Partial<MigrationManifestReadiness>>;
 	};
 }
 
@@ -118,7 +131,7 @@ export interface ReconfigureManifestRequest {
 	};
 	choices: ReconfigureChoices;
 	contribution?: ReconfigurePlanContribution;
-	action?: "apply" | "resume";
+	action?: "apply" | "resume" | "accept_partial";
 	context?: unknown;
 	adapters?: ReconfigureAdapters;
 	authorization?: string;

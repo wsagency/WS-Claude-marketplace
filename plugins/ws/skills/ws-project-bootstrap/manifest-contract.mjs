@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { serializeCanonicalConfig } from "./config.mjs";
+import { serializeCanonicalConfig, validateCanonicalConfig } from "./config.mjs";
 import { runHubTransaction } from "./hub-transaction.mjs";
 import { applyLegacyCleanup, planLegacyMigration } from "./migration.mjs";
-import { applyConfirmedPlan, createReconfigurePlan, resumeConfirmedPlan } from "./reconfigure.mjs";
+import { acceptConfirmedPartial, applyConfirmedPlan, createReconfigurePlan, resumeConfirmedPlan } from "./reconfigure.mjs";
 import { applyPlan, buildPlan, deriveReadiness, discoverStandaloneRepository, runSetupTransaction } from "./transaction.mjs";
-import { getAdapterContent } from "./trackers.mjs";
+import { applyDocumentation, discoverDocumentation, planDocumentation } from "../ws-docs-bootstrap/transaction.mjs";
 
 export const MANIFEST_CONTRACT_VERSION = 1;
 export const MANIFEST_CLASSIFICATIONS = Object.freeze([
@@ -104,45 +104,133 @@ function migrationReadiness(core, plan) {
 function hasMutation(items) {
 	return items.some(entry => MUTATIONS.has(entry.classification));
 }
+async function planConfiguredDocumentation(root, projectShape, config) {
+	if (!config?.docs) return null;
+	return planDocumentation(await discoverDocumentation(
+		root,
+		projectShape,
+		{ docs: config.docs, changelog: config.changelog },
+	));
+}
+
+function withDocumentationReadiness(readiness, docsPlan) {
+	if (!readiness || !docsPlan) return readiness;
+	const docsReady = !docsPlan.effects.some(effect => effect.classification === "BLOCKING_CONFLICT");
+	return {
+		...readiness,
+		docsConfigured: true,
+		docsReady,
+		blockers: {
+			...readiness.blockers,
+			docs: docsReady ? [] : readiness.blockers?.docs ?? ["Documentation bootstrap is blocked."],
+		},
+	};
+}
+
 
 async function runSetup(request) {
 	const planned = await runSetupTransaction({
 		root: request.root,
 		discovery: request.snapshot,
 		choices: request.choices,
-		injectedOriginValidation: request.injection?.originValidation,
+		originVerifier: request.adapters?.originVerifier,
 	});
 	if (!planned.plan) throw new Error("The manifest contract requires resolved setup choices.");
-	const items = setupItems(planned.plan);
-	const complete = manifest("setup", planned.plan.hash, planned.plan.scope, items, items.filter(entry => entry.classification === "BLOCKING_CONFLICT").map(entry => entry.reason), planned.plan);
-	if (!request.authorization || !planned.requiresConfirmation) {
+
+	const configSource = request.choices?.targetConfig;
+	const configValidation = configSource ? validateCanonicalConfig(configSource) : null;
+	const docsPlan = configValidation?.status === "valid"
+		? await planConfiguredDocumentation(request.root, request.snapshot.projectShape, configValidation.config)
+		: null;
+	const items = [
+		...setupItems(planned.plan),
+		...(docsPlan?.effects ?? []).map((effect, index) => item(effect, index, { phase: "docs", scope: "repository" })),
+	];
+	const blockers = items
+		.filter(entry => entry.classification === "BLOCKING_CONFLICT")
+		.map(entry => entry.reason);
+	const completeHash = hash({ mode: "setup", core: planned.plan.hash, docs: docsPlan?.hash ?? null });
+	const complete = manifest(
+		"setup",
+		completeHash,
+		planned.plan.scope,
+		items,
+		[...new Set(blockers)],
+		{ core: planned.plan, docs: docsPlan },
+	);
+	const requiresAuthorization = blockers.length === 0 && hasMutation(items);
+	if (!request.authorization || !requiresAuthorization) {
 		return {
 			manifest: complete,
-			requiresAuthorization: planned.requiresConfirmation,
-			applied: !planned.requiresConfirmation,
-			operations: planned.operations,
-			readiness: planned.readiness,
-			report: planned.report,
+			requiresAuthorization,
+			applied: !requiresAuthorization && blockers.length === 0,
+			operations: [],
+			readiness: withDocumentationReadiness(planned.readiness, docsPlan),
+			report: blockers.length > 0
+				? planned.report
+				: requiresAuthorization
+					? "Complete setup manifest ready. No files have been changed."
+					: planned.report,
 			failure: planned.failure,
 		};
 	}
+
 	assertAuthorization(request.authorization, complete.hash);
 	const applied = await runSetupTransaction({
 		root: request.root,
 		discovery: request.snapshot,
 		choices: request.choices,
 		authorization: planned.plan.hash,
-		injectedOriginValidation: request.injection?.originValidation,
+		originVerifier: request.adapters?.originVerifier,
 		injectedFailure: request.injection?.failure,
 	});
+	if (applied.failure) {
+		return {
+			manifest: complete,
+			requiresAuthorization: false,
+			applied: false,
+			operations: applied.operations,
+			readiness: applied.readiness,
+			report: applied.report,
+			failure: applied.failure,
+		};
+	}
+
+	let docsOperations = [];
+	if (docsPlan) {
+		try {
+			docsOperations = await applyDocumentation(
+				request.root,
+				docsPlan,
+				docsPlan.hash,
+				request.injection?.docsFailure,
+			);
+		} catch (error) {
+			const completed = (error.completed ?? []).map(effect => effect.target);
+			const pending = (error.pending ?? []).map(effect => effect.target);
+			return {
+				manifest: complete,
+				requiresAuthorization: false,
+				applied: false,
+				operations: [...applied.operations, ...(error.operations ?? [])],
+				readiness: applied.readiness,
+				report: `Setup documentation stopped at ${pending[0] ?? "documentation:bootstrap"}: ${error.message}. No rollback was performed.`,
+				failure: {
+					target: pending[0] ?? "documentation:bootstrap",
+					error: error.message,
+					completed,
+					pending,
+				},
+			};
+		}
+	}
 	return {
 		manifest: complete,
 		requiresAuthorization: false,
-		applied: !applied.failure,
-		operations: applied.operations,
-		readiness: applied.readiness,
-		report: applied.report,
-		failure: applied.failure,
+		applied: true,
+		operations: [...applied.operations, ...docsOperations],
+		readiness: withDocumentationReadiness(applied.readiness, docsPlan),
+		report: docsPlan ? `Documentation bootstrap verified. ${applied.report}` : applied.report,
 	};
 }
 
@@ -151,7 +239,6 @@ async function runHub(request) {
 		root: request.root,
 		discovery: request.snapshot,
 		choices: request.choices,
-		injectedOriginValidation: request.injection?.originValidation,
 		machinePrerequisite: request.adapters?.machinePrerequisite,
 		beforePhase: request.adapters?.beforePhase,
 	};
@@ -187,21 +274,22 @@ async function runHub(request) {
 }
 
 function materializeReviewedMigrationPlan(corePlan, legacyPlan) {
-	const releasedTracker = legacyPlan.effects.some(effect =>
-		effect.target === "dev-docs/agents/issue-tracker.md" && effect.reason.includes("released generated adapter")
+	const reviewedReplacements = new Map(
+		legacyPlan.effects
+			.filter(effect => effect.classification === "UPDATE" && typeof effect.after === "string")
+			.map(effect => [effect.target, effect]),
 	);
-	if (!releasedTracker || !legacyPlan.config?.tracker?.primary) return corePlan;
 	let changed = false;
 	const effects = corePlan.effects.map(effect => {
-		if (effect.target !== "dev-docs/agents/issue-tracker.md" || effect.classification !== "BLOCKING_CONFLICT") return effect;
+		const replacement = reviewedReplacements.get(effect.target);
+		if (!replacement || effect.classification !== "BLOCKING_CONFLICT") return effect;
 		changed = true;
-		const after = `${getAdapterContent(legacyPlan.config.tracker.primary).trimEnd()}\n`;
 		return {
 			...effect,
 			classification: "UPDATE",
-			reason: "Replace the exact released generated adapter after its values were captured in canonical configuration.",
-			after,
-			diff: `${JSON.stringify(effect.before)} -> ${JSON.stringify(after)}`,
+			reason: "Apply the reviewed migration replacement after its semantic values were captured in canonical configuration.",
+			after: replacement.after,
+			diff: `${JSON.stringify(effect.before)} -> ${JSON.stringify(replacement.after)}`,
 		};
 	});
 	return changed ? { ...corePlan, effects, hash: hash({ delegated: corePlan.hash, effects }) } : corePlan;
@@ -211,18 +299,36 @@ async function runMigration(request) {
 	const legacyPlan = planLegacyMigration(request.snapshot.legacy, request.choices?.migration);
 	const coreChoices = legacyPlan.config ? migrationChoices(legacyPlan, request.choices?.core) : null;
 	const corePlan = coreChoices
-		? materializeReviewedMigrationPlan(buildPlan(request.snapshot.core, coreChoices, request.injection?.originValidation), legacyPlan)
+		? materializeReviewedMigrationPlan(buildPlan(request.snapshot.core, coreChoices), legacyPlan)
 		: null;
+	const docsPlan = await planConfiguredDocumentation(
+		request.root,
+		request.snapshot.core.projectShape,
+		legacyPlan.config,
+	);
 	const items = [
 		...legacyPlan.effects.map((effect, index) => item(effect, index, { phase: effect.order >= 900 ? "cleanup" : "migration", scope: "repository" })),
 		...setupItems(corePlan ?? { effects: [] }, "core", "repository"),
+		...(docsPlan?.effects ?? []).map((effect, index) => item(effect, index, { phase: "docs", scope: "repository" })),
 	];
 	const blockers = [
 		...legacyPlan.blockers,
 		...items.filter(entry => entry.classification === "BLOCKING_CONFLICT").map(entry => entry.reason),
 	];
-	const planHash = hash({ mode: "migration", legacy: legacyPlan.hash, core: corePlan?.hash ?? null });
-	const complete = manifest("migration", planHash, { root: request.root, projectShape: request.snapshot.core.projectShape }, items, [...new Set(blockers)], { legacy: legacyPlan, core: corePlan });
+	const planHash = hash({
+		mode: "migration",
+		legacy: legacyPlan.hash,
+		core: corePlan?.hash ?? null,
+		docs: docsPlan?.hash ?? null,
+	});
+	const complete = manifest(
+		"migration",
+		planHash,
+		{ root: request.root, projectShape: request.snapshot.core.projectShape },
+		items,
+		[...new Set(blockers)],
+		{ legacy: legacyPlan, core: corePlan, docs: docsPlan },
+	);
 	const requiresAuthorization = blockers.length === 0 && hasMutation(items);
 	if (!request.authorization || !requiresAuthorization) {
 		const readiness = coreChoices && !requiresAuthorization ? deriveReadiness(request.snapshot.core, coreChoices) : undefined;
@@ -266,6 +372,34 @@ async function runMigration(request) {
 			failure: core.failure,
 		};
 	}
+	let docsOperations = [];
+	if (docsPlan) {
+		try {
+			docsOperations = await applyDocumentation(
+				request.root,
+				docsPlan,
+				docsPlan.hash,
+				request.injection?.docsFailure,
+			);
+		} catch (error) {
+			const completed = (error.completed ?? []).map(effect => effect.target);
+			const pending = (error.pending ?? []).map(effect => effect.target);
+			return {
+				manifest: complete,
+				requiresAuthorization: false,
+				applied: false,
+				operations: [...core.operations, ...(error.operations ?? [])],
+				readiness: migrationReadiness(core, legacyPlan),
+				report: `Migration documentation stopped at ${pending[0] ?? "documentation:bootstrap"}: ${error.message}. No rollback was performed.`,
+				failure: {
+					target: pending[0] ?? "documentation:bootstrap",
+					error: error.message,
+					completed,
+					pending,
+				},
+			};
+		}
+	}
 	let readiness = migrationReadiness(core, legacyPlan);
 	if (request.adapters?.verifyMigrationReadiness) {
 		readiness = {
@@ -273,12 +407,16 @@ async function runMigration(request) {
 			...await request.adapters.verifyMigrationReadiness({ manifest: complete, legacyPlan, coreResult: core }),
 		};
 	}
-	const cleanup = await applyLegacyCleanup(request.root, legacyPlan, legacyPlan.hash, readiness);
+	const cleanupRuntimeEvidence = {
+		sessionDiscipline: readiness.runtimeReady === true && verifiedDiscovery.machine.sessionDiscipline === true,
+		dangerousGitGuard: readiness.runtimeReady === true && verifiedDiscovery.machine.dangerousGitGuard === true,
+	};
+	const cleanup = await applyLegacyCleanup(request.root, legacyPlan, legacyPlan.hash, cleanupRuntimeEvidence);
 	return {
 		manifest: complete,
 		requiresAuthorization: false,
 		applied: true,
-		operations: [...core.operations, ...cleanup],
+		operations: [...core.operations, ...docsOperations, ...cleanup],
 		readiness,
 		report: `Legacy migration verified. ${core.report}`,
 	};
@@ -309,7 +447,9 @@ async function runReconfigure(request) {
 	if (!request.adapters) throw new Error("Reconfiguration adapters are required after authorization.");
 	const applied = request.action === "resume"
 		? await resumeConfirmedPlan(plan, request.context, request.adapters, request.injection?.reconfigure)
-		: await applyConfirmedPlan(plan, request.context, request.adapters, request.injection?.reconfigure);
+		: request.action === "accept_partial"
+			? await acceptConfirmedPartial(request.snapshot.config, plan, request.context, request.adapters)
+			: await applyConfirmedPlan(plan, request.context, request.adapters, request.injection?.reconfigure);
 	return {
 		manifest: complete,
 		requiresAuthorization: false,

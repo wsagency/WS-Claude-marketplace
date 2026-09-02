@@ -110,7 +110,6 @@ export interface HubTransactionRequest {
 	discovery: HubDiscovery;
 	choices?: HubChoices;
 	authorization?: string;
-	injectedOriginValidation?: { origin: string; isValid: boolean; reason?: string };
 	injectedFailure?: {
 		targetRoot: string;
 		phase: "write" | "verify" | "core_write" | "core_verify" | "docs_write";

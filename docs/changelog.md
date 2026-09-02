@@ -41,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fail closed on setup manifest path and managed-range conflicts (WCM-1)
+- Harden the WS 5 setup cutover with repository-derived cleanup gates, authorized replacement of exact released adapters, durable and crash-recoverable Local/Jira backfill, pre-apply origin revalidation, applied-versus-verified reconfiguration journals, structural documentation-policy disablement that preserves authored files, canonical native legacy detection, and fixture-backed manifest and installed-artifact release gates (WCM-1)
 
 Seven-axis review sweep of the hub-repo-types change — 88 findings across Standards, Spec, freshness code, `/ws-hub` flows, skill surfaces, published docs and a repo-wide legacy sweep, all remediated.
 

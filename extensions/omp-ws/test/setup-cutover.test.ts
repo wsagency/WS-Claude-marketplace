@@ -149,3 +149,32 @@ test("WS 5 setup cutover is complete in source and generated output", async () =
 		await fs.rm(outRoot, { recursive: true, force: true });
 	}
 });
+
+test("WS 5 release metadata, references, and migration guide stay aligned", async () => {
+	const marketplace = JSON.parse(await source(".claude-plugin/marketplace.json"));
+	const plugin = JSON.parse(await source("plugins/ws/.claude-plugin/plugin.json"));
+	const packageManifest = JSON.parse(await source("extensions/omp-ws/package.json"));
+	expect(marketplace.plugins).toHaveLength(1);
+	expect(marketplace.plugins[0].name).toBe("ws");
+	expect(marketplace.plugins[0].version).toBe("5.0.0");
+	expect(marketplace.plugins[0].description).toBe(plugin.description);
+	expect(plugin).not.toHaveProperty("version");
+	expect(packageManifest.name).toBe("@wsagency/omp-ws");
+	expect(packageManifest.version).toBe("0.7.0");
+	expect(packageManifest.omp.extensions).toEqual(["./dist/index.js"]);
+	expect(packageManifest.files).toEqual(expect.arrayContaining(["dist", "commands", "skills", "agents", "rules", "templates"]));
+
+	const changelog = await source("CHANGELOG.md");
+	expect(await source("docs/changelog.md")).toBe(changelog);
+	expect(changelog).toContain("## [5.0.0] - 2026-09-02");
+	expect(changelog).toContain("Upgrade native omp installations to `@wsagency/omp-ws` 0.7.0");
+	expect(changelog).toContain("sole `/ws-setup` entry point");
+
+	const reference = await source("docs/reference/commands.md");
+	expect(reference).toContain("## /ws-setup");
+	expect(reference).toContain("`ws-project-bootstrap` + `ws-docs-bootstrap`");
+	const migrationGuide = await source("docs/how-to/migrate-to-ws-5.md");
+	expect(migrationGuide).toContain("omp plugin install @wsagency/omp-ws@0.7.0");
+	expect(migrationGuide).toContain(`Do not run \`${RETIRED_SETUP_COMMAND}\` or \`${RETIRED_MATT_SETUP_ROUTE}\``);
+	expect(migrationGuide).toContain("No changes required");
+});

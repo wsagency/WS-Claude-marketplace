@@ -5,11 +5,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { parseCanonicalConfigYaml } from "./config.mjs";
+import { parseCanonicalConfigYaml, serializeCanonicalConfig } from "./config.mjs";
 import { discoverHubTransaction } from "./hub-transaction.mjs";
 import { runManifestTransaction } from "./manifest-contract.mjs";
+import { createMockReconfigureAdapters } from "./reconfigure.test-support.mjs";
 import { discoverLegacySetup } from "./migration.mjs";
-import { discoverStandaloneRepository, RECOMMENDED_LOCAL_CHOICES } from "./transaction.mjs";
+import { CANONICAL_CONFIG_YAML, discoverStandaloneRepository, RECOMMENDED_LOCAL_CHOICES } from "./transaction.mjs";
 
 const SKILL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_ROOT = path.join(SKILL_ROOT, "fixtures");
@@ -254,52 +255,38 @@ test("hub scope plans and applies every selected repository through the facade",
 	}
 });
 
-function reconfigureAdapters() {
-	let journal = null;
+function runtimeReconfiguration() {
 	return {
-		writeJournal: async (hash, state) => { journal = { hash, state }; },
-		readJournal: async () => journal,
-		removeJournal: async () => { journal = null; },
-		appendAudit: async () => {},
-		applyEffect: async effect => ({ identity: { id: effect.id, version: 1 } }),
-		verifyEffect: async () => true,
-		revalidateLocalFingerprints: async () => true,
-		revalidateMachineFingerprints: async () => true,
-		refetchRemoteFingerprint: async effect => effect.remoteFingerprint ?? effect.fingerprint ?? null,
-		verifyCutover: async () => true,
-		verifyCompletion: async () => true,
-		deriveReadiness: async () => ({ config: "ready", tracker: "ready", documentation: "not_configured", runtime: "ready" }),
-		now: () => 1_693_612_800_000,
-	};
-}
-
-test("reconfiguration failure and resume retain the exact authorized journal", async () => {
-	const adapters = reconfigureAdapters();
-	const snapshot = {
-		config: { schema_version: 1, runtime: { session_discipline: "required", dangerous_git_guard: "enabled" } },
-		target: {
-			shape: "standalone",
-			repositoryId: "repo",
-			entries: {
-				"config:runtime.session_discipline": { fingerprint: "config-v1" },
-				"config:runtime.dangerous_git_guard": { fingerprint: "config-v1" },
-				"managed:AGENTS.md": { fingerprint: "agents-v1" },
+		snapshot: {
+			config: { schema_version: 1, runtime: { session_discipline: "required", dangerous_git_guard: "enabled" } },
+			target: {
+				shape: "standalone",
+				repositoryId: "repo",
+				entries: {
+					"config:runtime.session_discipline": { fingerprint: "config-v1" },
+					"config:runtime.dangerous_git_guard": { fingerprint: "config-v1" },
+					"managed:AGENTS.md": { fingerprint: "agents-v1" },
+				},
+			},
+			machine: {
+				sessionDisciplineDelivered: false,
+				sessionDisciplineFingerprint: "session-v1",
+				sharedGuardsOwnedBy: ["repo"],
+				sharedGuardExactGenerated: true,
+				sharedGuardFingerprint: "guard-v1",
 			},
 		},
-		machine: {
-			sessionDisciplineDelivered: false,
-			sessionDisciplineFingerprint: "session-v1",
-			sharedGuardsOwnedBy: ["repo"],
-			sharedGuardExactGenerated: true,
-			sharedGuardFingerprint: "guard-v1",
+		choices: {
+			domains: ["runtime"],
+			fields: ["runtime.session_discipline", "runtime.dangerous_git_guard"],
+			values: { "runtime.session_discipline": "required", "runtime.dangerous_git_guard": "disabled" },
+			authorizeOwnedCleanup: true,
 		},
 	};
-	const choices = {
-		domains: ["runtime"],
-		fields: ["runtime.session_discipline", "runtime.dangerous_git_guard"],
-		values: { "runtime.session_discipline": "required", "runtime.dangerous_git_guard": "disabled" },
-		authorizeOwnedCleanup: true,
-	};
+}
+test("reconfiguration failure and resume retain the exact authorized journal", async () => {
+	const adapters = createMockReconfigureAdapters();
+	const { snapshot, choices } = runtimeReconfiguration();
 	const request = { mode: "reconfigure", root: "/repo", snapshot, choices, adapters };
 	const planned = await runManifestTransaction(request);
 	assert.equal(planned.requiresAuthorization, true);
@@ -317,4 +304,229 @@ test("reconfiguration failure and resume retain the exact authorized journal", a
 	assert.equal(resumed.applied, true);
 	assert.equal(resumed.phase, "done");
 	assert.match(resumed.report, /cleanup completed/i);
+});
+
+function materializedSetupChoices(mutator = () => {}) {
+	const config = parseCanonicalConfigYaml(CANONICAL_CONFIG_YAML);
+	mutator(config);
+	return {
+		profile: "materialized",
+		targetConfig: serializeCanonicalConfig(config),
+		capabilities: { ghCli: true, glabCli: true },
+		jiraValidation: { ready: true },
+		docsReadiness: { ready: true },
+	};
+}
+
+async function createStandaloneRepository(prefix) {
+	const parent = await mkdtemp(path.join(tmpdir(), prefix));
+	const root = path.join(parent, "repository");
+	await mkdir(root, { recursive: true });
+	await writeFile(path.join(root, "README.md"), "# Repository\n");
+	await initializeRepository(root);
+	return { parent, root };
+}
+
+test("all tracker modes plan and apply through the manifest facade", async t => {
+	const modes = [
+		{ name: "local", configure: () => {} },
+		{ name: "github", origin: "git@github.com:wsagency/project.git", configure: config => { config.tracker.primary = "github"; } },
+		{ name: "gitlab", origin: "https://gitlab.com/wsagency/project.git", configure: config => { config.tracker.primary = "gitlab"; } },
+		{ name: "jira", configure: config => {
+			config.tracker.primary = "jira";
+			config.jira = { project: "WCM", default_issue_type: "Task", sync: "disabled" };
+		} },
+		{ name: "local-jira", configure: config => {
+			config.jira = { project: "WCM", default_issue_type: "Task", sync: "all_local_tickets" };
+		} },
+	];
+	for (const mode of modes) {
+		await t.test(mode.name, async () => {
+			const { parent, root } = await createStandaloneRepository(`ws-manifest-tracker-${mode.name}-`);
+			try {
+				if (mode.origin) git(root, "remote", "add", "origin", mode.origin);
+				const choices = materializedSetupChoices(mode.configure);
+				const request = {
+					mode: "setup",
+					root,
+					snapshot: await discoverStandaloneRepository(root, MACHINE),
+					choices,
+				};
+				const planned = await runManifestTransaction(request);
+				assert.equal(planned.requiresAuthorization, true, planned.report);
+				const applied = await runManifestTransaction({ ...request, authorization: planned.manifest.hash });
+				assert.equal(applied.applied, true);
+				assert.equal(applied.readiness.trackerReady, true);
+				assert.deepEqual(
+					parseCanonicalConfigYaml(await readFile(path.join(root, ".wsagency/config.yaml"), "utf8")),
+					parseCanonicalConfigYaml(choices.targetConfig),
+				);
+			} finally {
+				await rm(parent, { recursive: true, force: true });
+			}
+		});
+	}
+});
+
+test("documentation failure preserves completed core work and a fresh manifest resumes it", async () => {
+	const { parent, root } = await createStandaloneRepository("ws-manifest-docs-failure-");
+	try {
+		const choices = materializedSetupChoices(config => {
+			config.docs = {
+				user_track: "guides",
+				dev_track: "engineering",
+				default_audience: "ask",
+				default_scope: "repo",
+				adr_for_arch_changes: true,
+			};
+		});
+		const request = {
+			mode: "setup",
+			root,
+			snapshot: await discoverStandaloneRepository(root, MACHINE),
+			choices,
+		};
+		const planned = await runManifestTransaction(request);
+		const firstDocumentationWrite = planned.manifest.categories.CREATE
+			.find(effect => effect.phase === "docs");
+		assert.ok(firstDocumentationWrite);
+		const interrupted = await runManifestTransaction({
+			...request,
+			authorization: planned.manifest.hash,
+			injection: { docsFailure: firstDocumentationWrite.target },
+		});
+		assert.equal(interrupted.applied, false);
+		assert.equal(await exists(path.join(root, ".wsagency/config.yaml")), true);
+		assert.match(interrupted.report, /No rollback was performed/);
+
+		const resumedRequest = { ...request, snapshot: await discoverStandaloneRepository(root, MACHINE) };
+		const resumedPlan = await runManifestTransaction(resumedRequest);
+		const resumed = await runManifestTransaction({ ...resumedRequest, authorization: resumedPlan.manifest.hash });
+		assert.equal(resumed.applied, true);
+		assert.equal(await exists(path.join(root, "guides")), true);
+		assert.equal(await exists(path.join(root, "engineering")), true);
+	} finally {
+		await rm(parent, { recursive: true, force: true });
+	}
+});
+
+test("hub failure records pending repositories and a fresh manifest resumes them", async () => {
+	const { parent, root, child } = await createHub();
+	try {
+		const request = {
+			mode: "hub",
+			root,
+			snapshot: await discoverHubTransaction(root, MACHINE),
+			choices: { documentation: false },
+		};
+		const planned = await runManifestTransaction(request);
+		const interrupted = await runManifestTransaction({
+			...request,
+			authorization: planned.manifest.hash,
+			injection: { failure: { targetRoot: root, phase: "core_write", target: ".wsagency/config.yaml" } },
+		});
+		assert.equal(interrupted.applied, false);
+		assert.ok(interrupted.outcomes.some(outcome => outcome.status === "failed"));
+		assert.ok(interrupted.outcomes.some(outcome => outcome.repository === "service" && outcome.status === "pending"));
+		assert.equal(await exists(path.join(child, ".wsagency/config.yaml")), false);
+
+		const resumedRequest = { ...request, snapshot: await discoverHubTransaction(root, MACHINE) };
+		const resumedPlan = await runManifestTransaction(resumedRequest);
+		const resumed = await runManifestTransaction({ ...resumedRequest, authorization: resumedPlan.manifest.hash });
+		assert.equal(resumed.applied, true);
+		assert.equal(await exists(path.join(root, ".wsagency/config.yaml")), true);
+		assert.equal(await exists(path.join(child, ".wsagency/config.yaml")), true);
+	} finally {
+		await rm(parent, { recursive: true, force: true });
+	}
+});
+
+test("setup authorization rejects path drift before the first write", async () => {
+	const { parent, root } = await createStandaloneRepository("ws-manifest-drift-");
+	try {
+		const request = {
+			mode: "setup",
+			root,
+			snapshot: await discoverStandaloneRepository(root, MACHINE),
+			choices: RECOMMENDED_LOCAL_CHOICES,
+		};
+		const planned = await runManifestTransaction(request);
+		await mkdir(path.join(root, ".wsagency"), { recursive: true });
+		await writeFile(path.join(root, ".wsagency/config.yaml"), "user-owned: true\n", "utf8");
+		await assert.rejects(
+			() => runManifestTransaction({ ...request, authorization: planned.manifest.hash }),
+			/Authorization is stale/,
+		);
+		assert.equal(await readFile(path.join(root, ".wsagency/config.yaml"), "utf8"), "user-owned: true\n");
+		assert.equal(await exists(path.join(root, "dev-docs/agents/issue-tracker.md")), false);
+	} finally {
+		await rm(parent, { recursive: true, force: true });
+	}
+});
+
+test("tracker and documentation reconfiguration domains apply through the facade", async t => {
+	const cases = [
+		{
+			name: "tracker",
+			field: "tracker.pull_requests",
+			value: "triage",
+		},
+		{
+			name: "documentation",
+			field: "changelog.update_mode",
+			value: "commit",
+		},
+	];
+	for (const reconfiguration of cases) {
+		await t.test(reconfiguration.name, async () => {
+			const config = parseCanonicalConfigYaml(CANONICAL_CONFIG_YAML);
+			const snapshot = {
+				config,
+				target: {
+					shape: "standalone",
+					repositoryId: "repo",
+					entries: { [`config:${reconfiguration.field}`]: { fingerprint: "config-v1" } },
+				},
+				machine: {},
+			};
+			const choices = {
+				domains: [reconfiguration.name],
+				fields: [reconfiguration.field],
+				values: { [reconfiguration.field]: reconfiguration.value },
+			};
+			const adapters = createMockReconfigureAdapters();
+			const request = { mode: "reconfigure", root: "/repo", snapshot, choices, adapters };
+			const planned = await runManifestTransaction(request);
+			assert.ok(planned.manifest.categories.UPDATE.some(effect => effect.target === `config:${reconfiguration.field}`));
+			const applied = await runManifestTransaction({ ...request, authorization: planned.manifest.hash });
+			assert.equal(applied.applied, true);
+			assert.equal(applied.phase, "done");
+		});
+	}
+});
+
+test("reviewed valid partial reconfiguration is accepted through the facade", async () => {
+	const { snapshot, choices } = runtimeReconfiguration();
+	const adapters = createMockReconfigureAdapters({
+		validatePartialState: async () => ({ valid: true, ownershipReport: { repo: "partial" } }),
+	});
+	const request = { mode: "reconfigure", root: "/repo", snapshot, choices, adapters };
+	const planned = await runManifestTransaction(request);
+	const interrupted = await runManifestTransaction({
+		...request,
+		authorization: planned.manifest.hash,
+		injection: { reconfigure: { failAtPhase: "cleanup" } },
+	});
+	assert.equal(interrupted.applied, false);
+	const acceptancePlan = await runManifestTransaction({ ...request, action: "accept_partial" });
+	assert.equal(acceptancePlan.manifest.hash, planned.manifest.hash);
+	const accepted = await runManifestTransaction({
+		...request,
+		action: "accept_partial",
+		authorization: acceptancePlan.manifest.hash,
+	});
+	assert.equal(accepted.applied, true);
+	assert.equal(accepted.ownership.repo, "partial");
+	assert.equal(adapters.getAudit().acceptedPartial, true);
+	assert.equal(adapters.getJournal(), null);
 });

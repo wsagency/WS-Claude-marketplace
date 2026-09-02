@@ -4,7 +4,7 @@
 
 **Blocked by:** 32-prove-installed-claude-and-omp-parity
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
 - [ ] Immediately before the external publication step, the user confirms the exact native package name, 0.7.0 version, retained artifact identity, target registry, marketplace 5.0.0 commit, and tag.
 - [ ] The retained and previously tested native archive is published without rebuilding or substituting another artifact.
