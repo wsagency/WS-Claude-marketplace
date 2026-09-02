@@ -26,6 +26,26 @@ export interface SetupDiscovery {
 	machine: RuntimeSnapshot;
 	entries: Record<string, SnapshotEntry>;
 }
+
+export interface OriginIdentity {
+	provider: "github" | "gitlab";
+	host: "github.com" | "gitlab.com";
+	owner: string;
+	repo: string;
+}
+
+export interface OriginVerificationRequest {
+	origin: string;
+	expectedIdentity: OriginIdentity;
+}
+
+export interface OriginVerification {
+	accessible: boolean;
+	identity: OriginIdentity | null;
+	reason?: string;
+}
+
+export type OriginVerifier = (request: OriginVerificationRequest) => Promise<OriginVerification>;
 export interface SetupChoices {
 	profile: "recommended_local" | "canonical" | "materialized";
 	createRepository?: boolean;
@@ -57,6 +77,7 @@ export interface SetupEffect {
 export interface SetupPlan {
 	hash: string;
 	scope: { root: string; projectShape: ProjectShape };
+	originIdentity: OriginIdentity | null;
 	effects: SetupEffect[];
 }
 
@@ -80,7 +101,7 @@ export interface SetupTransactionRequest {
 	discovery: SetupDiscovery;
 	choices?: SetupChoices;
 	authorization?: string;
-	injectedOriginValidation?: { origin: string; isValid: boolean; reason?: string };
+	originVerifier?: OriginVerifier;
 	injectedFailure?: { phase: "write" | "verify"; target: string };
 }
 
@@ -106,9 +127,10 @@ export interface SetupTransactionResult {
 export const CANONICAL_CONFIG_YAML: string;
 export const RECOMMENDED_LOCAL_CHOICES: Readonly<SetupChoices>;
 export function discoverStandaloneRepository(root: string, machine: RuntimeSnapshot): Promise<SetupDiscovery>;
+export function verifyOriginWithGit(request: OriginVerificationRequest): Promise<OriginVerification>;
 export function runSetupTransaction(request: SetupTransactionRequest): Promise<SetupTransactionResult>;
 export function discoveryIsAligned(discovery: SetupDiscovery, targetConfig?: string, choices?: Partial<SetupChoices>): boolean;
-export function buildPlan(discovery: SetupDiscovery, choices: SetupChoices, validationInjection?: SetupTransactionRequest["injectedOriginValidation"]): SetupPlan;
+export function buildPlan(discovery: SetupDiscovery, choices: SetupChoices, originVerification?: OriginVerification | null): SetupPlan;
 export function deriveReadiness(discovery: SetupDiscovery, choices?: Partial<SetupChoices>): SetupReadiness;
 export function applyPlan(root: string, plan: SetupPlan, injectedFailure?: SetupTransactionRequest["injectedFailure"]): Promise<{
 	operations: SetupOperation[];

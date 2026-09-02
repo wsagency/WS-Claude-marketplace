@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseCanonicalConfigYaml, validateCanonicalConfig } from "./config.mjs";
-import { checkTrackerReadiness, getAdapterContent, planTrackerEffects } from "./trackers.mjs";
+import { checkTrackerReadiness, getAdapterContent, parseOriginIdentity, planTrackerEffects } from "./trackers.mjs";
 
 const SKILL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MISSING_FINGERPRINT = null;
@@ -350,23 +350,101 @@ function claudeEffect(order, discovery) {
 	return baseEffect(order, target, "file", "BLOCKING_CONFLICT", "A fat or conflicting Claude context requires reviewed migration.", entry);
 }
 
-function validateOrigin(origin, injection) {
-	if (injection) {
-		if (injection.origin !== origin) return { isValid: false, reason: "Injected validation origin mismatch" };
-		return { isValid: injection.isValid, reason: injection.reason || "Injected validation failure" };
-	}
+function parseExpectedOriginIdentity(origin) {
+	if (typeof origin !== "string" || origin.length === 0 || origin !== origin.trim()) return null;
+	if (/^git@[^:/\s]+:[^?#\s]+$/.test(origin)) return parseOriginIdentity(origin);
 	try {
 		const url = new URL(origin);
-		return { isValid: url.protocol === "https:" || url.protocol === "git:", reason: "" };
-	} catch (e) {
-		return { isValid: origin.startsWith("git@"), reason: "Malformed origin URL" };
+		if (url.protocol === "https:" && !url.username && !url.password) return parseOriginIdentity(origin);
+		if (url.protocol === "ssh:" && url.username === "git" && !url.password) return parseOriginIdentity(origin);
+	} catch {
+		return null;
+	}
+	return null;
+}
+
+function normalizeVerifiedOriginIdentity(identity) {
+	if (!identity || typeof identity !== "object") return null;
+	const { provider, host, owner, repo } = identity;
+	if (![provider, host, owner, repo].every(value => typeof value === "string" && value.length > 0)) return null;
+	const normalized = parseOriginIdentity(`https://${host}/${owner}/${repo}.git`);
+	if (!normalized) return null;
+	if (provider !== normalized.provider || host !== normalized.host || owner !== normalized.owner || repo !== normalized.repo) return null;
+	return normalized;
+}
+
+function identityLabel(identity) {
+	return `${identity.provider}:${identity.host}/${identity.owner}/${identity.repo}`;
+}
+
+function validateOrigin(origin, verification) {
+	const expectedIdentity = parseExpectedOriginIdentity(origin);
+	if (!expectedIdentity) {
+		return { isValid: false, identity: null, reason: "Origin must be a GitHub or GitLab HTTPS/SSH URL" };
+	}
+	if (!verification) {
+		return { isValid: false, identity: null, reason: "Origin accessibility was not verified" };
+	}
+	if (verification.accessible !== true) {
+		return { isValid: false, identity: null, reason: verification.reason || "Origin is inaccessible" };
+	}
+	const verifiedIdentity = normalizeVerifiedOriginIdentity(verification.identity);
+	if (!verifiedIdentity) {
+		return { isValid: false, identity: null, reason: "Origin verification returned a malformed remote identity" };
+	}
+	if (verifiedIdentity.provider !== expectedIdentity.provider) {
+		return {
+			isValid: false,
+			identity: null,
+			reason: `Origin provider mismatch: expected ${expectedIdentity.provider}, received ${verifiedIdentity.provider}`,
+		};
+	}
+	if (identityLabel(verifiedIdentity) !== identityLabel(expectedIdentity)) {
+		return {
+			isValid: false,
+			identity: null,
+			reason: `Origin identity mismatch: expected ${identityLabel(expectedIdentity)}, received ${identityLabel(verifiedIdentity)}`,
+		};
+	}
+	return { isValid: true, identity: verifiedIdentity, reason: "" };
+}
+
+async function resolveOriginVerification(origin, verifier) {
+	const expectedIdentity = parseExpectedOriginIdentity(origin);
+	if (!expectedIdentity || typeof verifier !== "function") return null;
+	try {
+		return await verifier({ origin, expectedIdentity });
+	} catch (error) {
+		return {
+			accessible: false,
+			identity: null,
+			reason: `Origin verification failed: ${error instanceof Error ? error.message : String(error)}`,
+		};
 	}
 }
 
-export function buildPlan(discovery, choices, validationInjection) {
+export async function verifyOriginWithGit({ origin, expectedIdentity }) {
+	try {
+		execFileSync("git", ["ls-remote", origin], {
+			encoding: "utf8",
+			stdio: ["ignore", "ignore", "ignore"],
+			timeout: 15_000,
+		});
+		return { accessible: true, identity: expectedIdentity };
+	} catch {
+		return {
+			accessible: false,
+			identity: null,
+			reason: "Remote could not be accessed with git ls-remote",
+		};
+	}
+}
+
+export function buildPlan(discovery, choices, originVerification) {
 	const effects = [];
 	const isNotGit = discovery.projectShape === "not_git";
 	const createRepo = isNotGit && choices.createRepository;
+	let originValidation = null;
 
 	let gitClassification = discovery.git.isRepository ? "NO-OP" : "BLOCKING_CONFLICT";
 	let gitReason = discovery.git.isRepository ? "Existing Git repository detected." : "Setup requires an existing Git repository.";
@@ -383,13 +461,13 @@ export function buildPlan(discovery, choices, validationInjection) {
 		originClassification = "PRESERVE";
 		originReason = "Preserve the detected origin; it is never copied into WS configuration.";
 	} else if (createRepo) {
-		const validation = validateOrigin(choices.origin || "", validationInjection);
+		originValidation = validateOrigin(choices.origin || "", originVerification);
 		if (!choices.origin) {
 			originClassification = "BLOCKING_CONFLICT";
 			originReason = "A valid origin URL is required to create a repository.";
-		} else if (!validation.isValid) {
+		} else if (!originValidation.isValid) {
 			originClassification = "BLOCKING_CONFLICT";
-			originReason = `Invalid origin URL: ${validation.reason || "Malformed or inaccessible"}.`;
+			originReason = `Origin verification failed: ${originValidation.reason || "Malformed or inaccessible"}.`;
 		} else {
 			originClassification = "CREATE";
 			originReason = "Configure the required origin for the new repository.";
@@ -397,6 +475,8 @@ export function buildPlan(discovery, choices, validationInjection) {
 		}
 	}
 	effects.push(baseEffect(1, "git:origin", "state", originClassification, originReason, null, originAfter));
+
+	const originIdentity = createRepo && originClassification === "CREATE" ? originValidation.identity : null;
 
 	if (discovery.projectShape === "not_git" || discovery.projectShape === "standalone" || discovery.projectShape === "hub_root" || discovery.projectShape === "hub_subrepository") {
 		effects.push(baseEffect(2, "project:shape", "state", "NO-OP", `Detected ${discovery.projectShape} repository scope.`, null));
@@ -418,6 +498,10 @@ export function buildPlan(discovery, choices, validationInjection) {
 		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", choices?.targetConfig ? "UPDATE" : "BLOCKING_CONFLICT", choices?.targetConfig ? "Apply the explicitly materialized configuration." : "Existing configuration is not the verified recommended Local v1 payload.", configEntry, choices?.targetConfig ? targetConfig : undefined));
 	}
 
+	const trackerDiscovery = originIdentity
+		? { ...discovery, git: { ...discovery.git, origin: choices.origin } }
+		: discovery;
+
 	const engineeringEnabled = Boolean(config?.tracker && config?.triage && config?.domain && config?.commit && config?.runtime);
 	if (engineeringEnabled) {
 		if (config.tracker.primary === "local") {
@@ -427,7 +511,7 @@ export function buildPlan(discovery, choices, validationInjection) {
 			effects.push(baseEffect(20, "dev-docs/tickets/open", "directory", "SKIP", `${config.tracker.primary} owns tickets; do not create a Local store.`, discovery.entries["dev-docs/tickets/open"]));
 			effects.push(baseEffect(21, "dev-docs/tickets/done", "directory", "SKIP", `${config.tracker.primary} owns tickets; do not create a Local store.`, discovery.entries["dev-docs/tickets/done"]));
 		}
-		const trackerEffects = planTrackerEffects(config, discovery, choices?.jiraValidation, choices?.capabilities);
+		const trackerEffects = planTrackerEffects(config, trackerDiscovery, choices?.jiraValidation, choices?.capabilities);
 		effects.push(...trackerEffects.filter(item => item.target !== "dev-docs/agents/issue-tracker.md"));
 		effects.push(managedFileEffect(30, "dev-docs/agents/issue-tracker.md", getAdapterContent(config.tracker.primary), discovery, false));
 		effects.push(managedFileEffect(31, "dev-docs/agents/triage-labels.md", TEMPLATE_CONTENT["dev-docs/agents/triage-labels.md"], discovery, false));
@@ -469,6 +553,7 @@ export function buildPlan(discovery, choices, validationInjection) {
 	const hashPayload = {
 		scope,
 		choices,
+		originIdentity,
 		repositoryIdentity: {
 			head: discovery.git.head,
 			dirty: discovery.git.dirty,
@@ -482,7 +567,7 @@ export function buildPlan(discovery, choices, validationInjection) {
 			fingerprint: effect.fingerprint,
 		})),
 	};
-	return { hash: sha256(JSON.stringify(hashPayload)), scope, effects };
+	return { hash: sha256(JSON.stringify(hashPayload)), scope, originIdentity, effects };
 }
 
 export function deriveReadiness(discovery, choices = {}) {
@@ -644,7 +729,10 @@ export async function runSetupTransaction(request) {
 		};
 	}
 	if (!["recommended_local", "canonical", "materialized"].includes(choices.profile)) throw new Error(`Unsupported setup profile: ${choices.profile}`);
-	const plan = buildPlan(request.discovery, choices, request.injectedOriginValidation);
+	const originVerification = isNotGit && choices.createRepository && typeof choices.origin === "string"
+		? await resolveOriginVerification(choices.origin, request.originVerifier)
+		: null;
+	const plan = buildPlan(request.discovery, choices, originVerification);
 	const blockers = blockingEffects(plan);
 	if (blockers.length > 0) {
 		return {
@@ -679,7 +767,10 @@ export async function runSetupTransaction(request) {
 		};
 	}
 	const freshDiscovery = await discoverStandaloneRepository(request.root, request.discovery.machine);
-	const freshPlan = buildPlan(freshDiscovery, choices, request.injectedOriginValidation);
+	const freshOriginVerification = isNotGit && choices.createRepository && typeof choices.origin === "string"
+		? await resolveOriginVerification(choices.origin, request.originVerifier)
+		: null;
+	const freshPlan = buildPlan(freshDiscovery, choices, freshOriginVerification);
 	if (request.authorization !== plan.hash || request.authorization !== freshPlan.hash) {
 		throw new Error("Authorization is stale because the planned target set or payload changed.");
 	}
@@ -688,7 +779,7 @@ export async function runSetupTransaction(request) {
 	const readiness = deriveReadiness(verifiedDiscovery, choices);
 
 	if (applyResult.failure) {
-		const f = applyResult.failure;
+		const transactionFailure = applyResult.failure;
 		return {
 			discovery: verifiedDiscovery,
 			questions: [],
@@ -697,16 +788,16 @@ export async function runSetupTransaction(request) {
 			operations: applyResult.operations,
 			readiness,
 			failure: {
-				target: f.target,
-				error: f.error.message,
-				completed: [...f.completed],
-				pending: [...f.pending],
+				target: transactionFailure.target,
+				error: transactionFailure.error.message,
+				completed: [...transactionFailure.completed],
+				pending: [...transactionFailure.pending],
 			},
 			report: [
-				`Transaction stopped at ${f.target}: ${f.error.message}`,
+				`Transaction stopped at ${transactionFailure.target}: ${transactionFailure.error.message}`,
 				"No rollback was performed. The repository is in a partial setup state.",
-				`Completed: ${f.completed.length === 0 ? "none" : f.completed.join(", ")}`,
-				`Pending: ${f.pending.join(", ")}`,
+				`Completed: ${transactionFailure.completed.length === 0 ? "none" : transactionFailure.completed.join(", ")}`,
+				`Pending: ${transactionFailure.pending.join(", ")}`,
 				"To resume, run exactly:",
 				"  omp ws-setup",
 			].join("\n"),
@@ -743,7 +834,7 @@ async function runCommandLine() {
 	const profile = commandLineArgument("--profile");
 	const choices = profile ? { profile } : undefined;
 	const authorization = commandLineArgument("--authorization");
-	const result = await runSetupTransaction({ root, discovery, choices, authorization });
+	const result = await runSetupTransaction({ root, discovery, choices, authorization, originVerifier: verifyOriginWithGit });
 	console.log(JSON.stringify(result, null, 2));
 }
 
