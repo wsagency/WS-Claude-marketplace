@@ -12,25 +12,27 @@ export type ReconfigurePhase = "prepare" | "cutover" | "cleanup" | "done";
 export interface ReconfigureConfig {
     version: string;
     schema: string;
-    [key: string]: any; // Catch-all for strict-valid baseline config fields
+    [key: string]: any;
 }
 
 export interface ReconfigureMachineCapabilities {
-    canWriteSharedGuards: boolean;
-    sharedGuardsOwnedBy: string[];
+    canWriteSharedGuards?: boolean;
+    sharedGuardsOwnedBy?: string[];
 }
 
 export interface ReconfigureTargetSnapshot {
     isRepository: boolean;
     shape: ProjectShape;
-    entries: Record<string, { kind: "file" | "directory" | "missing", content?: string }>;
+    repositoryId?: string;
+    entries: Record<string, { kind: "file" | "directory" | "missing", content?: string, fingerprint?: string | null }>;
 }
 
 export interface ReconfigureChoices {
     domain: ReconfigureDomain;
     fields: string[];
-    values: Record<string, any>;
+    values?: Record<string, any>;
     repositories?: string[];
+    cancelDependent?: boolean;
 }
 
 export interface ReconfigureAdapters {
@@ -39,6 +41,7 @@ export interface ReconfigureAdapters {
     removeJournal?: () => Promise<void>;
     writeAudit?: (record: any) => Promise<void>;
     applyEffect?: (effect: SetupEffect) => Promise<void>;
+    now?: () => number;
 }
 
 export interface ReconfigureInjection {
@@ -51,7 +54,7 @@ export interface ReconfigurePlanResult {
     effects: SetupEffect[];
     hash: string;
     requiresConfirmation: boolean;
-    dependencyClosure: string[]; // required dependents that must be updated
+    dependencyClosure: string[];
     report: string;
 }
 
@@ -62,6 +65,7 @@ export interface ReconfigureApplyResult {
     hash: string;
     readiness: SetupReadiness;
     report: string;
+    ownershipReport?: Record<string, string>;
 }
 
 export function plan(
@@ -72,6 +76,10 @@ export function plan(
 ): ReconfigurePlanResult;
 
 export function apply(
+    config: ReconfigureConfig,
+    snapshot: ReconfigureTargetSnapshot,
+    machine: ReconfigureMachineCapabilities,
+    choices: ReconfigureChoices,
     planHash: string,
     effects: SetupEffect[],
     adapters: ReconfigureAdapters,
@@ -79,10 +87,18 @@ export function apply(
 ): Promise<ReconfigureApplyResult>;
 
 export function resume(
+    config: ReconfigureConfig,
+    snapshot: ReconfigureTargetSnapshot,
+    machine: ReconfigureMachineCapabilities,
+    choices: ReconfigureChoices,
     adapters: ReconfigureAdapters,
     injection?: ReconfigureInjection
 ): Promise<ReconfigureApplyResult>;
 
 export function acceptPartial(
+    config: ReconfigureConfig,
+    snapshot: ReconfigureTargetSnapshot,
+    machine: ReconfigureMachineCapabilities,
+    choices: ReconfigureChoices,
     adapters: ReconfigureAdapters
 ): Promise<ReconfigureApplyResult>;
