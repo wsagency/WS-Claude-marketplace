@@ -6,6 +6,7 @@ import test from "node:test";
 import { applyLegacyCleanup, discoverLegacySetup, planLegacyMigration } from "./migration.mjs";
 import { serializeCanonicalConfig } from "./config.mjs";
 import { getAdapterContent } from "./trackers.mjs";
+import { DOCUMENTATION_CONTEXT_FRAGMENTS } from "../ws-docs-bootstrap/transaction.mjs";
 
 async function withRepository(files, run) {
 	const root = await mkdtemp(path.join(tmpdir(), "ws-migration-test-"));
@@ -34,7 +35,7 @@ async function materializeMigrationEvidence(root, plan) {
 	await writeRepositoryFile(root, "dev-docs/agents/triage-labels.md", await readFile(new URL("./templates/triage-labels.md", import.meta.url), "utf8"));
 	await writeRepositoryFile(root, "dev-docs/agents/domain.md", await readFile(new URL("./templates/domain.md", import.meta.url), "utf8"));
 	await writeRepositoryFile(root, "AGENTS.md", managedContext);
-	await writeRepositoryFile(root, "CLAUDE.md", "@AGENTS.md\n");
+	await writeRepositoryFile(root, "CLAUDE.md", DOCUMENTATION_CONTEXT_FRAGMENTS.claude);
 	await writeRepositoryFile(root, plan.config.domain.layout === "multi_context" ? "CONTEXT-MAP.md" : "CONTEXT.md", "# Domain context\n");
 	if (plan.config.docs) {
 		await mkdir(path.join(root, plan.config.docs.user_track), { recursive: true });
@@ -130,7 +131,9 @@ test("released adapters remain authorized replacements while customized adapters
 	});
 	const customized = "# Team issue tracker\n\nUse GitHub Issues. Preserve component metadata and escalation notes.\n";
 	await withRepository({ "dev-docs/agents/issue-tracker.md": customized }, async root => {
-		const plan = planLegacyMigration(await discoverLegacySetup(root, machine));
+		const blocked = planLegacyMigration(await discoverLegacySetup(root, machine));
+		assert.match(blocked.blockers[0], /explicit preserve or replace resolution/i);
+		const plan = planLegacyMigration(await discoverLegacySetup(root, machine), { resolutions: { "adapter.tracker": "preserve" } });
 		const adapter = plan.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md");
 		assert.equal(plan.blockers.length, 0);
 		assert.equal(adapter.classification, "PRESERVE");
