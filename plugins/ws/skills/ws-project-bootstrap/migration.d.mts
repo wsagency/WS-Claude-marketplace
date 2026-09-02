@@ -1,10 +1,12 @@
 import type { CanonicalProjectConfig, ConfigValidationResult } from "./config.d.mts";
+import type { EngineeringMigrationResolutions } from "./migration-engineering.d.mts";
 import type { EffectClassification } from "./transaction.d.mts";
 
 export interface LegacyEntry {
 	kind: "missing" | "file" | "directory" | "blocked";
 	content: string | null;
 	fingerprint: string | null;
+	empty?: boolean;
 }
 
 export interface LegacyDiscovery {
@@ -13,6 +15,7 @@ export interface LegacyDiscovery {
 	machine: { sessionDiscipline?: boolean; dangerousGitGuard?: boolean };
 	activeLocalWork: boolean;
 	canonicalValidation: ConfigValidationResult | null;
+	ompEdgeTemplate: string;
 }
 
 export interface LegacyMigrationEffect {
@@ -45,10 +48,20 @@ export interface LegacyMigrationPlan {
 	report: string;
 }
 
+export interface ConfirmedMachineHints extends Record<string, unknown> {
+	jiraProject?: string;
+	guard?: boolean | "enabled" | "disabled";
+	dashboard?: boolean | "jira_assignments" | "disabled";
+	"jira.project"?: string;
+	"commit.jira.actions"?: "never" | "disabled" | "ask" | "always";
+	"runtime.dangerous_git_guard"?: boolean | "enabled" | "disabled";
+	"ui.session_start_dashboard"?: boolean | "jira_assignments" | "disabled";
+}
+
 export interface LegacyMigrationOptions {
-	resolutions?: Record<string, unknown>;
+	resolutions?: EngineeringMigrationResolutions;
 	selections?: Record<string, unknown>;
-	confirmedMachineHints?: Record<string, unknown>;
+	confirmedMachineHints?: ConfirmedMachineHints;
 }
 
 export interface LegacyCleanupRuntimeEvidence {

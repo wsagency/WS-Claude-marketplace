@@ -37,27 +37,43 @@ for (const [file, primary, sync] of [
 	});
 }
 
-test("customized known tracker guidance requires an explicit adapter resolution", () => {
+test("customized known tracker guidance requires a valid reviewed lossless merge and then aligns", () => {
 	const content = "# Team issue tracker\n\nUse GitHub Issues. Preserve component metadata and escalation notes.\n";
 	const discovery = discoverEngineeringState({ "dev-docs/agents/issue-tracker.md": content });
 	const blocked = planEngineeringMigration(discovery, canonical());
 	assert.equal(blocked.patch.tracker.primary, "github");
-	assert.match(blocked.blockers.join("\n"), /explicit preserve or replace resolution/i);
+	assert.match(blocked.blockers.join("\n"), /reviewed lossless merge/i);
 	assert.equal(blocked.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").classification, "PRESERVE");
 
 	const preserved = planEngineeringMigration(discovery, canonical(), { "adapter.tracker": "preserve" });
-	assert.equal(preserved.blockers.length, 0);
+	assert.match(preserved.blockers.join("\n"), /remains preserved/i);
 	assert.equal(preserved.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").after, content);
 
-	const canonicalGitLab = { ...canonical(), tracker: { primary: "gitlab", pull_requests: "ignore" } };
-	const replaced = planEngineeringMigration(discovery, canonicalGitLab, { "adapter.tracker": "replace" });
-	assert.equal(replaced.blockers.length, 0);
-	assert.equal(replaced.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").classification, "UPDATE");
-	assert.equal(replaced.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").after, getAdapterContent("gitlab"));
+	const managed = getAdapterContent("github").trimEnd();
+	const mergedContent = `${managed}\n\n## Preserved legacy guidance\n\n${content}`;
+	const merged = planEngineeringMigration(discovery, canonical(), {
+		"adapter.tracker": { action: "merge", content: mergedContent },
+	});
+	assert.equal(merged.blockers.length, 0);
+	assert.equal(merged.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").classification, "UPDATE");
+	assert.equal(merged.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").after, mergedContent);
 
-	const invalid = planEngineeringMigration(discovery, canonical(), { "adapter.tracker": "discard" });
-	assert.match(invalid.blockers.join("\n"), /invalid tracker adapter resolution/i);
-	assert.equal(invalid.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").classification, "PRESERVE");
+	for (const resolution of [
+		"replace",
+		{ action: "merge", content: managed },
+		{ action: "merge", content: `${managed}\n${managed}\n${content}` },
+	]) {
+		const invalid = planEngineeringMigration(discovery, canonical(), { "adapter.tracker": resolution });
+		assert.match(invalid.blockers.join("\n"), /invalid reviewed tracker adapter merge/i);
+		assert.equal(invalid.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").classification, "PRESERVE");
+	}
+
+	const aligned = planEngineeringMigration(
+		discoverEngineeringState({ "dev-docs/agents/issue-tracker.md": mergedContent }),
+		{ ...canonical(), tracker: { primary: "github", pull_requests: "ignore" } },
+	);
+	assert.equal(aligned.blockers.length, 0);
+	assert.equal(aligned.effects.some(effect => effect.target === "dev-docs/agents/issue-tracker.md"), false);
 });
 
 test("unsupported custom tracker blocks before writes", () => {

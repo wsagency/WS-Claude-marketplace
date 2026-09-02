@@ -106,6 +106,78 @@ test("conflicting repository-local claims block every write until explicit resol
 	});
 });
 
+test("migration precedence is canonical, resolution, repository, confirmed machine hint, selection, then default", async () => {
+	const released = (await readFile(new URL("./fixtures/pre-5-engineering/issue-tracker-jira.md", import.meta.url), "utf8")).replaceAll("<PROJECT-KEY>", "WCM");
+	await withRepository({
+		".claude/ws-project.yaml": "jira:\n  project: WCM\n  default_issue_type: Task\n",
+		"dev-docs/agents/issue-tracker.md": released,
+	}, async root => {
+		const discovery = await discoverLegacySetup(root, machine);
+		const resolved = planLegacyMigration(discovery, {
+			resolutions: { "jira.project": "RESOLVED" },
+			confirmedMachineHints: { jiraProject: "hint" },
+			selections: { "jira.project": "SELECTED" },
+		});
+		assert.equal(resolved.config.jira.project, "RESOLVED");
+
+		const repository = planLegacyMigration(discovery, {
+			confirmedMachineHints: { jiraProject: "hint" },
+			selections: { "jira.project": "SELECTED" },
+		});
+		assert.equal(repository.config.jira.project, "WCM");
+
+		const canonical = structuredClone(repository.config);
+		canonical.jira.project = "CANONICAL";
+		await writeRepositoryFile(root, ".wsagency/config.yaml", serializeCanonicalConfig(canonical));
+		const canonicalPlan = planLegacyMigration(await discoverLegacySetup(root, machine), {
+			resolutions: { "jira.project": "RESOLVED" },
+			confirmedMachineHints: { jiraProject: "hint" },
+			selections: { "jira.project": "SELECTED" },
+		});
+		assert.equal(canonicalPlan.config.jira.project, "CANONICAL");
+	});
+
+	await withRepository({
+		"dev-docs/agents/issue-tracker.md": released,
+		".claude/settings.json": JSON.stringify({ hooks: { PreToolUse: [{ command: "ws dangerous-git guard" }] } }),
+	}, async root => {
+		const selected = planLegacyMigration(await discoverLegacySetup(root, machine), {
+			selections: {
+				"tracker.pull_requests": "triage",
+				"jira.default_issue_type": "Bug",
+				"runtime.dangerous_git_guard": "disabled",
+			},
+		});
+		assert.equal(selected.blockers.length, 0);
+		assert.equal(selected.config.tracker.pull_requests, "triage");
+		assert.equal(selected.config.jira.default_issue_type, "Bug");
+		assert.equal(selected.config.runtime.dangerous_git_guard, "disabled");
+	});
+
+	await withRepository({}, async root => {
+		const plan = planLegacyMigration(await discoverLegacySetup(root, machine), {
+			confirmedMachineHints: {
+				jiraProject: " hint ",
+				guard: false,
+				defaults: { jira_actions: "never" },
+				jira: { site: "https://secret.invalid", user: "person@example.com", token: "secret" },
+			},
+			selections: {
+				"jira.project": "SELECTED",
+				"commit.jira.actions": "always",
+				"runtime.dangerous_git_guard": "enabled",
+				"domain.layout": "multi_context",
+			},
+		});
+		assert.equal(plan.blockers.length, 0);
+		assert.equal(plan.config.jira.project, "HINT");
+		assert.equal(plan.config.commit.jira.actions, "disabled");
+		assert.equal(plan.config.runtime.dangerous_git_guard, "disabled");
+		assert.equal(plan.config.domain.layout, "multi_context");
+		assert.deepEqual(Object.keys(plan.config.jira).sort(), ["default_issue_type", "project", "sync"]);
+	});
+});
+
 test("unsupported custom tracker blocks and remains preserved", async () => {
 	await withRepository({ "dev-docs/agents/issue-tracker.md": "# Tracker\n\nUse the Acme proprietary queue.\n" }, async root => {
 		const plan = planLegacyMigration(await discoverLegacySetup(root, machine));
@@ -115,7 +187,7 @@ test("unsupported custom tracker blocks and remains preserved", async () => {
 	});
 });
 
-test("released adapters remain authorized replacements while customized adapters remain preserved", async () => {
+test("released adapters remain authorized replacements while customized adapters require lossless merges", async () => {
 	const released = (await readFile(new URL("./fixtures/pre-5-engineering/issue-tracker-jira.md", import.meta.url), "utf8")).replaceAll("<PROJECT-KEY>", "WCM");
 	await withRepository({ "dev-docs/agents/issue-tracker.md": released }, async root => {
 		const plan = planLegacyMigration(await discoverLegacySetup(root, machine));
@@ -131,13 +203,17 @@ test("released adapters remain authorized replacements while customized adapters
 	});
 	const customized = "# Team issue tracker\n\nUse GitHub Issues. Preserve component metadata and escalation notes.\n";
 	await withRepository({ "dev-docs/agents/issue-tracker.md": customized }, async root => {
-		const blocked = planLegacyMigration(await discoverLegacySetup(root, machine));
-		assert.match(blocked.blockers[0], /explicit preserve or replace resolution/i);
-		const plan = planLegacyMigration(await discoverLegacySetup(root, machine), { resolutions: { "adapter.tracker": "preserve" } });
+		const discovery = await discoverLegacySetup(root, machine);
+		const blocked = planLegacyMigration(discovery);
+		assert.match(blocked.blockers.join("\n"), /reviewed lossless merge/i);
+		const mergedContent = `${getAdapterContent("github").trimEnd()}\n\n## Preserved legacy guidance\n\n${customized}`;
+		const plan = planLegacyMigration(discovery, {
+			resolutions: { "adapter.tracker": { action: "merge", content: mergedContent } },
+		});
 		const adapter = plan.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md");
 		assert.equal(plan.blockers.length, 0);
-		assert.equal(adapter.classification, "PRESERVE");
-		assert.equal(adapter.after, customized);
+		assert.equal(adapter.classification, "UPDATE");
+		assert.equal(adapter.after, mergedContent);
 	});
 });
 
@@ -356,6 +432,52 @@ test("empty scratch and exact omp rule are cleanup candidates while custom prose
 			{ action: "update", target: ".omp/rules/omp-edge-discipline.md" },
 		]);
 		assert.equal(await readFile(path.join(root, ".omp/rules/omp-edge-discipline.md"), "utf8"), authored);
+	});
+});
+
+test("late residual cleanup failure resumes from fresh discovery and preserves unknown bytes", async () => {
+	const template = await readFile(new URL("../../rules/omp-edge-discipline.md", import.meta.url), "utf8");
+	const authoredRule = "\n# Project rule\n\nKeep these bytes exactly.\n";
+	const scratchBytes = "active scratch work\n";
+	await withRepository({
+		".claude/ws-project.yaml": "jira:\n  project: WCM\n  default_issue_type: Task\n",
+		".omp/rules/omp-edge-discipline.md": `${template}${authoredRule}`,
+	}, async root => {
+		await mkdir(path.join(root, ".scratch"));
+		const initial = planLegacyMigration(await discoverLegacySetup(root, machine));
+		await materializeMigrationEvidence(root, initial);
+		await assert.rejects(
+			() => applyLegacyCleanup(root, initial, initial.hash, machine, ".omp/rules/omp-edge-discipline.md"),
+			error => {
+				assert.deepEqual(error.cleanupProgress.completed, [
+					{ action: "delete", target: ".claude/ws-project.yaml" },
+					{ action: "delete", target: ".scratch" },
+				]);
+				assert.equal(error.cleanupProgress.failed.target, ".omp/rules/omp-edge-discipline.md");
+				assert.deepEqual(error.cleanupProgress.pending, [".omp/rules/omp-edge-discipline.md"]);
+				return true;
+			},
+		);
+
+		await writeRepositoryFile(root, ".scratch/in-progress.txt", scratchBytes);
+		const resumed = planLegacyMigration(await discoverLegacySetup(root, machine));
+		assert.deepEqual(
+			resumed.effects.filter(effect => effect.order >= 900 && effect.classification === "UPDATE").map(effect => effect.target),
+			[".omp/rules/omp-edge-discipline.md"],
+		);
+		assert.equal(resumed.effects.find(effect => effect.target === ".scratch").classification, "PRESERVE");
+		assert.deepEqual(await applyLegacyCleanup(root, resumed, resumed.hash, machine), [
+			{ action: "update", target: ".omp/rules/omp-edge-discipline.md" },
+		]);
+
+		const aligned = planLegacyMigration(await discoverLegacySetup(root, machine));
+		assert.equal(aligned.requiresConfirmation, false);
+		assert.equal(aligned.report, "Valid canonical configuration wins. No migration changes required.");
+		assert.equal(aligned.effects.find(effect => effect.target === ".scratch").classification, "PRESERVE");
+		assert.equal(aligned.effects.find(effect => effect.target === ".omp/rules/omp-edge-discipline.md").classification, "PRESERVE");
+		assert.equal(await readFile(path.join(root, ".scratch/in-progress.txt"), "utf8"), scratchBytes);
+		assert.equal(await readFile(path.join(root, ".omp/rules/omp-edge-discipline.md"), "utf8"), authoredRule);
+		assert.deepEqual(await applyLegacyCleanup(root, aligned, aligned.hash, machine), []);
 	});
 });
 

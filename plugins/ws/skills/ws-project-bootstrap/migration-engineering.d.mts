@@ -5,6 +5,7 @@ import type { SnapshotEntry } from "./transaction.d.mts";
 export interface TrackerMigrationDiscovery {
 	recognized: boolean;
 	generated: boolean;
+	managed: boolean;
 	primary?: "local" | "github" | "gitlab" | "jira";
 	sync?: "disabled" | "all_local_tickets";
 	jiraProject?: string;
@@ -14,8 +15,8 @@ export interface EngineeringDiscovery {
 	hasEngineeringState: boolean;
 	entries: Record<string, SnapshotEntry>;
 	tracker: TrackerMigrationDiscovery | null;
-	triage: { generated: boolean; labels: Record<string, string> | null } | null;
-	domain: { generated: boolean; layout?: "single_context" | "multi_context" } | null;
+	triage: { generated: boolean; managed: boolean; labels: Record<string, string> | null } | null;
+	domain: { generated: boolean; managed: boolean; layout?: "single_context" | "multi_context" } | null;
 	context: { agentsBlock: string | null; claudeBlock: string | null; conflict: boolean };
 	activeLocalWork: boolean;
 }
@@ -24,7 +25,18 @@ export interface EngineeringMigrationConflict {
 	field: string;
 	source?: string;
 	sources?: string[];
-	classification: "unsupported-custom" | "lossy" | "ambiguous";
+	classification: "unsupported-custom" | "lossy" | "ambiguous" | "reviewed-merge-required" | "invalid-reviewed-merge";
+}
+
+export interface ReviewedAdapterMerge {
+	action: "merge";
+	content: string;
+}
+
+export interface EngineeringMigrationResolutions extends Record<string, unknown> {
+	"adapter.tracker"?: "preserve" | "replace" | ReviewedAdapterMerge;
+	"adapter.triage"?: "preserve" | "replace" | ReviewedAdapterMerge;
+	"adapter.domain"?: "preserve" | "replace" | ReviewedAdapterMerge;
 }
 
 export interface EngineeringMigrationPlan {
@@ -39,7 +51,7 @@ export function discoverEngineeringState(snapshots: Record<string, string | Snap
 export function planEngineeringMigration(
 	discovery: EngineeringDiscovery,
 	currentCanonical?: CanonicalProjectConfig | null,
-	resolutions?: Record<string, unknown>,
+	resolutions?: EngineeringMigrationResolutions,
 ): EngineeringMigrationPlan;
 export function checkEngineeringCleanupEligibility(
 	plan: EngineeringMigrationPlan,

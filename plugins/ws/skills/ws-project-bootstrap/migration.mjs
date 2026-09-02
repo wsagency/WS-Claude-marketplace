@@ -23,6 +23,101 @@ const DISCOVERY_TARGETS = [
 	"CONTEXT-MAP.md",
 ];
 const DEFAULT_CONFIG = parseCanonicalConfigYaml(CANONICAL_CONFIG_YAML);
+const CANONICAL_ROOTS = new Set(["tracker", "triage", "domain", "commit", "changelog", "ui", "runtime", "jira", "docs"]);
+const SENSITIVE_MACHINE_HINT = /(?:^|[._-])(?:auth|credential|password|secret|site|token|user|username|account|account_id|cloud_id)(?:$|[._-])/i;
+const MACHINE_HINT_ALIASES = new Map([
+	["jiraProject", "jira.project"],
+	["jira.project", "jira.project"],
+	["defaults.jira_actions", "commit.jira.actions"],
+	["commit.jira.actions", "commit.jira.actions"],
+	["defaults.pr_transition", "commit.jira.pr_transition"],
+	["commit.jira.pr_transition", "commit.jira.pr_transition"],
+	["defaults.smart_commit_trailer", "commit.jira.smart_commit_trailer"],
+	["commit.jira.smart_commit_trailer", "commit.jira.smart_commit_trailer"],
+	["defaults.commit_comment", "commit.jira.post_commit_comment"],
+	["commit.jira.post_commit_comment", "commit.jira.post_commit_comment"],
+	["guard", "runtime.dangerous_git_guard"],
+	["runtime.dangerous_git_guard", "runtime.dangerous_git_guard"],
+	["dashboard", "ui.session_start_dashboard"],
+	["ui.session_start_dashboard", "ui.session_start_dashboard"],
+]);
+
+function canonicalOptionField(field) {
+	return typeof field === "string" && CANONICAL_ROOTS.has(field.split(".")[0]);
+}
+
+function normalizeMachineHint(field, value) {
+	if (field === "jira.project") return typeof value === "string" && value.trim() ? value.trim().toUpperCase() : undefined;
+	if (field === "commit.jira.actions") return value === "never" ? "disabled" : value;
+	if (field === "runtime.dangerous_git_guard") {
+		if (value === true || value === "enabled") return "enabled";
+		if (value === false || value === "disabled") return "disabled";
+		return value;
+	}
+	if (field === "ui.session_start_dashboard") {
+		if (value === true || value === "jira_assignments") return "jira_assignments";
+		if (value === false || value === "disabled") return "disabled";
+		return value;
+	}
+	return value;
+}
+
+function normalizedConfirmedMachineHints(hints) {
+	const normalized = {};
+	for (const [sourceField, value] of Object.entries(flattenPaths(hints ?? {}))) {
+		if (SENSITIVE_MACHINE_HINT.test(sourceField)) continue;
+		const field = MACHINE_HINT_ALIASES.get(sourceField);
+		if (!field) continue;
+		const normalizedValue = normalizeMachineHint(field, value);
+		if (normalizedValue !== undefined) normalized[field] = normalizedValue;
+	}
+	return normalized;
+}
+
+function repositoryClaimFields(engineering, docs, jira) {
+	const fields = new Set();
+	if (engineering.tracker?.recognized && !engineering.tracker.managed) {
+		fields.add("tracker.primary");
+		if (engineering.tracker.jiraProject) {
+			fields.add("jira.project");
+			fields.add("jira.sync");
+		}
+	}
+	if (engineering.triage?.labels && !engineering.triage.managed) {
+		for (const field of Object.keys(flattenPaths({ triage: { labels: engineering.triage.labels } }))) fields.add(field);
+	}
+	if (engineering.domain?.layout && !engineering.domain.managed) fields.add("domain.layout");
+
+	const projectMappings = {
+		"jira.project": "jira.project",
+		"jira.board": "jira.board",
+		"jira.default_issue_type": "jira.default_issue_type",
+		"changelog.path": "changelog.path",
+		"changelog.skip_types": "changelog.skip_types",
+		"hooks.session_start_dashboard": "ui.session_start_dashboard",
+	};
+	for (const [legacy, canonical] of Object.entries(projectMappings)) {
+		if (Object.hasOwn(jira.projectValues ?? {}, legacy)) fields.add(canonical);
+	}
+	const docsMappings = {
+		"docs.user_track": "docs.user_track",
+		"docs.dev_track": "docs.dev_track",
+		"docs.default_audience": "docs.default_audience",
+		"docs.default_scope": "docs.default_scope",
+		"docs.auto.adr_for_arch_changes": "docs.adr_for_arch_changes",
+		"auto.adr_for_arch_changes": "docs.adr_for_arch_changes",
+		"docs.changelog.skip_types": "changelog.skip_types",
+	};
+	for (const [legacy, canonical] of Object.entries(docsMappings)) {
+		if (Object.hasOwn(jira.docsValues ?? {}, legacy)) fields.add(canonical);
+	}
+	if (Object.hasOwn(jira.projectValues ?? {}, "changelog.auto_update")
+		|| Object.hasOwn(jira.docsValues ?? {}, "auto.changelog_per_commit")
+		|| Object.hasOwn(jira.docsValues ?? {}, "docs.auto.changelog_per_commit")) {
+		fields.add("changelog.update_mode");
+	}
+	return fields;
+}
 
 function isWithinRepository(root, candidate) {
 	const relative = path.relative(root, candidate);
@@ -80,15 +175,15 @@ async function snapshotEntry(root, target) {
 }
 
 
-function mergeClaims(claims, resolutions, selections) {
-	const config = { schema_version: 1 };
+function mergeClaims(claims, canonical, resolutions, repositoryFields, machineHints, selections) {
+	const config = structuredClone(canonical ?? { schema_version: 1 });
 	const conflicts = [];
-	const fields = [...new Set(claims.flatMap(claim => Object.keys(flattenPaths(claim.config))))].filter(field => field !== "schema_version").sort();
-	for (const field of fields) {
-		if (Object.hasOwn(resolutions, field)) {
-			setPath(config, field, resolutions[field]);
-			continue;
-		}
+	for (const [field, value] of Object.entries(resolutions ?? {})) {
+		if (!canonicalOptionField(field) || field === "schema_version" || getPath(config, field) !== undefined) continue;
+		setPath(config, field, value);
+	}
+	for (const field of [...repositoryFields].sort()) {
+		if (getPath(config, field) !== undefined) continue;
 		const values = claims
 			.map(claim => ({ source: claim.source, value: getPath(claim.config, field) }))
 			.filter(claim => claim.value !== undefined);
@@ -96,16 +191,28 @@ function mergeClaims(claims, resolutions, selections) {
 		if (distinct.size > 1) conflicts.push({ field, classification: "ambiguous", values });
 		else if (values.length > 0) setPath(config, field, values[0].value);
 	}
-	for (const [field, value] of Object.entries(selections ?? {})) if (getPath(config, field) === undefined) setPath(config, field, value);
+	for (const [field, value] of Object.entries(machineHints)) {
+		if (getPath(config, field) === undefined) setPath(config, field, value);
+	}
+	for (const [field, value] of Object.entries(flattenPaths(selections ?? {}))) {
+		if (canonicalOptionField(field) && getPath(config, field) === undefined) setPath(config, field, value);
+	}
 	return { config, conflicts };
 }
 
-function applyDefaults(config, includeDocs) {
+function applyDefaults(config, includeDocs, docsDefaults) {
 	const merged = structuredClone(config);
 	for (const [field, value] of Object.entries(flattenPaths(DEFAULT_CONFIG))) if (getPath(merged, field) === undefined) setPath(merged, field, value);
-	if (!includeDocs) delete merged.docs;
+	if (includeDocs) {
+		for (const [field, value] of Object.entries(flattenPaths(docsDefaults ?? {}))) {
+			if (field.startsWith("docs.") && getPath(merged, field) === undefined) setPath(merged, field, value);
+		}
+	} else {
+		delete merged.docs;
+	}
 	if (merged.tracker.primary === "jira") {
-		merged.jira ??= { project: "", default_issue_type: "Task", sync: "disabled" };
+		merged.jira ??= {};
+		merged.jira.default_issue_type ??= "Task";
 		merged.jira.sync = "disabled";
 	}
 	if (merged.jira?.sync === "all_local_tickets") merged.tracker.primary = "local";
@@ -160,7 +267,8 @@ export function planLegacyMigration(discovery, options = {}) {
 	const hasRepositoryLegacy = LOCAL_LEGACY_SOURCES.slice(0, 2).some(target => discovery.entries[target]?.kind !== "missing")
 		|| hasRuntimeLegacy
 		|| hasUnmanagedOperationalAdapter;
-	if (canonical?.status === "valid" && !hasRepositoryLegacy) {
+	const hasResidualState = LOCAL_LEGACY_SOURCES.slice(3).some(target => discovery.entries[target]?.kind !== "missing");
+	if (canonical?.status === "valid" && !hasRepositoryLegacy && !hasResidualState) {
 		const plan = { config: canonical.config, effects: [], blockers: [], conflicts: [], requiresConfirmation: false, report: "Valid canonical configuration wins. No migration changes required." };
 		return { ...plan, hash: sha256(JSON.stringify(planHashPayload(plan))) };
 	}
@@ -175,7 +283,7 @@ export function planLegacyMigration(discovery, options = {}) {
 	const jiraDiscovery = discoverJiraState({
 		".claude/ws-project.yaml": docsDiscovery.project,
 		".claude/docs-config.yaml": docsDiscovery.docs,
-		"~/.claude/ws/config.yaml": options.confirmedMachineHints ?? {},
+		"~/.claude/ws/config.yaml": {},
 	});
 	const jira = planJiraMigration(jiraDiscovery, baseline, resolutions);
 	const claims = [
@@ -183,16 +291,15 @@ export function planLegacyMigration(discovery, options = {}) {
 		{ source: "legacy docs/runtime policy", config: docs.patch },
 		{ source: "legacy Jira initializer", config: jira.patch },
 	];
-	const merged = mergeClaims(claims, resolutions, selections);
+	const repositoryFields = repositoryClaimFields(engineeringDiscovery, docsDiscovery, jiraDiscovery);
+	const machineHints = normalizedConfirmedMachineHints(options.confirmedMachineHints);
+	const merged = mergeClaims(claims, canonical?.status === "valid" ? canonical.config : null, resolutions, repositoryFields, machineHints, selections);
 	if (getPath(merged.config, "tracker.primary") === undefined && getPath(merged.config, "jira.project") !== undefined) setPath(merged.config, "tracker.primary", "jira");
 	const includeDocs = baseline.docs !== undefined || docsDiscovery.entries[".claude/docs-config.yaml"]?.kind !== "missing" || Object.keys(merged.config.docs ?? {}).length > 0;
-	const config = applyDefaults(merged.config, includeDocs);
+	const config = applyDefaults(merged.config, includeDocs, docs.patch);
 	const blockers = [...engineering.blockers, ...docs.blockers, ...jira.blockers];
 	const conflicts = [...engineering.conflicts, ...docs.conflicts, ...jira.conflicts, ...merged.conflicts];
 	for (const conflict of merged.conflicts) blockers.push(`Explicit resolution required for conflicting ${conflict.field}.`);
-	for (const suggestion of jira.suggestions) {
-		if (Object.hasOwn(options.confirmedMachineHints ?? {}, suggestion.field) && getPath(config, suggestion.field) === undefined) setPath(config, suggestion.field, suggestion.value);
-	}
 	const validation = validateCanonicalConfigObject(config);
 	if (validation.status !== "valid") blockers.push(...validation.errors.map(error => `Canonical migration result ${error.path}: ${error.message}`));
 
@@ -207,7 +314,8 @@ export function planLegacyMigration(discovery, options = {}) {
 				? "NO-OP"
 				: "UPDATE";
 	effects.push(migrationEffect(20, ".wsagency/config.yaml", "file", configClassification, blockers.length > 0 ? "Migration is blocked before every write." : configClassification === "NO-OP" ? "Canonical policy already contains the complete migrated state." : "Write the single canonical policy after lossless conversion.", configEntry, serialized));
-	for (const sourceEffect of [...engineering.effects, ...docs.effects]) {
+	const sourceEffects = canonical?.status === "valid" ? engineering.effects : [...engineering.effects, ...docs.effects];
+	for (const sourceEffect of sourceEffects) {
 		if (sourceEffect.target.startsWith("config:") || LOCAL_LEGACY_SOURCES.includes(sourceEffect.target)) continue;
 		const mustSuppressWrite = blockers.length > 0 && ["CREATE", "UPDATE"].includes(sourceEffect.classification);
 		effects.push({
@@ -248,7 +356,7 @@ export function planLegacyMigration(discovery, options = {}) {
 	}
 	effects.sort((left, right) => left.order - right.order || left.target.localeCompare(right.target));
 	const requiresConfirmation = blockers.length === 0 && effects.some(item => ["CREATE", "UPDATE"].includes(item.classification));
-	const plan = { config: validation.status === "valid" ? config : null, effects, blockers, conflicts, requiresConfirmation, report: blockers.length > 0 ? "Legacy migration blocked before writes." : requiresConfirmation ? "Complete lossless migration plan requires confirmation." : "No migration changes required." };
+	const plan = { config: validation.status === "valid" ? config : null, effects, blockers, conflicts, requiresConfirmation, report: blockers.length > 0 ? "Legacy migration blocked before writes." : requiresConfirmation ? "Complete lossless migration plan requires confirmation." : canonical?.status === "valid" ? "Valid canonical configuration wins. No migration changes required." : "No migration changes required." };
 	return { ...plan, hash: sha256(JSON.stringify(planHashPayload(plan))) };
 }
 

@@ -22,6 +22,61 @@ function placeholderPattern(template) {
 	return new RegExp(`^${escaped.replaceAll("<PROJECT-KEY>", "([A-Z][A-Z0-9_-]*)")}$`);
 }
 
+function occursExactlyOnce(content, expected) {
+	if (typeof content !== "string" || expected.length === 0) return false;
+	return content.indexOf(expected) >= 0 && content.indexOf(expected) === content.lastIndexOf(expected);
+}
+
+function planAdapterResolution({ key, label, target, order, generated, entry, expected, resolution, blockers, conflicts, effects }) {
+	if (generated) {
+		const validResolution = resolution === undefined || resolution === "preserve" || resolution === "replace";
+		if (!validResolution) {
+			blockers.push(`Invalid generated ${label} adapter resolution. Choose preserve or allow the exact generated replacement.`);
+			conflicts.push({ field: key, source: target, classification: "invalid-reviewed-merge" });
+		}
+		const replace = validResolution && resolution !== "preserve";
+		effects.push(migrationEffect(
+			order,
+			target,
+			"file",
+			replace ? "UPDATE" : "PRESERVE",
+			replace ? "Replace the exact released adapter after canonical read-back." : `Preserve the generated ${label} adapter.`,
+			entry,
+			replace ? expected : entry.content,
+		));
+		return;
+	}
+
+	const reviewed = resolution
+		&& typeof resolution === "object"
+		&& !Array.isArray(resolution)
+		&& resolution.action === "merge"
+		&& typeof resolution.content === "string";
+	const managed = expected.trimEnd();
+	const validMerge = reviewed
+		&& occursExactlyOnce(resolution.content, managed)
+		&& occursExactlyOnce(resolution.content, entry.content);
+	if (!validMerge) {
+		const invalid = resolution !== undefined && resolution !== "preserve";
+		blockers.push(invalid
+			? `Invalid reviewed ${label} adapter merge; include the canonical managed adapter exactly once and byte-preserve the complete reviewed legacy source exactly once.`
+			: `Customized ${label} adapter remains preserved until an explicit reviewed lossless merge is supplied.`);
+		conflicts.push({ field: key, source: target, classification: invalid ? "invalid-reviewed-merge" : "reviewed-merge-required" });
+		effects.push(migrationEffect(order, target, "file", "PRESERVE", `Preserve customized ${label} guidance while its lossless merge is blocked.`, entry, entry.content));
+		return;
+	}
+
+	effects.push(migrationEffect(
+		order,
+		target,
+		"file",
+		"UPDATE",
+		`Apply the reviewed lossless ${label} merge after canonical read-back.`,
+		entry,
+		resolution.content,
+	));
+}
+
 function classifyTracker(content) {
 	for (const [mode, template] of Object.entries(TRACKER_TEMPLATES)) {
 		const match = content.match(placeholderPattern(template));
@@ -140,50 +195,59 @@ export function planEngineeringMigration(discovery, currentCanonical = {}, resol
 				setIfAbsent(patch, "jira.sync", discovery.tracker.sync, changes, "dev-docs/agents/issue-tracker.md");
 			}
 		}
-		const resolution = resolutions["adapter.tracker"];
-		const validResolution = resolution === undefined || resolution === "preserve" || resolution === "replace";
-		if (!validResolution || (!discovery.tracker.generated && resolution === undefined)) {
-			blockers.push(validResolution
-				? "Customized tracker adapter requires an explicit preserve or replace resolution."
-				: `Invalid tracker adapter resolution: ${resolution}. Choose preserve or replace.`);
-			conflicts.push({ field: "adapter.tracker", source: "dev-docs/agents/issue-tracker.md", classification: "replace-or-preserve" });
-		}
-		const replace = validResolution && (resolution === "replace" || (discovery.tracker.generated && resolution !== "preserve"));
 		const trackerEntry = discovery.entries["dev-docs/agents/issue-tracker.md"];
 		const adapterPrimary = patch.tracker?.primary ?? discovery.tracker.primary;
-		effects.push(migrationEffect(40, "dev-docs/agents/issue-tracker.md", "file", replace ? "UPDATE" : "PRESERVE", replace ? "Replace adapter after canonical read-back." : "Preserve customized tracker semantics for reviewed merge.", trackerEntry, replace ? getAdapterContent(adapterPrimary) : trackerEntry.content));
+		planAdapterResolution({
+			key: "adapter.tracker",
+			label: "tracker",
+			target: "dev-docs/agents/issue-tracker.md",
+			order: 40,
+			generated: discovery.tracker.generated,
+			entry: trackerEntry,
+			expected: adapterPrimary ? getAdapterContent(adapterPrimary) : "",
+			resolution: resolutions["adapter.tracker"],
+			blockers,
+			conflicts,
+			effects,
+		});
 	}
 	if (discovery.triage && !discovery.triage.managed) {
 		if (!discovery.triage.labels) {
 			blockers.push("Triage adapter does not contain a complete five-role mapping.");
 			conflicts.push({ field: "triage.labels", source: "dev-docs/agents/triage-labels.md", classification: "lossy" });
 		} else setIfAbsent(patch, "triage.labels", resolutions["triage.labels"] ?? discovery.triage.labels, changes, "dev-docs/agents/triage-labels.md");
-		const resolution = resolutions["adapter.triage"];
-		const validResolution = resolution === undefined || resolution === "preserve" || resolution === "replace";
-		if (!validResolution || (!discovery.triage.generated && resolution === undefined)) {
-			blockers.push(validResolution
-				? "Customized triage adapter requires an explicit preserve or replace resolution."
-				: `Invalid triage adapter resolution: ${resolution}. Choose preserve or replace.`);
-			conflicts.push({ field: "adapter.triage", source: "dev-docs/agents/triage-labels.md", classification: "replace-or-preserve" });
-		}
-		const replace = validResolution && (resolution === "replace" || (discovery.triage.generated && resolution !== "preserve"));
 		const triageEntry = discovery.entries["dev-docs/agents/triage-labels.md"];
-		effects.push(migrationEffect(41, "dev-docs/agents/triage-labels.md", "file", replace ? "UPDATE" : "PRESERVE", replace ? "Replace triage adapter after canonical read-back." : "Preserve customized triage labels.", triageEntry, replace ? CURRENT_TRIAGE_TEMPLATE : triageEntry.content));
+		planAdapterResolution({
+			key: "adapter.triage",
+			label: "triage",
+			target: "dev-docs/agents/triage-labels.md",
+			order: 41,
+			generated: discovery.triage.generated,
+			entry: triageEntry,
+			expected: CURRENT_TRIAGE_TEMPLATE,
+			resolution: resolutions["adapter.triage"],
+			blockers,
+			conflicts,
+			effects,
+		});
 	}
 	if (discovery.domain && !discovery.domain.managed) {
 		if (discovery.domain.layout) setIfAbsent(patch, "domain.layout", resolutions["domain.layout"] ?? discovery.domain.layout, changes, discovery.domain.layout === "multi_context" ? "CONTEXT-MAP.md" : "CONTEXT.md");
 		else suggestions.push({ field: "domain.layout", source: "dev-docs/agents/domain.md", classification: "choice-required" });
-		const resolution = resolutions["adapter.domain"];
-		const validResolution = resolution === undefined || resolution === "preserve" || resolution === "replace";
-		if (!validResolution || (!discovery.domain.generated && resolution === undefined)) {
-			blockers.push(validResolution
-				? "Customized domain adapter requires an explicit preserve or replace resolution."
-				: `Invalid domain adapter resolution: ${resolution}. Choose preserve or replace.`);
-			conflicts.push({ field: "adapter.domain", source: "dev-docs/agents/domain.md", classification: "replace-or-preserve" });
-		}
-		const replace = validResolution && (resolution === "replace" || (discovery.domain.generated && resolution !== "preserve"));
 		const domainEntry = discovery.entries["dev-docs/agents/domain.md"];
-		effects.push(migrationEffect(42, "dev-docs/agents/domain.md", "file", replace ? "UPDATE" : "PRESERVE", replace ? "Replace domain adapter after canonical read-back." : "Preserve customized domain guidance.", domainEntry, replace ? CURRENT_DOMAIN_TEMPLATE : domainEntry.content));
+		planAdapterResolution({
+			key: "adapter.domain",
+			label: "domain",
+			target: "dev-docs/agents/domain.md",
+			order: 42,
+			generated: discovery.domain.generated,
+			entry: domainEntry,
+			expected: CURRENT_DOMAIN_TEMPLATE,
+			resolution: resolutions["adapter.domain"],
+			blockers,
+			conflicts,
+			effects,
+		});
 	}
 	if (discovery.context.conflict && !resolutions["context.source"]) {
 		blockers.push("Conflicting authored Agent skills blocks require an explicit merge choice.");
