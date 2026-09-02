@@ -19,6 +19,15 @@ const READY: NativeRuntimeCapabilities = {
 	jira: true,
 };
 
+const LEGACY_POLICY_SOURCES = [
+	".claude/ws-project.yaml",
+	".claude/docs-config.yaml",
+	"dev-docs/agents/issue-tracker.md",
+	"dev-docs/agents/triage-labels.md",
+	"dev-docs/agents/domain.md",
+	".scratch",
+] as const;
+
 function canonicalPolicy(overrides: Partial<CanonicalProjectConfig> = {}): CanonicalProjectConfig {
 	return {
 		schema_version: 1,
@@ -65,6 +74,19 @@ afterEach(async () => {
 async function writePolicy(config: CanonicalProjectConfig): Promise<void> {
 	await fs.mkdir(path.join(root, ".wsagency"), { recursive: true });
 	await fs.writeFile(path.join(root, ".wsagency", "config.yaml"), serializeCanonicalConfig(config));
+}
+
+async function writeLegacySources(unreadable = false): Promise<void> {
+	for (const relativePath of [...LEGACY_POLICY_SOURCES].reverse()) {
+		const target = path.join(root, relativePath);
+		if (relativePath === ".scratch") {
+			await fs.mkdir(target);
+			continue;
+		}
+		await fs.mkdir(path.dirname(target), { recursive: true });
+		await fs.writeFile(target, "deliberately invalid legacy values that must not be parsed\n");
+		if (unreadable) await fs.chmod(target, 0);
+	}
 }
 
 describe("canonical native runtime policy", () => {
@@ -138,15 +160,34 @@ describe("canonical native runtime policy", () => {
 		expect(missingRuntime.dangerousGitGuard).toBe(false);
 	});
 
-	test("detects repository-local legacy policy and directs migration to /ws-setup", async () => {
-		await fs.mkdir(path.join(root, ".claude"), { recursive: true });
-		await fs.writeFile(path.join(root, ".claude", "ws-project.yaml"), "jira:\n  project: OLD\n");
+	test("detects every canonical repository legacy source in source order without reading values", async () => {
+		await writeLegacySources(true);
 
 		const state = await loadRepositoryPolicyFromRoot(root);
 		expect(state.status).toBe("missing");
-		expect(state.legacySources).toEqual([".claude/ws-project.yaml"]);
-		expect(repositoryPolicyProblem(state, "ws-dashboard")).toContain(".claude/ws-project.yaml");
-		expect(repositoryPolicyProblem(state, "ws-dashboard")).toContain("/ws-setup");
+		expect(state.legacySources).toEqual([...LEGACY_POLICY_SOURCES]);
+		for (const helper of ["ws-guard", "ws-dashboard", "ws-compaction"]) {
+			expect(repositoryPolicyProblem(state, helper)).toBe(
+				`${helper}: legacy repository policy detected in ${LEGACY_POLICY_SOURCES.join(", ")}; run /ws-setup to migrate to .wsagency/config.yaml.`,
+			);
+		}
+	});
+
+	test("gives a strict-valid canonical policy precedence over adjacent legacy sources", async () => {
+		await writeLegacySources(true);
+		await writePolicy(canonicalPolicy());
+
+		const state = await loadRepositoryPolicyFromRoot(root);
+		expect(state.status).toBe("valid");
+		expect(state.legacySources).toEqual([]);
+		expect(repositoryPolicyProblem(state, "ws-guard")).toBeUndefined();
+	});
+
+	test("keeps a clean repository without canonical policy unconfigured and non-blocking", async () => {
+		const state = await loadRepositoryPolicyFromRoot(root);
+		expect(state.status).toBe("missing");
+		expect(state.legacySources).toEqual([]);
+		expect(repositoryPolicyProblem(state, "ws-compaction")).toBeUndefined();
 	});
 
 	test("reports invalid canonical policy without consulting legacy values", async () => {

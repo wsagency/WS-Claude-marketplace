@@ -5,14 +5,10 @@ import {
 	type CanonicalProjectConfig,
 	type ConfigValidationIssue,
 } from "../../../../plugins/ws/skills/ws-project-bootstrap/config.mjs";
+import { detectRepositoryLegacyPolicy } from "../../../../plugins/ws/skills/ws-project-bootstrap/consumer.mjs";
 import { run } from "./exec";
 
 export const CANONICAL_POLICY_PATH = ".wsagency/config.yaml";
-
-const LEGACY_POLICY_FILES = [
-	".claude/ws-project.yaml",
-	".claude/docs-config.yaml",
-] as const;
 
 export type RepositoryPolicyStatus = "valid" | "missing" | "invalid" | "older" | "future";
 
@@ -60,15 +56,6 @@ async function readIfExists(filePath: string): Promise<string | undefined> {
 	}
 }
 
-async function detectLegacyPolicySources(root: string): Promise<string[]> {
-	const sources: string[] = [];
-	for (const relativePath of LEGACY_POLICY_FILES) {
-		if (await readIfExists(path.join(root, relativePath)) !== undefined) {
-			sources.push(relativePath);
-		}
-	}
-	return sources;
-}
 
 export async function resolveRepositoryRoot(cwd: string): Promise<string> {
 	const result = await run("git", ["rev-parse", "--show-toplevel"], { cwd });
@@ -84,7 +71,7 @@ export async function loadRepositoryPolicyFromRoot(root: string): Promise<Reposi
 			root,
 			config: null,
 			errors: [],
-			legacySources: await detectLegacyPolicySources(root),
+			legacySources: detectRepositoryLegacyPolicy(root),
 		};
 	}
 
