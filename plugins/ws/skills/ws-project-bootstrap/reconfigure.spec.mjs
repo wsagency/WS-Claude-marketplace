@@ -184,3 +184,31 @@ test("acceptPartial eligibility check", async (t) => {
         err => err.code === "ERR_NOT_ELIGIBLE_PARTIAL"
     );
 });
+
+test("Fully successful cutover execution", async (t) => {
+    const config = { schema: "standard", version: "1.0.0", fieldA: 1, fieldB: 2 };
+    const snapshot = { shape: "standalone", repositoryId: "repo-happy", entries: {} };
+    const machine = {};
+    const choices = { domain: "runtime", fields: ["fieldA", "fieldB"] };
+    
+    const planRes = plan(config, snapshot, machine, choices);
+    const adapters = defaultMockAdapters();
+    
+    const applyRes = await apply(config, snapshot, machine, choices, planRes.hash, planRes.effects, adapters);
+    
+    assert.strictEqual(applyRes.success, true);
+    assert.strictEqual(applyRes.phase, "done");
+    assert.strictEqual(adapters.getAppliedEffects(), 2); 
+    
+    // Audit must be written
+    const audit = adapters.getAudit();
+    assert.ok(audit);
+    assert.strictEqual(audit.completed, 2);
+    assert.strictEqual(audit.timestamp, NOW_FIXTURE); 
+    
+    // Journal must be removed
+    assert.strictEqual(adapters.getJournal(), null); 
+    
+    // Ownership report must be "owned"
+    assert.strictEqual(applyRes.ownershipReport["repo-happy"], "owned");
+});
