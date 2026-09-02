@@ -23,15 +23,16 @@ export interface SetupDiscovery {
 	machine: RuntimeSnapshot;
 	entries: Record<string, SnapshotEntry>;
 }
-
 export interface SetupChoices {
 	profile: "recommended_local";
+	createRepository?: boolean;
+	origin?: string;
 }
 
 export interface SetupQuestion {
-	id: "setup_profile";
+	id: "setup_profile" | "create_repository" | "origin_url";
 	question: string;
-	recommended: "recommended_local";
+	recommended?: "recommended_local" | boolean | string;
 }
 
 export interface SetupEffect {
@@ -69,6 +70,8 @@ export interface SetupTransactionRequest {
 	discovery: SetupDiscovery;
 	choices?: SetupChoices;
 	authorization?: string;
+	injectedOriginValidation?: { origin: string; isValid: boolean; reason?: string };
+	injectedFailure?: { phase: "write" | "verify"; target: string };
 }
 
 export interface SetupTransactionResult {
