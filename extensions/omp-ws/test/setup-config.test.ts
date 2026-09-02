@@ -1,8 +1,9 @@
 import { expect, test } from "bun:test";
 import {
 	deriveSetupReadiness,
-	validateCanonicalConfig,
 	serializeCanonicalConfig,
+	validateCanonicalConfig,
+	validateCanonicalConfigObject,
 } from "../../../plugins/ws/skills/ws-project-bootstrap/config.mjs";
 import { CANONICAL_CONFIG_YAML } from "../../../plugins/ws/skills/ws-project-bootstrap/transaction.mjs";
 
@@ -12,6 +13,13 @@ test("canonical Local policy validates without persisted readiness defaults", ()
 	if (result.status !== "valid") throw new Error("Expected canonical Local policy to validate.");
 	expect(result.config.tracker?.primary).toBe("local");
 	expect(result.config).not.toHaveProperty("ready");
+});
+
+test("canonical object validation distinguishes migration and package-update gates", () => {
+	expect(validateCanonicalConfigObject({ schema_version: 1 }).status).toBe("valid");
+	expect(validateCanonicalConfigObject({ schema_version: 0 }).status).toBe("older");
+	expect(validateCanonicalConfigObject({ schema_version: 2 }).status).toBe("future");
+	expect(validateCanonicalConfigObject({ tracker: "local" }).status).toBe("invalid");
 });
 
 test("canonical config serializes deterministically for transaction planning", () => {

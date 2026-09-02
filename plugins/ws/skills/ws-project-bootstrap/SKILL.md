@@ -42,15 +42,15 @@ Return only the state delta: `DONE|<repository-root>/.wsagency/config.yaml`, the
 
 **Artifact language.** Every generated artifact and report is English regardless of the conversation language.
 
-## Reconfigure Contract
+## Reconfigure contract
 
-The `reconfigure.mjs` module provides intentional policy-change transactions over a strict-valid baseline configuration.
+The `reconfigure.mjs` module provides intentional policy-change transactions over a strict-valid canonical v1 configuration.
 
 Contract exports:
-- `plan(config, snapshot, machine, choices)`: Validates strict-schema constraints, handles hub/standalone scoping, updates selected fields (while mapping unselected to `PRESERVE`), surfaces dependency closures, and produces a plan hash.
-- `apply(planHash, effects, adapters, injection)`: Executes prepare, cutover, and cleanup phases using a transient secret-free journal. Stops on the first failure without rollback.
-- `resume(adapters, injection)`: Resumes a previously interrupted execution from the journal.
-- `acceptPartial(adapters)`: Resolves an interrupted operation by writing an audit record and dropping the journal for a reviewed valid partial state.
+- `plan(config, snapshot, machine, choices)`: validates the canonical object, scopes repositories, maps every selected field to an exact change and every unselected field or artifact to `PRESERVE`, surfaces dependency closure, and returns the authorization hash;
+- `apply(config, snapshot, machine, choices, planHash, effects, adapters, injection?)`: rejects stale authorization or an active journal, then executes prepare, cutover, and cleanup with fingerprint revalidation and no rollback;
+- `resume(config, snapshot, machine, choices, adapters, injection?)`: resumes the confirmed remainder from the secret-free journal;
+- `acceptPartial(config, snapshot, machine, choices, adapters)`: records a reviewed valid partial state in the durable audit before removing the transient journal.
 
 ## Graph node
 

@@ -1,104 +1,109 @@
-import type { 
-    SetupDiscovery, 
-    SetupEffect, 
-    SetupReadiness, 
-    ProjectShape, 
-    EffectClassification 
-} from "./transaction.d.mts";
+import type { CanonicalProjectConfig } from "./config.d.mts";
+import type { ProjectShape, SetupEffect, SetupReadiness } from "./transaction.d.mts";
 
 export type ReconfigureDomain = "runtime" | "tracker" | "docs" | "engineering";
 export type ReconfigurePhase = "prepare" | "cutover" | "cleanup" | "done";
 
-export interface ReconfigureConfig {
-    version: string;
-    schema: string;
-    [key: string]: any;
-}
+export type ReconfigureConfig = CanonicalProjectConfig;
 
 export interface ReconfigureMachineCapabilities {
-    canWriteSharedGuards?: boolean;
-    sharedGuardsOwnedBy?: string[];
+	canWriteSharedGuards?: boolean;
+	sharedGuardsOwnedBy?: string[];
+	sharedGuardFingerprint?: string | null;
 }
 
 export interface ReconfigureTargetSnapshot {
-    isRepository: boolean;
-    shape: ProjectShape;
-    repositoryId?: string;
-    entries: Record<string, { kind: "file" | "directory" | "missing", content?: string, fingerprint?: string | null }>;
+	isRepository?: boolean;
+	shape: ProjectShape;
+	repositoryId?: string;
+	entries?: Record<string, { kind?: "file" | "directory" | "missing"; content?: string; fingerprint?: string | null }>;
 }
 
 export interface ReconfigureChoices {
-    domain: ReconfigureDomain;
-    fields: string[];
-    values?: Record<string, any>;
-    repositories?: string[];
-    cancelDependent?: boolean;
+	domain: ReconfigureDomain;
+	fields: string[];
+	values?: Record<string, unknown>;
+	repositories?: string[];
+	cancelDependent?: boolean;
+}
+
+export interface ReconfigureJournalState {
+	hash: string;
+	effects: SetupEffect[];
+	completedEffects: number;
+	phase: ReconfigurePhase;
 }
 
 export interface ReconfigureAdapters {
-    writeJournal?: (hash: string, state: any) => Promise<void>;
-    readJournal?: () => Promise<{ hash: string, state: any } | null>;
-    removeJournal?: () => Promise<void>;
-    writeAudit?: (record: any) => Promise<void>;
-    applyEffect?: (effect: SetupEffect) => Promise<void>;
-    now?: () => number;
+	writeJournal?: (hash: string, state: ReconfigureJournalState) => Promise<void>;
+	readJournal?: () => Promise<{ hash: string; state: ReconfigureJournalState } | null>;
+	removeJournal?: () => Promise<void>;
+	writeAudit?: (record: Record<string, unknown>) => Promise<void>;
+	applyEffect?: (effect: SetupEffect) => Promise<void>;
+	revalidateFingerprints?: (effects: SetupEffect[]) => Promise<boolean>;
+	now?: () => number;
 }
 
 export interface ReconfigureInjection {
-    failAtPhase?: ReconfigurePhase;
-    failAtEffectIndex?: number;
-    driftEntries?: Record<string, string>; // simulated drift
+	failAtPhase?: ReconfigurePhase;
+	failAtEffectIndex?: number;
+	driftEntries?: Record<string, string>;
 }
 
 export interface ReconfigurePlanResult {
-    effects: SetupEffect[];
-    hash: string;
-    requiresConfirmation: boolean;
-    dependencyClosure: string[];
-    report: string;
+	effects: SetupEffect[];
+	hash: string;
+	requiresConfirmation: boolean;
+	dependencyClosure: string[];
+	scope: string[];
+	report: string;
 }
 
 export interface ReconfigureApplyResult {
-    success: boolean;
-    phase: ReconfigurePhase;
-    completedEffects: number;
-    hash: string;
-    readiness: SetupReadiness;
-    report: string;
-    ownershipReport?: Record<string, string>;
+	success: boolean;
+	phase: ReconfigurePhase;
+	completedEffects: number;
+	hash: string;
+	readiness: SetupReadiness;
+	report: string;
+	ownershipReport?: Record<string, string>;
+}
+
+export class ReconfigureError extends Error {
+	readonly code: string;
 }
 
 export function plan(
-    config: ReconfigureConfig,
-    snapshot: ReconfigureTargetSnapshot,
-    machine: ReconfigureMachineCapabilities,
-    choices: ReconfigureChoices
+	config: ReconfigureConfig,
+	snapshot: ReconfigureTargetSnapshot,
+	machine: ReconfigureMachineCapabilities,
+	choices: ReconfigureChoices,
 ): ReconfigurePlanResult;
 
 export function apply(
-    config: ReconfigureConfig,
-    snapshot: ReconfigureTargetSnapshot,
-    machine: ReconfigureMachineCapabilities,
-    choices: ReconfigureChoices,
-    planHash: string,
-    effects: SetupEffect[],
-    adapters: ReconfigureAdapters,
-    injection?: ReconfigureInjection
+	config: ReconfigureConfig,
+	snapshot: ReconfigureTargetSnapshot,
+	machine: ReconfigureMachineCapabilities,
+	choices: ReconfigureChoices,
+	planHash: string,
+	effects: SetupEffect[],
+	adapters: ReconfigureAdapters,
+	injection?: ReconfigureInjection,
 ): Promise<ReconfigureApplyResult>;
 
 export function resume(
-    config: ReconfigureConfig,
-    snapshot: ReconfigureTargetSnapshot,
-    machine: ReconfigureMachineCapabilities,
-    choices: ReconfigureChoices,
-    adapters: ReconfigureAdapters,
-    injection?: ReconfigureInjection
+	config: ReconfigureConfig,
+	snapshot: ReconfigureTargetSnapshot,
+	machine: ReconfigureMachineCapabilities,
+	choices: ReconfigureChoices,
+	adapters: ReconfigureAdapters,
+	injection?: ReconfigureInjection,
 ): Promise<ReconfigureApplyResult>;
 
 export function acceptPartial(
-    config: ReconfigureConfig,
-    snapshot: ReconfigureTargetSnapshot,
-    machine: ReconfigureMachineCapabilities,
-    choices: ReconfigureChoices,
-    adapters: ReconfigureAdapters
+	config: ReconfigureConfig,
+	snapshot: ReconfigureTargetSnapshot,
+	machine: ReconfigureMachineCapabilities,
+	choices: ReconfigureChoices,
+	adapters: ReconfigureAdapters,
 ): Promise<ReconfigureApplyResult>;

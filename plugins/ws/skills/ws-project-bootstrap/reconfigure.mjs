@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
+import { validateCanonicalConfigObject } from "./config.mjs";
 
-const CURRENT_SCHEMA_VERSION = "1.0.0";
 
 export class ReconfigureError extends Error {
     constructor(message, code) {
@@ -9,110 +9,139 @@ export class ReconfigureError extends Error {
     }
 }
 
+function leafPaths(value, prefix = "") {
+    const paths = [];
+    for (const key of Object.keys(value).sort()) {
+        if (key === "schema_version" && prefix === "") continue;
+        const fieldPath = prefix ? `${prefix}.${key}` : key;
+        const child = value[key];
+        if (child && typeof child === "object" && !Array.isArray(child)) paths.push(...leafPaths(child, fieldPath));
+        else paths.push(fieldPath);
+    }
+    return paths;
+}
+
+function valueAtPath(value, fieldPath) {
+    return fieldPath.split(".").reduce((current, key) => current?.[key], value);
+}
+
+function sameValue(left, right) {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function validationError(config) {
+    if (config == null) return new ReconfigureError("Canonical configuration is missing. Run ordinary /ws-setup first.", "ERR_MISSING_CONFIG");
+    if (typeof config === "object" && config !== null && !Object.hasOwn(config, "schema_version") && (Object.hasOwn(config, "schema") || Object.hasOwn(config, "version"))) {
+        return new ReconfigureError("Legacy configuration detected. Run ordinary /ws-setup migration first.", "ERR_LEGACY_CONFIG");
+    }
+    const validation = validateCanonicalConfigObject(config);
+    if (validation.status === "older") return new ReconfigureError("Older schema detected. Run ordinary /ws-setup migration first.", "ERR_OLDER_SCHEMA");
+    if (validation.status === "future") return new ReconfigureError("Future schema detected. Update the WS package before reconfiguring.", "ERR_FUTURE_SCHEMA");
+    if (validation.status !== "valid") return new ReconfigureError("Canonical configuration is malformed or incomplete. Run ordinary /ws-setup repair first.", "ERR_MALFORMED_CONFIG");
+    return null;
+}
+
 export function plan(config, snapshot, machine, choices) {
-    if (!config || !config.schema) {
-        throw new ReconfigureError("Missing or malformed configuration state.", "ERR_MISSING_CONFIG");
+    const error = validationError(config);
+    if (error) throw error;
+    if (!snapshot || !["standalone", "hub_root", "hub_subrepository"].includes(snapshot.shape)) {
+        throw new ReconfigureError("A validated repository scope is required.", "ERR_INVALID_SCOPE");
     }
-    
-    if (config.schema === "legacy" || !config.version) {
-        throw new ReconfigureError("Legacy configuration detected. Use ordinary setup migration.", "ERR_LEGACY_CONFIG");
+    if (!choices || !Array.isArray(choices.fields)) {
+        throw new ReconfigureError("Concrete field selection is required.", "ERR_MISSING_FIELD_SELECTION");
     }
-    
-    if (config.version !== CURRENT_SCHEMA_VERSION) {
-        if (config.version < CURRENT_SCHEMA_VERSION) {
-            throw new ReconfigureError("Older schema detected. Use ordinary setup migration.", "ERR_OLDER_SCHEMA");
-        } else {
-            throw new ReconfigureError("Future schema detected. Update package first.", "ERR_FUTURE_SCHEMA");
-        }
-    }
-    
-    if (snapshot.shape === "hub_root" && (!choices.repositories || choices.repositories.length === 0)) {
+    if (snapshot.shape === "hub_root" && (!Array.isArray(choices.repositories) || choices.repositories.length === 0)) {
         throw new ReconfigureError("Hub-root invocation requires repository selection.", "ERR_MISSING_REPO_SELECTION");
     }
-    
-    let selectedRepos = [snapshot.repositoryId || "current"];
-    if (snapshot.shape === "hub_root") {
-        selectedRepos = choices.repositories;
-    } else if (snapshot.shape === "standalone" || snapshot.shape === "hub_subrepository") {
-        selectedRepos = ["current"];
+
+    const selectedRepos = snapshot.shape === "hub_root"
+        ? [...new Set(choices.repositories)]
+        : [snapshot.repositoryId || "current"];
+    const selectedFields = [...new Set(choices.fields)].sort();
+    const expectedPrefix = choices.domain ? `${choices.domain}.` : null;
+    if (expectedPrefix && selectedFields.some(field => !field.startsWith(expectedPrefix))) {
+        throw new ReconfigureError("Selected fields must belong to the selected domain.", "ERR_FIELD_OUTSIDE_DOMAIN");
     }
-    
+    const knownFields = new Set(leafPaths(config));
+    if (selectedFields.some(field => !knownFields.has(field))) {
+        throw new ReconfigureError("Selected field is not present in the strict-valid baseline.", "ERR_UNKNOWN_FIELD");
+    }
+
+    const dependencyClosure = [];
+    if (selectedFields.includes("runtime.dangerous_git_guard")) dependencyClosure.push("runtime.session_discipline");
+    if (choices.cancelDependent && dependencyClosure.length > 0) {
+        throw new ReconfigureError("Required dependent choice cancelled.", "ERR_DEPENDENT_CANCELLED");
+    }
+
     const effects = [];
-    let requiresConfirmation = false;
-    let dependencyClosure = [];
-    
-    if (choices.domain === "runtime") {
-        for (const field of choices.fields) {
+    for (const field of [...knownFields].sort()) {
+        const target = `config:${field}`;
+        const current = valueAtPath(config, field);
+        if (!selectedFields.includes(field)) {
             effects.push({
-                order: 10,
-                target: `config:${field}`,
+                order: 5,
+                target,
                 kind: "state",
-                classification: "UPDATE",
-                reason: `User selected field ${field}`,
-                diff: "changed",
-                fingerprint: null
+                classification: "PRESERVE",
+                reason: "Unselected canonical field",
+                diff: "unchanged",
+                fingerprint: snapshot.entries?.[target]?.fingerprint ?? null
             });
-            requiresConfirmation = true;
-            if (field === "dangerousGitGuard") {
-                dependencyClosure.push("sessionDiscipline");
-            }
+            continue;
         }
-    }
-    
-    const unselectedFields = Object.keys(config).filter(k => k !== "version" && k !== "schema" && !choices.fields.includes(k));
-    for (const field of unselectedFields) {
+        if (!Object.hasOwn(choices.values ?? {}, field)) {
+            throw new ReconfigureError(`A proposed value is required for ${field}.`, "ERR_MISSING_PROPOSED_VALUE");
+        }
+        const proposed = choices.values[field];
+        const aligned = sameValue(current, proposed);
         effects.push({
-            order: 5,
-            target: `config:${field}`,
+            order: 10,
+            target,
             kind: "state",
-            classification: "PRESERVE",
-            reason: `Unselected field`,
-            diff: "unchanged",
-            fingerprint: null
+            classification: aligned ? "NO-OP" : "UPDATE",
+            reason: aligned ? "Selected field is already aligned" : "User selected canonical field change",
+            diff: aligned ? "unchanged" : `${JSON.stringify(current)} -> ${JSON.stringify(proposed)}`,
+            fingerprint: snapshot.entries?.[target]?.fingerprint ?? null
         });
     }
 
-    if (effects.filter(e => e.classification !== "PRESERVE" && e.classification !== "NO-OP").length === 0) {
-        requiresConfirmation = false;
-    }
-    
-    if (choices.cancelDependent && dependencyClosure.length > 0) {
-         throw new ReconfigureError("Required dependent choice cancelled.", "ERR_DEPENDENT_CANCELLED");
-    }
-    
-    if (choices.values && choices.values.dangerousGitGuard === false) {
-        if (machine.sharedGuardsOwnedBy && machine.sharedGuardsOwnedBy.length > 1) {
-            effects.push({
-                order: 20,
-                target: `machine:sharedGuard`,
-                kind: "state",
-                classification: "PRESERVE",
-                reason: `Shared protection used by other repositories`,
-                diff: "unchanged",
-                fingerprint: null
-            });
-        } else {
-            effects.push({
-                order: 20,
-                target: `machine:sharedGuard`,
-                kind: "state",
-                classification: "UPDATE",
-                reason: `Exact authorized repository-owned duplicate cleaned up`,
-                diff: "removed",
-                fingerprint: null
-            });
-        }
+    for (const target of Object.keys(snapshot.entries ?? {}).sort()) {
+        if (target.startsWith("config:") || effects.some(effect => effect.target === target)) continue;
+        effects.push({
+            order: 5,
+            target,
+            kind: "state",
+            classification: "PRESERVE",
+            reason: "Unselected artifact or managed fragment",
+            diff: "unchanged",
+            fingerprint: snapshot.entries[target]?.fingerprint ?? null
+        });
     }
 
-    const hashStr = JSON.stringify(effects.map(e => e.target + e.classification));
-    const hash = createHash("sha256").update(hashStr).digest("hex");
+    if (choices.values?.["runtime.dangerous_git_guard"] === "disabled") {
+        const owners = machine?.sharedGuardsOwnedBy ?? [];
+        const shared = owners.some(owner => !selectedRepos.includes(owner));
+        effects.push({
+            order: 20,
+            target: "machine:sharedGuard",
+            kind: "state",
+            classification: shared ? "PRESERVE" : "UPDATE",
+            reason: shared ? "Shared protection is used by another repository" : "Exact authorized repository-owned duplicate may be cleaned up",
+            diff: shared ? "unchanged" : "removed",
+            fingerprint: machine?.sharedGuardFingerprint ?? null
+        });
+    }
 
+    effects.sort((left, right) => left.order - right.order || left.target.localeCompare(right.target));
+    const changed = effects.some(effect => ["CREATE", "UPDATE"].includes(effect.classification));
+    const hash = createHash("sha256").update(JSON.stringify({ selectedRepos, selectedFields, effects })).digest("hex");
     return {
         effects,
         hash,
-        requiresConfirmation,
+        requiresConfirmation: changed,
         dependencyClosure,
-        report: requiresConfirmation ? "Plan created. Requires confirmation." : "Aligned reconfiguration. No changes needed."
+        scope: selectedRepos,
+        report: changed ? "Plan created. Requires confirmation." : "Aligned reconfiguration. No changes needed."
     };
 }
 
@@ -128,7 +157,14 @@ function stripSecretsFromState(state) {
 }
 
 export async function apply(config, snapshot, machine, choices, planHash, effects, adapters, injection = {}) {
-    if (effects.length === 0 || !effects.some(e => e.classification === "UPDATE" || e.classification === "CREATE")) {
+    const expected = plan(config, snapshot, machine, choices);
+    if (expected.hash !== planHash || JSON.stringify(expected.effects) !== JSON.stringify(effects)) {
+        throw new ReconfigureError("The confirmed plan no longer matches current inputs.", "ERR_PLAN_MISMATCH");
+    }
+    if (adapters.readJournal && await adapters.readJournal()) {
+        throw new ReconfigureError("An interrupted reconfiguration must be resumed or accepted before starting another.", "ERR_JOURNAL_EXISTS");
+    }
+    if (!effects.some(effect => effect.classification === "UPDATE" || effect.classification === "CREATE")) {
         return {
             success: true,
             phase: "done",
@@ -139,18 +175,14 @@ export async function apply(config, snapshot, machine, choices, planHash, effect
             ownershipReport: { [snapshot.repositoryId || "current"]: "aligned" }
         };
     }
-    
+
     const state = {
         hash: planHash,
         effects,
         completedEffects: 0,
-        phase: "prepare" 
+        phase: "prepare"
     };
-    
-    if (adapters.writeJournal) {
-        await adapters.writeJournal(planHash, stripSecretsFromState(state));
-    }
-
+    if (adapters.writeJournal) await adapters.writeJournal(planHash, stripSecretsFromState(state));
     return await executePhases(state, snapshot, adapters, injection);
 }
 
@@ -166,6 +198,9 @@ async function executePhases(state, snapshot, adapters, injection) {
         if (state.phase === "prepare") {
             if (injection.failAtPhase === "prepare") {
                 throw new Error("Injected failure at phase prepare");
+            }
+            if (adapters.revalidateFingerprints && !await adapters.revalidateFingerprints(state.effects)) {
+                throw new Error("Drift detected while revalidating confirmed fingerprints");
             }
             if (injection.driftEntries) {
                 for (const [target, expectedHash] of Object.entries(injection.driftEntries)) {

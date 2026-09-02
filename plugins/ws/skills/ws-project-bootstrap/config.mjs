@@ -332,6 +332,17 @@ function validateConfig(config) {
 	return errors;
 }
 
+/** Validate an already-parsed canonical policy object. */
+export function validateCanonicalConfigObject(config) {
+	if (!config || typeof config !== "object" || Array.isArray(config) || !Number.isInteger(config.schema_version)) {
+		return { status: "invalid", config: null, errors: [{ code: "wrong_type", message: "$.schema_version must be the integer 1.", path: "$.schema_version" }] };
+	}
+	if (config.schema_version < 1) return { status: "older", config, errors: [] };
+	if (config.schema_version > 1) return { status: "future", config, errors: [] };
+	const errors = validateConfig(config);
+	return { status: errors.length === 0 ? "valid" : "invalid", config: errors.length === 0 ? config : null, errors };
+}
+
 export function validateCanonicalConfig(source) {
 	let config;
 	try {
@@ -340,13 +351,7 @@ export function validateCanonicalConfig(source) {
 		if (!(error instanceof ConfigValidationError)) throw error;
 		return { status: "invalid", config: null, errors: [{ code: error.code, message: error.message, path: error.path }] };
 	}
-	if (!Number.isInteger(config.schema_version)) {
-		return { status: "invalid", config: null, errors: [{ code: "wrong_type", message: "$.schema_version must be the integer 1.", path: "$.schema_version" }] };
-	}
-	if (config.schema_version < 1) return { status: "older", config, errors: [] };
-	if (config.schema_version > 1) return { status: "future", config, errors: [] };
-	const errors = validateConfig(config);
-	return { status: errors.length === 0 ? "valid" : "invalid", config: errors.length === 0 ? config : null, errors };
+	return validateCanonicalConfigObject(config);
 }
 
 function allTrue(record, keys) {
