@@ -256,6 +256,27 @@ describe("ws_changelog", () => {
 	const tool = collectTools(registerChangelogTool).get("ws_changelog") as FakeTool;
 	const BASE = "# Changelog\n\n## [Unreleased]\n\n## [1.0.0] - 2026-01-01\n\n### Added\n\n- Initial\n";
 
+	beforeEach(async () => {
+		await fs.mkdir(path.join(cwd, ".wsagency"), { recursive: true });
+		await fs.writeFile(
+			path.join(cwd, ".wsagency", "config.yaml"),
+			`schema_version: 1
+
+changelog:
+  update_mode: pull_request
+  path: CHANGELOG.md
+  skip_types: [docs, chore, test, style, build, ci]
+
+docs:
+  user_track: docs
+  dev_track: dev-docs
+  default_audience: ask
+  default_scope: ask
+  adr_for_arch_changes: true
+`,
+		);
+	});
+
 	test("errors without CHANGELOG.md", async () => {
 		const result = await call(tool, { type: "feat", text: "X" });
 		expect(result.isError).toBe(true);
@@ -283,11 +304,24 @@ describe("ws_changelog", () => {
 		expect(result.content[0]?.text).not.toContain("mirrored");
 		await expect(fs.stat(path.join(cwd, "docs", "changelog.md"))).rejects.toThrow();
 	});
-	test("success message tells the caller to stage CHANGELOG.md", async () => {
+	test("success message tells the caller to stage the configured changelog", async () => {
 		await fs.writeFile(path.join(cwd, "CHANGELOG.md"), BASE, "utf8");
 		const result = await call(tool, { type: "feat", text: "Add thing" });
 		expect(result.isError).toBeFalsy();
-		expect(result.content[0]?.text).toContain("git add CHANGELOG.md");
+		expect(result.content[0]?.text).toContain("Stage the updated file");
+	});
+
+	test("writes the changelog path selected by canonical policy", async () => {
+		const configPath = path.join(cwd, ".wsagency", "config.yaml");
+		const config = await fs.readFile(configPath, "utf8");
+		await fs.writeFile(configPath, config.replace("path: CHANGELOG.md", "path: changes/HISTORY.md"));
+		await fs.mkdir(path.join(cwd, "changes"), { recursive: true });
+		await fs.writeFile(path.join(cwd, "changes", "HISTORY.md"), BASE, "utf8");
+
+		const result = await call(tool, { type: "feat", text: "Use canonical path" });
+		expect(result.isError).toBeFalsy();
+		expect(await fs.readFile(path.join(cwd, "changes", "HISTORY.md"), "utf8")).toContain("- Use canonical path");
+		await expect(fs.stat(path.join(cwd, "CHANGELOG.md"))).rejects.toThrow();
 	});
 
 	test("surfaces a failed mirror write instead of reporting no mirror", async () => {

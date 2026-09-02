@@ -2,7 +2,14 @@ import { describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { DEFAULT_SETTINGS, PLUGIN_NAME, readWsSettings, resolvePluginsDir, resolveSettings } from "../src/lib/settings";
+import {
+	DEFAULT_SETTINGS,
+	hasSharedDangerousGitProtection,
+	PLUGIN_NAME,
+	readWsSettings,
+	resolvePluginsDir,
+	resolveSettings,
+} from "../src/lib/settings";
 
 describe("resolveSettings", () => {
 	test("defaults when nothing is stored", () => {
@@ -127,6 +134,34 @@ describe("resolvePluginsDir", () => {
 			);
 		} finally {
 			await fs.rm(xdg, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("hasSharedDangerousGitProtection", () => {
+	test("recognizes only explicit machine-wide strengthening in the active profile", async () => {
+		const home = await fs.mkdtemp(path.join(os.tmpdir(), "omp-ws-home-"));
+		try {
+			const plugins = path.join(home, ".omp", "profiles", "work", "plugins");
+			await fs.mkdir(plugins, { recursive: true });
+			await fs.writeFile(
+				path.join(plugins, "omp-plugins.lock.json"),
+				JSON.stringify({ settings: { [PLUGIN_NAME]: { guard: true, dashboard: false, jiraProject: "IGNORED" } } }),
+			);
+			expect(await hasSharedDangerousGitProtection(home, { OMP_PROFILE: "work" })).toBe(true);
+			expect(await hasSharedDangerousGitProtection(home, { OMP_PROFILE: "other" })).toBe(false);
+		} finally {
+			await fs.rm(home, { recursive: true, force: true });
+		}
+	});
+
+	test("force-on environment strengthens protection but force-off does not weaken policy", async () => {
+		const home = await fs.mkdtemp(path.join(os.tmpdir(), "omp-ws-home-"));
+		try {
+			expect(await hasSharedDangerousGitProtection(home, { OMP_WS_GUARD: "on" })).toBe(true);
+			expect(await hasSharedDangerousGitProtection(home, { OMP_WS_GUARD: "off" })).toBe(false);
+		} finally {
+			await fs.rm(home, { recursive: true, force: true });
 		}
 	});
 });

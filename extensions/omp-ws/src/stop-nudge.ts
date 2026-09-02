@@ -1,28 +1,28 @@
 /**
- * Docs-drift stop nudge: `session_stop` port of hooks/enforce-stop.sh —
- * deliberately NON-blocking. Where the Claude hook blocked the stop, this
- * surfaces a visible reminder (notify + widget) and lets the turn settle,
- * mirroring how openwiki-freshness.ts stays non-blocking (no `continue`,
- * no `decision: "block"` in the return value).
- *
- * Fires when the working tree has code changes (staged, unstaged, or untracked)
- * outside docs paths without a CHANGELOG.md update, and only when
- * `.claude/docs-config.yaml` exists with auto.enforce_via_hooks not false.
+ * Non-blocking changelog drift reminder driven by canonical repository policy.
+ * It follows the configured changelog mode and path and reports legacy/invalid
+ * policy without preventing the session from stopping.
  */
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { hasCodeChanges, loadDocsConfig, touchesChangelog } from "./lib/docs-config";
+import { hasCodeChanges, touchesChangelog } from "./lib/docs-config";
+import {
+	loadRepositoryPolicy,
+	missingPolicyCapability,
+	repositoryPolicyProblem,
+	type ChangelogPolicy,
+} from "./lib/project-policy";
 import { uncommittedFiles } from "./lib/git";
 import { run } from "./lib/exec";
 
 const WIDGET_KEY = "ws-changelog-drift";
-const NUDGE_MESSAGE = "Uncommitted code changes have no CHANGELOG.md update. Add an entry via /ws-docs changelog or the ws_changelog tool.";
+const NUDGE_MESSAGE = "Uncommitted code changes have no configured changelog update. Add an entry via /ws-docs changelog or the ws_changelog tool.";
 
 /** Pure decision core: does this diff set deserve a nudge? */
-export function shouldNudge(configExists: boolean, enforceViaHooks: boolean, diffFiles: string[]): boolean {
-	if (!configExists || !enforceViaHooks) return false;
+export function shouldNudge(policy: ChangelogPolicy | undefined, diffFiles: string[]): boolean {
+	if (!policy || policy.updateMode === "disabled") return false;
 	if (diffFiles.length === 0) return false;
 	if (!hasCodeChanges(diffFiles)) return false;
-	if (touchesChangelog(diffFiles)) return false;
+	if (touchesChangelog(diffFiles, policy.path)) return false;
 	return true;
 }
 
@@ -55,29 +55,51 @@ export function registerStopNudge(pi: ExtensionAPI): void {
 	pi.on("session_stop", async (event, ctx) => {
 		if (event.stop_hook_active) return;
 		try {
-			const config = await loadDocsConfig(ctx.cwd);
-			// Drift = uncommitted changes ∪ untracked (new) files; either deserves a reminder.
-			const diffFiles = config.exists && config.enforceViaHooks ? await driftFiles(ctx.cwd) : [];
+			const state = await loadRepositoryPolicy(ctx.cwd);
+			const policyProblem = repositoryPolicyProblem(state, "ws-stop-nudge");
+			const missingCapability = state.status === "valid" && !state.config?.changelog
+				? missingPolicyCapability("ws-stop-nudge", "changelog policy")
+				: undefined;
+			const problem = policyProblem ?? missingCapability;
+			if (problem !== undefined) {
+				const key = `policy:${problem}`;
+				if (key === lastAnnouncedKey) return;
+				lastAnnouncedKey = key;
+				if (ctx.hasUI) {
+					ctx.ui.setWidget(WIDGET_KEY, [problem], { placement: "belowEditor" });
+					ctx.ui.notify(problem, "warning");
+				} else {
+					pi.logger.warn(problem);
+				}
+				return;
+			}
 
-			if (!shouldNudge(config.exists, config.enforceViaHooks, diffFiles)) {
+			const policy = state.config?.changelog
+				? {
+						updateMode: state.config.changelog.update_mode,
+						path: state.config.changelog.path,
+						skipTypes: state.config.changelog.skip_types,
+					}
+				: undefined;
+			const diffFiles = policy && policy.updateMode !== "disabled" ? await driftFiles(state.root) : [];
+			if (!shouldNudge(policy, diffFiles)) {
 				if (lastAnnouncedKey !== undefined) {
 					lastAnnouncedKey = undefined;
-					if (ctx.hasUI) ctx.ui.setWidget(WIDGET_KEY, undefined); // drift resolved — clear banner
+					if (ctx.hasUI) ctx.ui.setWidget(WIDGET_KEY, undefined);
 				}
 				return;
 			}
 
 			const key = diffFiles.join("\n");
-			if (key === lastAnnouncedKey) return; // already announced this exact state
+			if (key === lastAnnouncedKey) return;
 			lastAnnouncedKey = key;
-
+			const message = `${NUDGE_MESSAGE} Expected path: ${policy?.path}.`;
 			if (ctx.hasUI) {
-				ctx.ui.setWidget(WIDGET_KEY, [NUDGE_MESSAGE], { placement: "belowEditor" });
-				ctx.ui.notify(NUDGE_MESSAGE, "warning");
+				ctx.ui.setWidget(WIDGET_KEY, [message], { placement: "belowEditor" });
+				ctx.ui.notify(message, "warning");
 			} else {
-				pi.logger.warn(`ws-stop-nudge: ${NUDGE_MESSAGE}`);
+				pi.logger.warn(`ws-stop-nudge: ${message}`);
 			}
-			// Intentionally no return value: never { continue } / { decision: "block" }.
 		} catch (error) {
 			pi.logger.warn(`ws-stop-nudge: internal error: ${String(error)}`);
 		}

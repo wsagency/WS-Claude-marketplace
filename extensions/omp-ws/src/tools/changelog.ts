@@ -1,8 +1,7 @@
 /**
- * ws_changelog: append a Keep-a-Changelog entry to CHANGELOG.md under
- * [Unreleased], creating the section in canonical order when missing, and
- * mirroring the whole file to docs/changelog.md when that mirror exists
- * (dual-track-docs: root file is the source of truth, mirror is a copy).
+ * ws_changelog: append an entry under [Unreleased] in the changelog selected by
+ * canonical repository policy. When the configured user-docs mirror exists, it
+ * remains an exact copy.
  * OPTIONAL convenience — the keep-a-changelog prose convention remains
  * authoritative.
  */
@@ -10,6 +9,11 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import type { ZodType } from "zod/v4";
+import {
+	loadRepositoryPolicy,
+	missingPolicyCapability,
+	repositoryPolicyProblem,
+} from "../lib/project-policy";
 
 export type ChangeType = "feat" | "fix" | "perf" | "refactor" | "security" | "breaking";
 
@@ -124,19 +128,30 @@ export function registerChangelogTool(pi: ExtensionAPI): void {
 		name: "ws_changelog",
 		label: "WS Changelog",
 		description:
-			"Append a Keep-a-Changelog entry to CHANGELOG.md under [Unreleased], in the correct section " +
-			"(feat→Added, fix→Fixed, perf/refactor→Changed, security→Security, breaking→Changed with **BREAKING:** prefix), " +
-			"creating missing sections in canonical order and mirroring the file to docs/changelog.md when that mirror exists. " +
-			"OPTIONAL convenience: the keep-a-changelog prose convention remains authoritative — editing CHANGELOG.md directly is equally valid.",
+			"Append a Keep-a-Changelog entry under [Unreleased] in the path selected by canonical .wsagency/config.yaml policy, " +
+			"using the correct section (feat→Added, fix→Fixed, perf/refactor→Changed, security→Security, breaking→Changed with **BREAKING:** prefix). " +
+			"When the configured user-docs changelog mirror exists, it is updated as an exact copy. " +
+			"OPTIONAL convenience: editing the configured changelog directly is equally valid.",
 		parameters,
 		approval: "write",
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const changelogPath = path.join(ctx.cwd, "CHANGELOG.md");
+			const state = await loadRepositoryPolicy(ctx.cwd);
+			const policyProblem = repositoryPolicyProblem(state, "ws_changelog");
+			if (policyProblem !== undefined) return textResult(policyProblem, true);
+			if (state.status !== "valid" || !state.config?.changelog) {
+				return textResult(missingPolicyCapability("ws_changelog", "changelog policy"), true);
+			}
+			if (state.config.changelog.update_mode === "disabled") {
+				return textResult("ws_changelog: changelog updates are disabled by .wsagency/config.yaml.", true);
+			}
+
+			const relativeChangelogPath = state.config.changelog.path;
+			const changelogPath = path.join(state.root, relativeChangelogPath);
 			let markdown: string;
 			try {
 				markdown = await fs.readFile(changelogPath, "utf8");
 			} catch {
-				return textResult("CHANGELOG.md not found in the working directory — create it first (see the keep-a-changelog skill).", true);
+				return textResult(`${relativeChangelogPath} not found — create it first (see the keep-a-changelog skill).`, true);
 			}
 
 			let updated: string;
@@ -147,15 +162,19 @@ export function registerChangelogTool(pi: ExtensionAPI): void {
 			}
 			await fs.writeFile(changelogPath, updated, "utf8");
 
-			// Mirror (dual-track-docs): docs/changelog.md is a full copy of the root file.
-			const mirrorPath = path.join(ctx.cwd, "docs", "changelog.md");
+			const mirrorRelativePath = state.config.docs
+				? path.posix.join(state.config.docs.user_track, "changelog.md")
+				: undefined;
+			const mirrorPath = mirrorRelativePath ? path.join(state.root, mirrorRelativePath) : undefined;
 			let mirrored = false;
 			let mirrorExists = false;
-			try {
-				await fs.stat(mirrorPath);
-				mirrorExists = true;
-			} catch {
-				// No mirror in this repo — root file only.
+			if (mirrorPath) {
+				try {
+					await fs.stat(mirrorPath);
+					mirrorExists = true;
+				} catch {
+					// No configured mirror in this repository.
+				}
 			}
 			let mirrorError: string | undefined;
 			if (mirrorExists) {
@@ -163,7 +182,7 @@ export function registerChangelogTool(pi: ExtensionAPI): void {
 				// failure here would leave the mirror stale, so surface it
 				// rather than swallowing it as "no mirror".
 				try {
-					await fs.writeFile(mirrorPath, updated, "utf8");
+					await fs.writeFile(mirrorPath as string, updated, "utf8");
 					mirrored = true;
 				} catch (error) {
 					mirrorError = String(error instanceof Error ? error.message : error);
@@ -173,16 +192,16 @@ export function registerChangelogTool(pi: ExtensionAPI): void {
 			const section = TYPE_TO_SECTION[params.type];
 			if (mirrorError) {
 				return textResult(
-					`ws_changelog added the entry to CHANGELOG.md but could not mirror it to docs/changelog.md: ${mirrorError}. ` +
-						`The mirror is now stale. Do NOT re-run ws_changelog (the root entry is already written) — ` +
-						`copy CHANGELOG.md over docs/changelog.md (or fix the mirror's permissions), ` +
-						`then stage both files (git add CHANGELOG.md docs/changelog.md) before committing.`,
+					`ws_changelog added the entry to ${relativeChangelogPath} but could not mirror it to ${mirrorRelativePath}: ${mirrorError}. ` +
+						`The mirror is now stale. Do NOT re-run ws_changelog (the source entry is already written) — ` +
+						`copy ${relativeChangelogPath} over ${mirrorRelativePath} (or fix the mirror's permissions), ` +
+						`then stage both files before committing.`,
 					true,
 				);
 			}
 			return textResult(
-				`Added entry under [Unreleased] > ${section} in CHANGELOG.md${mirrored ? " (mirrored to docs/changelog.md)" : ""}. ` +
-					`Stage it (git add CHANGELOG.md${mirrored ? " docs/changelog.md" : ""}) before committing — the changelog gate only sees staged files.`,
+				`Added entry under [Unreleased] > ${section} in ${relativeChangelogPath}${mirrored ? ` (mirrored to ${mirrorRelativePath})` : ""}. ` +
+					`Stage the updated file${mirrored ? "s" : ""} before committing — the changelog gate only sees staged files.`,
 			);
 		},
 	});

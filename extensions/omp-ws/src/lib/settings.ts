@@ -177,6 +177,21 @@ export function resolveSettings(global: RawSettings, project: RawSettings, env: 
 	};
 }
 
+/**
+ * Machine-wide guard protection may strengthen a repository that disables its
+ * own requirement. Repository overrides and package defaults are deliberately
+ * excluded: only an explicit global setting (or force-on environment value)
+ * represents protection shared with other repositories.
+ */
+export async function hasSharedDangerousGitProtection(
+	home: string = os.homedir(),
+	env: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+	if (env.OMP_WS_GUARD === "on" || env.OMP_WS_GUARD === "required") return true;
+	const lock = await readJson(path.join(resolvePluginsDir(home, env), "omp-plugins.lock.json"));
+	return pluginSettings(lock, PLUGIN_NAME).guard === true;
+}
+
 /** Read the merged plugin settings for this cwd. Never throws. */
 export async function readWsSettings(cwd: string, home: string = os.homedir()): Promise<WsSettings> {
 	try {
