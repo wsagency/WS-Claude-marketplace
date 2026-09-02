@@ -1,172 +1,124 @@
-import { describe, test } from "node:test";
-import assert from "node:assert";
-import * as path from "node:path";
-import { discoverDocumentation, planDocumentation } from "./transaction.mjs";
-import { realpath } from "node:fs/promises";
-
-// Mocking some FS operations for the tests or just test the pure plan logic.
-// discoverDocumentation needs real FS if we don't mock it, but planDocumentation is pure.
-
-describe("Documentation Bootstrap Plan", () => {
-	test("Standalone missing-only creates both tracks and 3-file CONTRIBUTING", () => {
-		const discovery = {
-			root: "/mock/root",
-			projectShape: "standalone",
-			entries: {
-				".claude/docs-config.yaml": { kind: "missing", fingerprint: null },
-				"CHANGELOG.md": { kind: "missing", fingerprint: null },
-				"CONTRIBUTING.md": { kind: "missing", fingerprint: null },
-				"docs/contributing.md": { kind: "missing", fingerprint: null },
-				"dev-docs/development.md": { kind: "missing", fingerprint: null },
-				"docs": { kind: "missing", fingerprint: null },
-				"dev-docs": { kind: "missing", fingerprint: null }
-			}
-		};
-
-		const plan = planDocumentation(discovery);
-		
-		const createdTargets = plan.effects.filter(e => e.classification === "CREATE").map(e => e.target);
-		assert.ok(createdTargets.includes("docs"), "Should create docs dir");
-		assert.ok(createdTargets.includes("dev-docs"), "Should create dev-docs dir");
-		assert.ok(createdTargets.includes("CONTRIBUTING.md"), "Should create CONTRIBUTING.md");
-		assert.ok(createdTargets.includes("docs/contributing.md"), "Should create docs/contributing.md");
-		assert.ok(createdTargets.includes("dev-docs/development.md"), "Should create dev-docs/development.md");
-		assert.ok(!plan.effects.some(effect => effect.target === ".claude/docs-config.yaml"), "Legacy docs config must not be recreated");
-		assert.deepEqual(plan.configFragment, {
-			docs: {
-				user_track: "docs",
-				dev_track: "dev-docs",
-				default_audience: "ask",
-				default_scope: "repo",
-				adr_for_arch_changes: true,
-			},
-			changelog: {
-				update_mode: "pull_request",
-				path: "CHANGELOG.md",
-				skip_types: ["docs", "chore", "test", "style", "build", "ci"],
-			},
-		});
-	});
-
-	test("Hub subrepository missing-only creates only internal track and 2-file CONTRIBUTING", () => {
-		const discovery = {
-			root: "/mock/root",
-			projectShape: "hub_subrepository",
-			entries: {
-				".claude/docs-config.yaml": { kind: "missing", fingerprint: null },
-				"CHANGELOG.md": { kind: "missing", fingerprint: null },
-				"CONTRIBUTING.md": { kind: "missing", fingerprint: null },
-				"dev-docs/development.md": { kind: "missing", fingerprint: null },
-				"dev-docs": { kind: "missing", fingerprint: null }
-			}
-		};
-
-		const plan = planDocumentation(discovery);
-		
-		const createdTargets = plan.effects.filter(e => e.classification === "CREATE").map(e => e.target);
-		assert.ok(!createdTargets.includes("docs"), "Should NOT create docs dir");
-		assert.ok(createdTargets.includes("dev-docs"), "Should create dev-docs dir");
-		assert.ok(createdTargets.includes("CONTRIBUTING.md"), "Should create CONTRIBUTING.md");
-		assert.ok(!createdTargets.includes("docs/contributing.md"), "Should NOT create docs/contributing.md");
-		assert.ok(createdTargets.includes("dev-docs/development.md"), "Should create dev-docs/development.md");
-	});
-	test("Standalone PRESERVE keeps differing existing content", () => {
-		const discovery = {
-			root: "/mock", projectShape: "standalone",
-			entries: { "CONTRIBUTING.md": { kind: "file", content: "Custom existing contributing." } }
-		};
-		const plan = planDocumentation(discovery);
-		const effect = plan.effects.find(e => e.target === "CONTRIBUTING.md");
-		assert.strictEqual(effect.classification, "PRESERVE");
-		assert.strictEqual(effect.after, "Custom existing contributing.");
-	});
-
-	test("Aligned NO-OP applies to exact matching content", () => {
-		const discovery = {
-			root: "/mock", projectShape: "standalone",
-			entries: { "CHANGELOG.md": { kind: "file", content: "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\nThe format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).\n\n## [Unreleased]\n" } }
-		};
-		const plan = planDocumentation(discovery);
-		const effect = plan.effects.find(e => e.target === "CHANGELOG.md");
-		assert.strictEqual(effect.classification, "NO-OP");
-	});
-
-	test("Hub root maps to isStandalone logic (generates all)", () => {
-		const discovery = {
-			root: "/mock", projectShape: "hub_root",
-			entries: { }
-		};
-		const plan = planDocumentation(discovery);
-		// Hub root is effectively standalone in terms of local docs shape.
-		// Wait, the logic is `projectShape === "standalone" || projectShape === "not_git"`.
-		// Ah, for hub root, it shouldn't generate docs/. Let's check the test expectation.
-		const docsEffect = plan.effects.find(e => e.target === "docs");
-		assert.strictEqual(docsEffect.classification, "SKIP");
-	});
-
-});
-import { applyDocumentation } from "./transaction.mjs";
-import { mkdtemp, rm } from "node:fs/promises";
+import assert from "node:assert/strict";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import path from "node:path";
+import test from "node:test";
+import { applyDocumentation, discoverDocumentation, planDocumentation } from "./transaction.mjs";
 
-describe("Documentation Bootstrap Apply", () => {
-	let tempDir;
-	
-	test("setup tempdir", async () => {
-		tempDir = await mkdtemp(path.join(tmpdir(), "ws-docs-test-"));
+const CHANGELOG = "# Changelog\n\nAll notable changes to this project will be documented in this file.\n\nThe format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).\n\n## [Unreleased]\n";
+
+async function withTemporaryRoot(run) {
+	const root = await realpath(await mkdtemp(path.join(tmpdir(), "ws-docs-test-")));
+	try {
+		return await run(root);
+	} finally {
+		await rm(root, { recursive: true, force: true });
+	}
+}
+
+test("standalone plan creates both documentation tracks and returns canonical policy", () => {
+	const discovery = { root: "/mock/root", projectShape: "standalone", entries: {} };
+	const plan = planDocumentation(discovery);
+	const creates = plan.effects.filter(effect => effect.classification === "CREATE").map(effect => effect.target);
+
+	assert.ok(creates.includes("docs"));
+	assert.ok(creates.includes("dev-docs"));
+	assert.ok(creates.includes("CONTRIBUTING.md"));
+	assert.ok(creates.includes("docs/contributing.md"));
+	assert.ok(creates.includes("dev-docs/development.md"));
+	assert.ok(!plan.effects.some(effect => effect.target === ".claude/docs-config.yaml"));
+	assert.deepEqual(plan.configFragment, {
+		docs: {
+			user_track: "docs",
+			dev_track: "dev-docs",
+			default_audience: "ask",
+			default_scope: "repo",
+			adr_for_arch_changes: true,
+		},
+		changelog: {
+			update_mode: "pull_request",
+			path: "CHANGELOG.md",
+			skip_types: ["docs", "chore", "test", "style", "build", "ci"],
+		},
+	});
+	assert.match(plan.contextFragments.agents, /^\n# Documentation maintenance/m);
+	assert.equal(plan.contextFragments.claude, "<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n");
+});
+
+test("hub subrepositories and hub roots omit product user-track scaffolding", () => {
+	for (const projectShape of ["hub_subrepository", "hub_root"]) {
+		const plan = planDocumentation({ root: "/mock/root", projectShape, entries: {} });
+		assert.equal(plan.effects.find(effect => effect.target === "docs")?.classification, "SKIP");
+		assert.ok(plan.effects.some(effect => effect.target === "dev-docs" && effect.classification === "CREATE"));
+		assert.ok(!plan.effects.some(effect => effect.target === "docs/contributing.md"));
+	}
+});
+
+test("authored content is preserved and exact generated content is a no-op", () => {
+	const plan = planDocumentation({
+		root: "/mock/root",
+		projectShape: "standalone",
+		entries: {
+			"CONTRIBUTING.md": { kind: "file", content: "Custom contributing.\n", fingerprint: "custom" },
+			"CHANGELOG.md": { kind: "file", content: CHANGELOG, fingerprint: "aligned" },
+		},
 	});
 
-	test("Stops on injected failure before writes", async () => {
-		const plan = { effects: [{ classification: "CREATE", target: "docs", kind: "directory" }] };
+	const contributing = plan.effects.find(effect => effect.target === "CONTRIBUTING.md");
+	assert.equal(contributing.classification, "PRESERVE");
+	assert.equal(contributing.after, "Custom contributing.\n");
+	assert.equal(plan.effects.find(effect => effect.target === "CHANGELOG.md")?.classification, "NO-OP");
+});
+
+test("apply rejects wrong authorization and drift without overwriting authored content", async () => {
+	await withTemporaryRoot(async root => {
+		const discovery = await discoverDocumentation(root, "standalone");
+		const plan = planDocumentation(discovery);
+		await assert.rejects(() => applyDocumentation(root, plan, "wrong-hash"), /authorization/i);
+
+		await writeFile(path.join(root, "CHANGELOG.md"), "authored during confirmation\n", "utf8");
+		await assert.rejects(() => applyDocumentation(root, plan, plan.hash), /drift/i);
+		assert.equal(await readFile(path.join(root, "CHANGELOG.md"), "utf8"), "authored during confirmation\n");
+	});
+});
+
+test("injected failure reports completed and pending effects and a fresh run resumes missing-only", async () => {
+	await withTemporaryRoot(async root => {
+		const firstPlan = planDocumentation(await discoverDocumentation(root, "standalone"));
+		let failure;
 		try {
-			await applyDocumentation(tempDir, plan, "before_writes");
-			assert.fail("Should throw");
-		} catch (e) {
-			assert.strictEqual(e.message, "Injected failure before writes.");
+			await applyDocumentation(root, firstPlan, firstPlan.hash, "docs/index.md");
+		} catch (error) {
+			failure = error;
 		}
-	});
+		assert.ok(failure);
+		assert.ok(failure.completed.length > 0);
+		assert.equal(failure.pending[0].target, "docs/index.md");
+		assert.ok(failure.operations.every(operation => ["write", "verify"].includes(operation.action)));
 
-	test("Stops on injected failure at specific target", async () => {
-		const plan = { effects: [
-			{ classification: "CREATE", target: "docs", kind: "directory" },
-			{ classification: "CREATE", target: "docs/index.md", kind: "file", after: "content" }
-		] };
-		
-		try {
-			await applyDocumentation(tempDir, plan, "docs/index.md");
-			assert.fail("Should throw");
-		} catch (e) {
-			assert.strictEqual(e.message, "Injected failure writing docs/index.md.");
-			assert.strictEqual(e.completed.length, 1);
-			assert.strictEqual(e.completed[0].target, "docs");
-			assert.strictEqual(e.pending.length, 1);
-			assert.strictEqual(e.pending[0].target, "docs/index.md");
-		}
-	});
-	test("Resume missing-only skips already created files", async () => {
-		// Setup initial state
-		const plan1 = { effects: [
-			{ classification: "CREATE", target: "docs", kind: "directory" },
-			{ classification: "CREATE", target: "docs/index.md", kind: "file", after: "content" }
-		] };
-		
-		// Apply failure on second
-		try {
-			await applyDocumentation(tempDir, plan1, "docs/index.md");
-		} catch (e) {
-			// Recovered state should show docs as existing
-			const plan2 = { effects: [
-				{ classification: "NO-OP", target: "docs", kind: "directory" },
-				{ classification: "CREATE", target: "docs/index.md", kind: "file", after: "content" }
-			] };
-			const ops = await applyDocumentation(tempDir, plan2);
-			// Only writing index.md on resume
-			assert.strictEqual(ops.filter(o => o.action === "write").length, 1);
-			assert.strictEqual(ops[0].target, "docs/index.md");
-		}
-	});
+		const resumePlan = planDocumentation(await discoverDocumentation(root, "standalone"));
+		const operations = await applyDocumentation(root, resumePlan, resumePlan.hash);
+		assert.ok(operations.some(operation => operation.target === "docs/index.md" && operation.action === "write"));
+		assert.ok(!operations.some(operation => operation.target === "docs" && operation.action === "write"));
 
-	test("cleanup", async () => {
-		if (tempDir) await rm(tempDir, { recursive: true, force: true });
+		const aligned = planDocumentation(await discoverDocumentation(root, "standalone"));
+		assert.ok(!aligned.effects.some(effect => ["CREATE", "UPDATE"].includes(effect.classification)));
+		assert.deepEqual(await applyDocumentation(root, aligned, aligned.hash), []);
+	});
+});
+
+test("failure before writes reports the entire pending manifest", async () => {
+	await withTemporaryRoot(async root => {
+		const plan = planDocumentation(await discoverDocumentation(root, "standalone"));
+		let failure;
+		try {
+			await applyDocumentation(root, plan, plan.hash, "before_writes");
+		} catch (error) {
+			failure = error;
+		}
+		assert.ok(failure);
+		assert.deepEqual(failure.completed, []);
+		assert.equal(failure.pending.length, plan.effects.filter(effect => effect.classification === "CREATE").length);
+		assert.deepEqual(failure.operations, []);
 	});
 });

@@ -112,6 +112,21 @@ function fileEffect(order, target, desired, discovery) {
 	return baseEffect(order, target, "file", "PRESERVE", "Preserve existing authored content.", entry, entry.content);
 }
 
+function documentationPlanHash(scope, effects, configFragment) {
+	return sha256(JSON.stringify({
+		configFragment,
+		scope,
+		effects: effects.map(effect => ({
+			order: effect.order,
+			target: effect.target,
+			kind: effect.kind,
+			classification: effect.classification,
+			after: effect.after,
+			fingerprint: effect.fingerprint,
+		})),
+	}));
+}
+
 export function planDocumentation(discovery) {
 	const effects = [];
 	const isStandalone = discovery.projectShape === "standalone" || discovery.projectShape === "not_git";
@@ -160,64 +175,65 @@ export function planDocumentation(discovery) {
 
 	effects.sort((left, right) => left.order - right.order);
 	const scope = { root: discovery.root, projectShape: discovery.projectShape };
-	const hashPayload = {
-		configFragment,
+	return {
+		hash: documentationPlanHash(scope, effects, configFragment),
 		scope,
-		effects: effects.map(effect => ({
-			order: effect.order,
-			target: effect.target,
-			kind: effect.kind,
-			classification: effect.classification,
-			after: effect.after,
-			fingerprint: effect.fingerprint,
-		})),
+		effects,
+		contextFragments,
+		configFragment,
 	};
-	return { hash: sha256(JSON.stringify(hashPayload)), scope, effects, contextFragments, configFragment };
 }
 
-export async function applyDocumentation(root, plan, failureInjection) {
-	const operations = [];
-	if (failureInjection === "before_writes") {
-		throw new Error("Injected failure before writes.");
+export async function applyDocumentation(root, plan, authorization, failureInjection) {
+	const resolvedRoot = await realpath(path.resolve(root));
+	if (plan.scope?.root !== resolvedRoot) throw new Error("Documentation plan scope does not match the target root.");
+	if (authorization !== plan.hash || plan.hash !== documentationPlanHash(plan.scope, plan.effects, plan.configFragment)) {
+		throw new Error("Documentation plan authorization is stale or invalid.");
 	}
-
+	const operations = [];
 	const completed = [];
-	const pending = [];
-	const writes = plan.effects.filter(e => e.classification === "CREATE" || e.classification === "UPDATE");
-	
-	for (let i = 0; i < writes.length; i++) {
-		const effect = writes[i];
-		const absolute = path.join(root, effect.target);
-		
+	const writes = plan.effects.filter(effect => effect.classification === "CREATE" || effect.classification === "UPDATE");
+	if (failureInjection === "before_writes") {
+		const error = new Error("Injected failure before writes.");
+		error.completed = completed;
+		error.pending = writes;
+		error.operations = operations;
+		throw error;
+	}
+	for (let index = 0; index < writes.length; index += 1) {
+		const effect = writes[index];
+		const absolute = path.resolve(resolvedRoot, effect.target);
+		if (absolute !== resolvedRoot && !absolute.startsWith(`${resolvedRoot}${path.sep}`)) {
+			throw new Error(`Documentation target escapes the repository: ${effect.target}.`);
+		}
 		if (failureInjection === effect.target) {
-			pending.push(...writes.slice(i));
 			const error = new Error(`Injected failure writing ${effect.target}.`);
 			error.completed = completed;
-			error.pending = pending;
+			error.pending = writes.slice(index);
 			error.operations = operations;
 			throw error;
 		}
 
 		try {
+			const current = await readSnapshotEntry(resolvedRoot, effect.target, effect.kind);
+			if (current.fingerprint !== effect.fingerprint) throw new Error(`Documentation plan drift detected for ${effect.target}.`);
 			operations.push({ action: "write", target: effect.target });
-			if (effect.kind === "directory") {
-				await mkdir(absolute, { recursive: true });
-			} else {
+			if (effect.kind === "directory") await mkdir(absolute, { recursive: true });
+			else {
 				await mkdir(path.dirname(absolute), { recursive: true });
 				await writeFile(absolute, effect.after, "utf8");
 			}
-			const verified = await readSnapshotEntry(root, effect.target, effect.kind);
+			const verified = await readSnapshotEntry(resolvedRoot, effect.target, effect.kind);
 			if (effect.kind === "directory" ? verified.kind !== "directory" : verified.content !== effect.after) {
 				throw new Error(`Verification failed after writing ${effect.target}.`);
 			}
 			operations.push({ action: "verify", target: effect.target });
 			completed.push(effect);
-		} catch (e) {
-			pending.push(...writes.slice(i));
-			e.completed = completed;
-			e.pending = pending;
-			e.operations = operations;
-			throw e;
+		} catch (error) {
+			error.completed = completed;
+			error.pending = writes.slice(index);
+			error.operations = operations;
+			throw error;
 		}
 	}
 	return operations;

@@ -47,4 +47,4 @@ export interface DocsTransactionResult {
 
 export function discoverDocumentation(root: string, projectShape: ProjectShape): Promise<DocsDiscovery>;
 export function planDocumentation(discovery: DocsDiscovery): DocsPlan;
-export function applyDocumentation(root: string, plan: DocsPlan, failureInjection?: string): Promise<SetupOperation[]>;
+export function applyDocumentation(root: string, plan: DocsPlan, authorization: string, failureInjection?: string): Promise<SetupOperation[]>;
