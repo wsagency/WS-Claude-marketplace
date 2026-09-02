@@ -1,76 +1,110 @@
-import { expect, test } from "bun:test";
-import { discoverEngineeringState, planEngineeringMigration, checkEngineeringCleanupEligibility } from "./migration-engineering.mjs";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import test from "node:test";
+import { checkEngineeringCleanupEligibility, discoverEngineeringState, planEngineeringMigration } from "./migration-engineering.mjs";
 
-test("discoverEngineeringState extracts tracker, triage, domain from legacy adapters", () => {
-	const snapshots = {
-		"dev-docs/agents/issue-tracker.md": "# Issue tracker: GitHub\n\nPRs as a request surface: yes",
-		"dev-docs/agents/triage-labels.md": "The triage labels are mapped to these strings:\n- needs-triage: `bug:triage`\n- needs-info: `needs-info`",
-		"dev-docs/agents/domain.md": "We use single-context layout."
-	};
-	
-	const discovery = discoverEngineeringState(snapshots);
-	expect(discovery.derived.tracker).toBe("github");
-	expect(discovery.derived.pull_requests).toBe("triage");
-	expect(discovery.derived.triageLabels).toEqual({
-		needs_triage: "bug:triage",
-		needs_info: "needs-info"
+const LEGACY_ROOT = new URL("../ws-setup-matt-pocock-skills/", import.meta.url);
+const template = name => readFileSync(new URL(name, LEGACY_ROOT), "utf8");
+const canonical = () => ({
+	schema_version: 1,
+	runtime: { session_discipline: "required", dangerous_git_guard: "enabled" },
+});
+
+for (const [file, primary, sync] of [
+	["issue-tracker-local.md", "local", "disabled"],
+	["issue-tracker-github.md", "github", "disabled"],
+	["issue-tracker-gitlab.md", "gitlab", "disabled"],
+	["issue-tracker-jira.md", "jira", "disabled"],
+	["issue-tracker-local-jira.md", "local", "all_local_tickets"],
+]) {
+	test(`released ${file} migrates deterministically`, () => {
+		const content = template(file).replaceAll("<PROJECT-KEY>", "WCM");
+		const discovery = discoverEngineeringState({ "dev-docs/agents/issue-tracker.md": content });
+		const plan = planEngineeringMigration(discovery, canonical());
+		assert.equal(discovery.tracker.primary, primary);
+		assert.equal(discovery.tracker.generated, true);
+		assert.equal(discovery.tracker.sync, sync);
+		assert.equal(plan.patch.tracker.primary, primary);
+		assert.equal(plan.patch.tracker.pull_requests, "ignore");
+		assert.equal(plan.blockers.length, 0);
+		assert.ok(plan.effects.every(effect => ["order", "target", "kind", "classification", "reason", "before", "after", "diff", "fingerprint"].every(field => Object.hasOwn(effect, field))));
+		if (file.includes("jira")) assert.equal(plan.patch.jira.project, "WCM");
 	});
-	expect(discovery.derived.domainLayout).toBe("single_context");
+}
+
+test("customized known tracker guidance is converted but preserved", () => {
+	const content = "# Team issue tracker\n\nUse GitHub Issues. Preserve component metadata and escalation notes.\n";
+	const discovery = discoverEngineeringState({ "dev-docs/agents/issue-tracker.md": content });
+	const plan = planEngineeringMigration(discovery, canonical());
+	assert.equal(plan.patch.tracker.primary, "github");
+	assert.equal(plan.blockers.length, 0);
+	assert.equal(plan.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").classification, "PRESERVE");
 });
 
-test("planEngineeringMigration replaces exact adapters and managed blocks", () => {
-	const discovery = {
-		hasEngineeringState: true,
-		trackerContent: "Issue tracker: Local Markdown",
-		agentsMd: "## Agent skills\nSome content",
-		derived: {
-			tracker: "local",
-			sync: "all_local_tickets",
-			pull_requests: "ignore"
-		}
-	};
-	const { patch, effects, blockers } = planEngineeringMigration(discovery, {});
-	expect(patch.tracker.primary).toBe("local");
-	expect(patch.tracker.pull_requests).toBe("ignore");
-	expect(patch.jira.sync).toBe("all_local_tickets");
-	expect(blockers).toHaveLength(0);
-	
-	const trackerEffect = effects.find(e => e.target === "dev-docs/agents/issue-tracker.md");
-	expect(trackerEffect.classification).toBe("UPDATE");
-	
-	const agentsEffect = effects.find(e => e.target === "AGENTS.md");
-	expect(agentsEffect.classification).toBe("UPDATE");
+test("unsupported custom tracker blocks before writes", () => {
+	const discovery = discoverEngineeringState({ "dev-docs/agents/issue-tracker.md": "# Tracker\n\nUse the private Acme queue.\n" });
+	const plan = planEngineeringMigration(discovery, canonical());
+	assert.match(plan.blockers[0], /unsupported custom tracker/i);
+	assert.equal(plan.effects.find(effect => effect.target === "config:tracker.primary").classification, "BLOCKING_CONFLICT");
 });
 
-test("planEngineeringMigration blocks on customized adapters", () => {
-	const discovery = {
-		hasEngineeringState: true,
-		trackerContent: "This is a completely custom tracker adapter that doesn't match our heuristic at all, let's make it very long or just without keywords. ".repeat(100),
-		derived: {}
-	};
-	
-	const { effects, blockers } = planEngineeringMigration(discovery, {});
-	const trackerEffect = effects.find(e => e.target === "dev-docs/agents/issue-tracker.md");
-	expect(trackerEffect.classification).toBe("BLOCKING_CONFLICT");
-	expect(blockers).toContain("Customized tracker adapter requires reviewed merge");
+test("custom triage labels and repository context layout survive conversion", () => {
+	const customTriage = template("triage-labels.md")
+		.replaceAll("`needs-triage`       | Maintainer", "`queue/inbox`        | Maintainer")
+		.replaceAll("`needs-info`         | Waiting", "`queue/blocked`      | Waiting")
+		.replaceAll("`ready-for-agent`    | Fully", "`queue/agent`        | Fully")
+		.replaceAll("`ready-for-human`    | Requires", "`queue/human`        | Requires")
+		.replaceAll("`wontfix`            | Will", "`queue/wontfix`      | Will");
+	const discovery = discoverEngineeringState({
+		"dev-docs/agents/triage-labels.md": customTriage,
+		"dev-docs/agents/domain.md": template("domain.md"),
+		"CONTEXT-MAP.md": "# Context map\n",
+	});
+	const plan = planEngineeringMigration(discovery, canonical());
+	assert.deepEqual(plan.patch.triage.labels, {
+		needs_triage: "queue/inbox",
+		needs_info: "queue/blocked",
+		ready_for_agent: "queue/agent",
+		ready_for_human: "queue/human",
+		wontfix: "queue/wontfix",
+	});
+	assert.equal(plan.patch.domain.layout, "multi_context");
+	assert.equal(plan.effects.find(effect => effect.target === "dev-docs/agents/triage-labels.md").classification, "PRESERVE");
 });
 
-test("planEngineeringMigration blocks on conflicting context blocks", () => {
-	const discovery = {
-		hasEngineeringState: true,
-		agentsMd: "## Agent skills\nAGENTS",
-		claudeMd: "## Agent skills\nCLAUDE",
-		derived: {}
-	};
-	
-	const { effects, blockers } = planEngineeringMigration(discovery, {});
-	expect(effects.find(e => e.target === "AGENTS.md").classification).toBe("BLOCKING_CONFLICT");
-	expect(effects.find(e => e.target === "CLAUDE.md").classification).toBe("BLOCKING_CONFLICT");
-	expect(blockers).toContain("Conflicting authored context blocks in both AGENTS.md and CLAUDE.md pending explicit merge choice");
+test("active local work is discovered without being discarded", () => {
+	const discovery = discoverEngineeringState({
+		"dev-docs/agents/issue-tracker.md": template("issue-tracker-local.md"),
+		activeLocalWork: true,
+	});
+	assert.equal(discovery.activeLocalWork, true);
+	assert.equal(planEngineeringMigration(discovery, canonical()).patch.tracker.primary, "local");
 });
 
-test("checkEngineeringCleanupEligibility", () => {
-	expect(checkEngineeringCleanupEligibility({}, { isValid: true }, { engineeringReady: true })).toEqual({ eligible: true, blockers: [] });
-	expect(checkEngineeringCleanupEligibility({}, { isValid: false }, { engineeringReady: true })).toEqual({ eligible: false, blockers: ["Canonical configuration is invalid"] });
-	expect(checkEngineeringCleanupEligibility({}, { isValid: true }, { engineeringReady: false })).toEqual({ eligible: false, blockers: ["Engineering adapters are not ready"] });
+test("conflicting context blocks require explicit source resolution and preserve both files", () => {
+	const discovery = discoverEngineeringState({
+		"AGENTS.md": "# Project\n\n## Agent skills\nAgent-owned text\n",
+		"CLAUDE.md": "# Project\n\n## Agent skills\nDifferent text\n",
+	});
+	const blocked = planEngineeringMigration(discovery, canonical());
+	assert.match(blocked.blockers[0], /explicit merge choice/i);
+	assert.equal(blocked.effects.filter(effect => effect.classification === "PRESERVE").length, 2);
+	const resolved = planEngineeringMigration(discovery, canonical(), { "context.source": "agents" });
+	assert.equal(resolved.blockers.length, 0);
+});
+
+test("canonical values outrank legacy values", () => {
+	const current = { ...canonical(), tracker: { primary: "gitlab", pull_requests: "triage" } };
+	const discovery = discoverEngineeringState({ "dev-docs/agents/issue-tracker.md": template("issue-tracker-local.md") });
+	const plan = planEngineeringMigration(discovery, current);
+	assert.deepEqual(plan.patch.tracker, current.tracker);
+	assert.ok(!plan.effects.some(effect => effect.target === "config:tracker.primary"));
+});
+
+test("cleanup requires canonical, adapter, context, and conflict verification", () => {
+	const plan = { blockers: [] };
+	assert.deepEqual(checkEngineeringCleanupEligibility(plan, { status: "valid" }, { engineeringReady: true, contextReady: true }), { eligible: true, blockers: [] });
+	const blocked = checkEngineeringCleanupEligibility({ blockers: ["unresolved"] }, { status: "invalid" }, { engineeringReady: false, contextReady: false });
+	assert.equal(blocked.eligible, false);
+	assert.deepEqual(blocked.blockers, ["Canonical configuration is invalid.", "Engineering adapters are not verified.", "Shared context is not verified.", "unresolved"]);
 });

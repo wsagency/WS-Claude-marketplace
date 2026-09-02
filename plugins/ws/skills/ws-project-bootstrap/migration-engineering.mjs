@@ -1,212 +1,209 @@
-const EXACT_ISSUE_TRACKER_FRAGMENTS = [
-	"Issue tracker: Local Markdown",
-	"Issue tracker: GitHub",
-	"Issue tracker: GitLab",
-	"Issue tracker: Jira",
-	"Issue tracker: Local + Jira sync",
-	"Local Markdown operations",
-	"GitHub Issues behavior",
-	"GitLab Issues behavior",
-	"Jira behavior configured"
-];
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 
-const EXACT_TRIAGE_FRAGMENTS = [
-	"The triage labels are mapped to these strings:",
-	"The triage labels are:"
-];
+const LEGACY_ROOT = new URL("../ws-setup-matt-pocock-skills/", import.meta.url);
+const TRACKER_TEMPLATES = Object.freeze({
+	local: readFileSync(new URL("issue-tracker-local.md", LEGACY_ROOT), "utf8"),
+	github: readFileSync(new URL("issue-tracker-github.md", LEGACY_ROOT), "utf8"),
+	gitlab: readFileSync(new URL("issue-tracker-gitlab.md", LEGACY_ROOT), "utf8"),
+	jira: readFileSync(new URL("issue-tracker-jira.md", LEGACY_ROOT), "utf8"),
+	local_jira: readFileSync(new URL("issue-tracker-local-jira.md", LEGACY_ROOT), "utf8"),
+});
+const TRIAGE_TEMPLATE = readFileSync(new URL("triage-labels.md", LEGACY_ROOT), "utf8");
+const DOMAIN_TEMPLATE = readFileSync(new URL("domain.md", LEGACY_ROOT), "utf8");
+const MANAGED_START = "<!-- WS-AGENT-SKILLS:START -->";
+const MANAGED_END = "<!-- WS-AGENT-SKILLS:END -->";
 
-const EXACT_DOMAIN_FRAGMENTS = [
-	"single-context",
-	"multi-context",
-	"single_context",
-	"multi_context"
-];
-
-function isExactAdapter(content, fragments) {
-	if (!content) return false;
-	// Very simple heuristic: if it contains one of the known fragments and is relatively short,
-	// or we just trust the fragment presence. The prompt says "exact released generated adapters".
-	// In a real system we'd hash them, but we don't have the hashes.
-	// For now, if it matches our basic discovery keywords, we assume it's exact enough to be replaced,
-	// unless it has a lot of custom text. Let's say length < 1000 is generated.
-	return fragments.some(f => content.includes(f)) && content.length < 2000;
+function sha256(value) {
+	return createHash("sha256").update(value).digest("hex");
 }
 
-export function discoverEngineeringState(snapshots) {
-	const trackerContent = snapshots["dev-docs/agents/issue-tracker.md"] || null;
-	const domainContent = snapshots["dev-docs/agents/domain.md"] || null;
-	const triageContent = snapshots["dev-docs/agents/triage-labels.md"] || null;
-	const agentsMd = snapshots["AGENTS.md"] || null;
-	const claudeMd = snapshots["CLAUDE.md"] || null;
-
-	let primaryTracker = undefined;
-	let sync = undefined;
-	let pullRequests = undefined;
-	
-	if (trackerContent) {
-		if (trackerContent.includes("Issue tracker: Local Markdown") || trackerContent.includes("Local Markdown operations")) {
-			primaryTracker = "local";
-		}
-		if (trackerContent.includes("Issue tracker: Local + Jira sync")) {
-			primaryTracker = "local";
-			sync = "all_local_tickets";
-		}
-		if (trackerContent.includes("Issue tracker: GitHub") || trackerContent.includes("GitHub Issues behavior")) {
-			primaryTracker = "github";
-		}
-		if (trackerContent.includes("Issue tracker: GitLab") || trackerContent.includes("GitLab Issues behavior")) {
-			primaryTracker = "gitlab";
-		}
-		if (trackerContent.includes("Issue tracker: Jira") && !trackerContent.includes("Local + Jira sync")) {
-			primaryTracker = "jira";
-		}
-		if (trackerContent.includes("Jira behavior configured")) {
-			primaryTracker = "jira";
-		}
-		
-		if (trackerContent.includes("PRs as a request surface: yes")) {
-			pullRequests = "triage";
-		} else if (trackerContent.includes("PRs as a request surface: no")) {
-			pullRequests = "ignore";
-		}
+function entryOf(value) {
+	if (value == null) return { kind: "missing", content: null, fingerprint: null };
+	if (typeof value === "string") return { kind: "file", content: value, fingerprint: sha256(value) };
+	if (typeof value === "object" && Object.hasOwn(value, "content")) {
+		return {
+			kind: value.kind ?? "file",
+			content: value.content,
+			fingerprint: value.fingerprint ?? (typeof value.content === "string" ? sha256(value.content) : null),
+		};
 	}
-
-	let triageLabels = undefined;
-	if (triageContent) {
-		triageLabels = {};
-		const lines = triageContent.split('\n');
-		for (const line of lines) {
-			const match = line.match(/- (needs-triage|needs-info|ready-for-agent|ready-for-human|wontfix):\s*`([^`]+)`/);
-			if (match) {
-				const key = match[1].replace(/-/g, '_');
-				triageLabels[key] = match[2];
-			}
-		}
-		if (Object.keys(triageLabels).length === 0) triageLabels = undefined;
-	}
-
-	let domainLayout = undefined;
-	if (domainContent) {
-		if (domainContent.includes("single-context") || domainContent.includes("single_context")) {
-			domainLayout = "single_context";
-		}
-		if (domainContent.includes("multi-context") || domainContent.includes("multi_context")) {
-			domainLayout = "multi_context";
-		}
-	}
-
-	return {
-		hasEngineeringState: !!(trackerContent || domainContent || triageContent || agentsMd || claudeMd),
-		trackerContent,
-		domainContent,
-		triageContent,
-		agentsMd,
-		claudeMd,
-		derived: {
-			tracker: primaryTracker,
-			sync: sync,
-			pull_requests: pullRequests,
-			triageLabels: triageLabels,
-			domainLayout: domainLayout,
-		}
-	};
+	return { kind: "state", content: value, fingerprint: sha256(JSON.stringify(value)) };
 }
 
-function fullEffect(order, target, classification, reason) {
+function effect(order, target, kind, classification, reason, entry, after) {
+	const before = entry?.content ?? null;
+	const renderedAfter = kind === "state" && after !== undefined ? JSON.stringify(after) : (after ?? before);
 	return {
 		order,
 		target,
-		kind: target.includes(".") ? "file" : "directory",
+		kind,
 		classification,
 		reason,
-		diff: "",
-		fingerprint: null
+		before,
+		after: renderedAfter,
+		diff: classification === "PRESERVE" || classification === "NO-OP" ? "unchanged" : `${JSON.stringify(before)} -> ${JSON.stringify(renderedAfter ?? null)}`,
+		fingerprint: entry?.fingerprint ?? null,
+	};
+}
+function placeholderPattern(template) {
+	const escaped = template.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return new RegExp(`^${escaped.replaceAll("<PROJECT-KEY>", "([A-Z][A-Z0-9_-]*)")}$`);
+}
+
+function classifyTracker(content) {
+	for (const [mode, template] of Object.entries(TRACKER_TEMPLATES)) {
+		const match = content.match(placeholderPattern(template));
+		if (match) {
+			const primary = mode === "local_jira" ? "local" : mode;
+			return { recognized: true, generated: true, primary, sync: mode === "local_jira" ? "all_local_tickets" : "disabled", jiraProject: match[1] };
+		}
+	}
+	const markers = [
+		["Local Markdown", "local"],
+		["GitHub", "github"],
+		["GitLab", "gitlab"],
+		["Jira", "jira"],
+	].filter(([marker]) => content.includes(marker));
+	const primaryValues = [...new Set(markers.map(([, primary]) => primary))];
+	if (primaryValues.length === 1) {
+		const localJira = primaryValues[0] === "local" && content.includes("Jira");
+		const project = content.match(/\bproject\s+(?:key\s+)?`?([A-Z][A-Z0-9_-]+)`?/i)?.[1]?.toUpperCase();
+		return { recognized: true, generated: false, primary: primaryValues[0], sync: localJira ? "all_local_tickets" : "disabled", jiraProject: project };
+	}
+	return { recognized: false, generated: false };
+}
+
+function triageLabels(content) {
+	const aliases = {
+		"needs-triage": "needs_triage",
+		"needs-info": "needs_info",
+		"ready-for-agent": "ready_for_agent",
+		"ready-for-human": "ready_for_human",
+		wontfix: "wontfix",
+	};
+	const labels = {};
+	for (const line of content.split("\n")) {
+		const table = line.match(/^\|\s*`?(needs-triage|needs-info|ready-for-agent|ready-for-human|wontfix)`?\s*\|\s*`?([^`|]+?)`?\s*\|/);
+		const list = line.match(/^\s*-\s*(needs-triage|needs-info|ready-for-agent|ready-for-human|wontfix):\s*`([^`]+)`/);
+		const match = table ?? list;
+		if (match) labels[aliases[match[1]]] = match[2].trim();
+	}
+	return Object.keys(labels).length === 5 ? labels : null;
+}
+
+function extractContextBlock(content) {
+	if (!content) return null;
+	const markedStart = content.indexOf(MANAGED_START);
+	const markedEnd = content.indexOf(MANAGED_END);
+	if (markedStart >= 0 && markedEnd > markedStart) return content.slice(markedStart, markedEnd + MANAGED_END.length);
+	const heading = content.search(/^## Agent skills\s*$/m);
+	if (heading < 0) return null;
+	const remaining = content.slice(heading + 1);
+	const nextHeading = remaining.search(/^## (?!#)/m);
+	return nextHeading < 0 ? content.slice(heading).trimEnd() : content.slice(heading, heading + 1 + nextHeading).trimEnd();
+}
+
+function setIfAbsent(target, path, value, changes, source) {
+	if (value === undefined || value === null) return;
+	const parts = path.split(".");
+	let cursor = target;
+	for (const part of parts.slice(0, -1)) cursor = cursor[part] ??= {};
+	const key = parts.at(-1);
+	if (cursor[key] !== undefined) return;
+	cursor[key] = value;
+	changes.push({ field: path, value, source });
+}
+
+export function discoverEngineeringState(snapshots) {
+	const entries = Object.fromEntries(
+		Object.entries(snapshots ?? {})
+			.filter(([target]) => target !== "activeLocalWork")
+			.map(([target, value]) => [target, entryOf(value)]),
+	);
+	const trackerEntry = entries["dev-docs/agents/issue-tracker.md"] ?? entryOf(null);
+	const triageEntry = entries["dev-docs/agents/triage-labels.md"] ?? entryOf(null);
+	const domainEntry = entries["dev-docs/agents/domain.md"] ?? entryOf(null);
+	const agentsEntry = entries["AGENTS.md"] ?? entryOf(null);
+	const claudeEntry = entries["CLAUDE.md"] ?? entryOf(null);
+	const contextEntry = entries["CONTEXT.md"] ?? entryOf(null);
+	const contextMapEntry = entries["CONTEXT-MAP.md"] ?? entryOf(null);
+	const tracker = trackerEntry.kind === "file" ? classifyTracker(trackerEntry.content) : null;
+	const labels = triageEntry.kind === "file" ? triageLabels(triageEntry.content) : null;
+	const agentsBlock = extractContextBlock(agentsEntry.content);
+	const claudeBlock = extractContextBlock(claudeEntry.content);
+	const contextConflict = agentsBlock && claudeBlock && agentsBlock !== claudeBlock;
+
+	return {
+		hasEngineeringState: [trackerEntry, triageEntry, domainEntry, agentsEntry, claudeEntry, contextEntry, contextMapEntry].some(entry => entry.kind !== "missing"),
+		entries,
+		tracker,
+		triage: triageEntry.kind === "file" ? { generated: triageEntry.content === TRIAGE_TEMPLATE, labels } : null,
+		domain: domainEntry.kind === "file" ? { generated: domainEntry.content === DOMAIN_TEMPLATE, layout: contextMapEntry.kind === "file" ? "multi_context" : contextEntry.kind === "file" ? "single_context" : undefined } : null,
+		context: { agentsBlock, claudeBlock, conflict: Boolean(contextConflict) },
+		activeLocalWork: Boolean(snapshots?.activeLocalWork),
 	};
 }
 
-export function planEngineeringMigration(discovery, currentCanonical, resolutions) {
-	const patch = JSON.parse(JSON.stringify(currentCanonical || {}));
-	const effects = [];
+export function planEngineeringMigration(discovery, currentCanonical = {}, resolutions = {}) {
+	const patch = structuredClone(currentCanonical ?? {});
+	const changes = [];
 	const conflicts = [];
-	const blockers = [];
 	const suggestions = [];
+	const blockers = [];
+	const effects = [];
 
-	if (!discovery.hasEngineeringState) {
-		return { patch, effects, conflicts, suggestions, blockers };
-	}
-
-	if (discovery.derived.tracker && !patch.tracker?.primary) {
-		patch.tracker = patch.tracker || {};
-		patch.tracker.primary = discovery.derived.tracker;
-	}
-	if (discovery.derived.pull_requests && !patch.tracker?.pull_requests) {
-		patch.tracker = patch.tracker || {};
-		patch.tracker.pull_requests = discovery.derived.pull_requests;
-	}
-	if (discovery.derived.sync && patch.tracker?.primary === 'local' && !patch.jira?.sync) {
-		patch.jira = patch.jira || {};
-		patch.jira.sync = discovery.derived.sync;
-	}
-
-	if (discovery.derived.triageLabels && !patch.triage?.labels) {
-		patch.triage = patch.triage || {};
-		patch.triage.labels = discovery.derived.triageLabels;
-	}
-
-	if (discovery.derived.domainLayout && !patch.domain?.layout) {
-		patch.domain = patch.domain || {};
-		patch.domain.layout = discovery.derived.domainLayout;
-	}
-
-	if (discovery.trackerContent) {
-		if (isExactAdapter(discovery.trackerContent, EXACT_ISSUE_TRACKER_FRAGMENTS)) {
-			effects.push(fullEffect(80, "dev-docs/agents/issue-tracker.md", "UPDATE", "Replace exact legacy tracker adapter"));
+	if (!discovery.hasEngineeringState) return { patch, effects, conflicts, suggestions, blockers };
+	if (discovery.tracker) {
+		if (!discovery.tracker.recognized) {
+			conflicts.push({ field: "tracker.primary", source: "dev-docs/agents/issue-tracker.md", classification: "unsupported-custom" });
+			blockers.push("Unsupported custom tracker requires an explicit canonical tracker choice.");
 		} else {
-			effects.push(fullEffect(80, "dev-docs/agents/issue-tracker.md", "BLOCKING_CONFLICT", "Customized tracker adapter requires reviewed merge"));
-			blockers.push("Customized tracker adapter requires reviewed merge");
+			setIfAbsent(patch, "tracker.primary", resolutions["tracker.primary"] ?? discovery.tracker.primary, changes, "dev-docs/agents/issue-tracker.md");
+			setIfAbsent(patch, "tracker.pull_requests", resolutions["tracker.pull_requests"] ?? "ignore", changes, "dev-docs/agents/issue-tracker.md");
+			if (discovery.tracker.jiraProject) {
+				setIfAbsent(patch, "jira.project", resolutions["jira.project"] ?? discovery.tracker.jiraProject, changes, "dev-docs/agents/issue-tracker.md");
+				setIfAbsent(patch, "jira.default_issue_type", resolutions["jira.default_issue_type"] ?? "Task", changes, "dev-docs/agents/issue-tracker.md");
+				setIfAbsent(patch, "jira.sync", discovery.tracker.sync, changes, "dev-docs/agents/issue-tracker.md");
+			}
 		}
+		const trackerEntry = discovery.entries["dev-docs/agents/issue-tracker.md"];
+		effects.push(effect(40, "dev-docs/agents/issue-tracker.md", "file", discovery.tracker.generated ? "UPDATE" : "PRESERVE", discovery.tracker.generated ? "Replace a released generated adapter after canonical read-back." : "Preserve customized tracker semantics for reviewed merge.", trackerEntry));
 	}
-	
-	if (discovery.domainContent) {
-		if (isExactAdapter(discovery.domainContent, EXACT_DOMAIN_FRAGMENTS)) {
-			effects.push(fullEffect(80, "dev-docs/agents/domain.md", "UPDATE", "Replace exact legacy domain adapter"));
-		} else {
-			effects.push(fullEffect(80, "dev-docs/agents/domain.md", "BLOCKING_CONFLICT", "Customized domain adapter requires reviewed merge"));
-			blockers.push("Customized domain adapter requires reviewed merge");
-		}
+	if (discovery.triage) {
+		if (!discovery.triage.labels) {
+			blockers.push("Triage adapter does not contain a complete five-role mapping.");
+			conflicts.push({ field: "triage.labels", source: "dev-docs/agents/triage-labels.md", classification: "lossy" });
+		} else setIfAbsent(patch, "triage.labels", resolutions["triage.labels"] ?? discovery.triage.labels, changes, "dev-docs/agents/triage-labels.md");
+		const triageEntry = discovery.entries["dev-docs/agents/triage-labels.md"];
+		effects.push(effect(41, "dev-docs/agents/triage-labels.md", "file", discovery.triage.generated ? "UPDATE" : "PRESERVE", discovery.triage.generated ? "Replace a released generated triage adapter after canonical read-back." : "Preserve customized triage labels.", triageEntry));
 	}
-	
-	if (discovery.triageContent) {
-		if (isExactAdapter(discovery.triageContent, EXACT_TRIAGE_FRAGMENTS)) {
-			effects.push(fullEffect(80, "dev-docs/agents/triage-labels.md", "UPDATE", "Replace exact legacy triage adapter"));
-		} else {
-			effects.push(fullEffect(80, "dev-docs/agents/triage-labels.md", "BLOCKING_CONFLICT", "Customized triage adapter requires reviewed merge"));
-			blockers.push("Customized triage adapter requires reviewed merge");
-		}
+	if (discovery.domain) {
+		if (discovery.domain.layout) setIfAbsent(patch, "domain.layout", resolutions["domain.layout"] ?? discovery.domain.layout, changes, discovery.domain.layout === "multi_context" ? "CONTEXT-MAP.md" : "CONTEXT.md");
+		else suggestions.push({ field: "domain.layout", source: "dev-docs/agents/domain.md", classification: "choice-required" });
+		const domainEntry = discovery.entries["dev-docs/agents/domain.md"];
+		effects.push(effect(42, "dev-docs/agents/domain.md", "file", discovery.domain.generated ? "UPDATE" : "PRESERVE", discovery.domain.generated ? "Replace a released generated domain adapter after canonical read-back." : "Preserve customized domain guidance.", domainEntry));
 	}
-
-	const hasAgentsContext = discovery.agentsMd && (discovery.agentsMd.includes("## Agent skills") || discovery.agentsMd.includes("<!-- WS-AGENT-SKILLS:START -->"));
-	const hasClaudeContext = discovery.claudeMd && (discovery.claudeMd.includes("## Agent skills") || discovery.claudeMd.includes("<!-- WS-AGENT-SKILLS:START -->"));
-	
-	if (hasAgentsContext && hasClaudeContext) {
-		effects.push(fullEffect(40, "AGENTS.md", "BLOCKING_CONFLICT", "Conflicting authored context blocks in both AGENTS.md and CLAUDE.md"));
-		effects.push(fullEffect(40, "CLAUDE.md", "BLOCKING_CONFLICT", "Conflicting authored context blocks in both AGENTS.md and CLAUDE.md"));
-		blockers.push("Conflicting authored context blocks in both AGENTS.md and CLAUDE.md pending explicit merge choice");
-	} else if (hasAgentsContext) {
-		effects.push(fullEffect(40, "AGENTS.md", "UPDATE", "Replace known managed context block"));
-	} else if (hasClaudeContext) {
-		effects.push(fullEffect(40, "CLAUDE.md", "UPDATE", "Replace known managed context block"));
+	if (discovery.context.conflict && !resolutions["context.source"]) {
+		blockers.push("Conflicting authored Agent skills blocks require an explicit merge choice.");
+		conflicts.push({ field: "context.source", sources: ["AGENTS.md", "CLAUDE.md"], classification: "ambiguous" });
 	}
-
+	for (const target of ["AGENTS.md", "CLAUDE.md"]) {
+		const entry = discovery.entries[target];
+		if (entry?.kind === "file") effects.push(effect(45, target, "file", "PRESERVE", "Byte-preserve authored context outside reviewed managed ranges.", entry));
+	}
+	for (const change of changes) effects.push(effect(20, `config:${change.field}`, "state", "UPDATE", `Migrate deterministic repository-local value from ${change.source}.`, null, change.value));
+	for (const conflict of conflicts) effects.push(effect(10, `config:${conflict.field}`, "state", "BLOCKING_CONFLICT", `Resolve ${conflict.classification} legacy source ${conflict.source ?? conflict.sources?.join(", ")}.`, null));
+	effects.sort((left, right) => left.order - right.order || left.target.localeCompare(right.target));
 	return { patch, effects, conflicts, suggestions, blockers };
 }
 
-export function checkEngineeringCleanupEligibility(plan, canonicalValidation, adaptersReady) {
-	const eligible = canonicalValidation.isValid && adaptersReady.engineeringReady;
+export function checkEngineeringCleanupEligibility(plan, canonicalValidation, readiness) {
+	const valid = canonicalValidation?.status === "valid" || canonicalValidation?.isValid === true;
 	const blockers = [];
-	if (!eligible) {
-		if (!canonicalValidation.isValid) blockers.push("Canonical configuration is invalid");
-		if (!adaptersReady.engineeringReady) blockers.push("Engineering adapters are not ready");
-	}
-	return { eligible, blockers };
+	if (!valid) blockers.push("Canonical configuration is invalid.");
+	if (!readiness?.engineeringReady) blockers.push("Engineering adapters are not verified.");
+	if (!readiness?.contextReady) blockers.push("Shared context is not verified.");
+	if (plan?.blockers?.length) blockers.push(...plan.blockers);
+	return { eligible: blockers.length === 0, blockers };
 }
