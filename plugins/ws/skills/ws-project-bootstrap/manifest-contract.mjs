@@ -131,6 +131,7 @@ async function planLocalJiraBackfill(config, adapters) {
 		["jiraAdapter.createTicket", input?.jiraAdapter?.createTicket],
 		["persistence.persistSyncState", input?.persistence?.persistSyncState],
 		["persistence.readSyncState", input?.persistence?.readSyncState],
+		["persistence.readLocalTickets", input?.persistence?.readLocalTickets],
 	];
 	const missing = [
 		...(input?.localTickets && typeof input.localTickets === "object" ? [] : ["localTickets"]),
@@ -222,6 +223,10 @@ function withBackfillReadiness(readiness, backfill, execution) {
 async function executePlannedBackfill(backfill) {
 	if (!backfill?.plan || backfill.plan.unmapped.length === 0) {
 		return { completed: [], pending: [], errors: [], nextSyncState: backfill?.input?.syncState };
+	}
+	const durableLocalTickets = await backfill.input.persistence.readLocalTickets();
+	if (hash(durableLocalTickets) !== backfill.localTicketsFingerprint) {
+		throw new Error("Local tickets changed after manifest authorization.");
 	}
 	const durableSyncState = await backfill.input.persistence.readSyncState();
 	if (hash(durableSyncState) !== backfill.syncFingerprint) {
@@ -653,7 +658,33 @@ async function runMigration(request) {
 		sessionDiscipline: readiness.runtimeReady === true && verifiedDiscovery.machine.sessionDiscipline === true,
 		dangerousGitGuard: readiness.runtimeReady === true && verifiedDiscovery.machine.dangerousGitGuard === true,
 	};
-	const cleanup = await applyLegacyCleanup(request.root, legacyPlan, legacyPlan.hash, cleanupRuntimeEvidence);
+	let cleanup;
+	try {
+		cleanup = await applyLegacyCleanup(request.root, legacyPlan, legacyPlan.hash, cleanupRuntimeEvidence, request.injection?.cleanupFailure);
+	} catch (error) {
+		const completedOperations = error.cleanupProgress?.completed ?? [];
+		const completed = completedOperations.map(operation => operation.target);
+		const pending = error.cleanupProgress?.pending ?? [];
+		const failed = error.cleanupProgress?.failed;
+		const failedTarget = failed?.target ?? pending[0] ?? "migration:cleanup";
+		return {
+			manifest: complete,
+			requiresAuthorization: false,
+			applied: false,
+			operations: [...core.operations, ...externalOperations, ...docsOperations, ...completedOperations],
+			readiness: {
+				...readiness,
+				runtimeReady: false,
+			},
+			report: `Migration cleanup stopped at ${failedTarget}: ${failed?.reason ?? error.message}. No rollback was performed.`,
+			failure: {
+				target: failedTarget,
+				error: failed?.reason ?? error.message,
+				completed,
+				pending,
+			},
+		};
+	}
 	return {
 		manifest: complete,
 		requiresAuthorization: false,

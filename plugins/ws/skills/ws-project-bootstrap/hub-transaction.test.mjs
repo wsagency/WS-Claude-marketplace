@@ -181,6 +181,22 @@ describe("complete hub preflight", () => {
 		assert.equal(await exists(path.join(siblingRoot, ".wsagency", "config.yaml")), true);
 		assert.ok(applied.operations.some(operation => operation.repository === "work" && operation.phase === "core"));
 	});
+
+	test("a working repository resolving to the hub root is a duplicate blocker", async () => {
+		const { hubRoot } = await createHub([
+			registryEntry({
+				name: "self",
+				repoPath: ".",
+				url: "https://example.test/ws/product-main.git",
+			}),
+		]);
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const blocked = await runHubTransaction({ root: hubRoot, discovery });
+		assert.equal(blocked.requiresConfirmation, false);
+		assert.equal(blocked.operations.length, 0);
+		assert.ok(blocked.blockers.some(blocker => blocker.repository === "self" && /duplicate/i.test(blocker.reason)));
+		assert.equal(await exists(path.join(hubRoot, ".wsagency")), false);
+	});
 });
 
 describe("dirty-path preflight", () => {

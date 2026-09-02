@@ -234,8 +234,9 @@ export async function discoverHubTransaction(root, machine) {
 		}
 		working.push(await discoverSelectedRepository(absoluteRoot, repository, machine));
 	}
-	const roots = new Map();
+	const roots = new Map([[hub.identity.root, "hub"]]);
 	const origins = new Map();
+	if (hub.identity.origin) origins.set(hub.identity.origin, "hub");
 	for (const repository of working) {
 		if (roots.has(repository.identity.root)) {
 			repository.preflightErrors.push(`Normalized registry root duplicates ${roots.get(repository.identity.root)}.`);

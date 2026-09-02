@@ -237,12 +237,15 @@ function effectAuthorizationView(effect) {
 		correlationToken: effect.payload?.correlationToken || effect.correlationToken || null,
 		afterDigest: effect.after === undefined ? null : sha256(String(effect.after)),
 		payloadDigest: effect.payload === undefined ? null : sha256(JSON.stringify(effect.payload)),
+		fingerprint: effect.fingerprint ?? null,
+		remoteFingerprint: effect.remoteFingerprint ?? null,
 	};
 }
 
 function collectFingerprints(effects) {
 	const fingerprints = { local: {}, machine: {}, remote: {} };
-	for (const effect of effects.filter(isMutation)) {
+	for (const effect of effects) {
+		if (!isMutation(effect) && effect.classification !== "PRESERVE") continue;
 		if (effect.target.startsWith("machine:")) fingerprints.machine[effect.id] = effect.fingerprint ?? null;
 		else if (isRemoteEffect(effect)) fingerprints.remote[effect.id] = effect.remoteFingerprint ?? effect.fingerprint ?? null;
 		else fingerprints.local[effect.id] = effect.fingerprint ?? null;
@@ -581,7 +584,11 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 			for (const effect of actionableByPhase(planResult, state, phase)) {
 				currentEffect = effect;
 				const verified = new Set(state.verifiedIds);
-				if ((effect.dependencies || []).some(id => !verified.has(id))) {
+				if ((effect.dependencies || []).some(id => {
+					if (verified.has(id)) return false;
+					const source = planResult.effects.find(candidate => candidate.id === id);
+					return !source || source.classification !== "PRESERVE";
+				})) {
 					throw new ReconfigureError(`Effect ${effect.id} has an incomplete dependency.`, "ERR_INCOMPLETE_DEPENDENCY");
 				}
 				let outcome;
@@ -594,6 +601,26 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 						throw new Error(`Injected failure at effect ${effect.id}`);
 					}
 					await revalidateRemoteEffect(effect, adapters);
+					if (isRemoteEffect(effect)) {
+						for (const depId of (effect.dependencies || [])) {
+							const source = planResult.effects.find(e => e.id === depId);
+							if (source && source.classification === "PRESERVE") {
+								if (isRemoteEffect(source)) {
+									await revalidateRemoteEffect(source, adapters);
+								} else if (source.target.startsWith("machine:")) {
+									const validate = adapters.revalidateMachineFingerprints || adapters.revalidateFingerprints;
+									if (typeof validate !== "function" || await validate.call(adapters, { [source.id]: source.fingerprint ?? null }, planResult) !== true) {
+										throw new ReconfigureError(`Machine drift detected for source ${source.target}; fresh authorization is required.`, "ERR_MACHINE_DRIFT");
+									}
+								} else {
+									const validate = adapters.revalidateLocalFingerprints || adapters.revalidateFingerprints;
+									if (typeof validate !== "function" || await validate.call(adapters, { [source.id]: source.fingerprint ?? null }, planResult) !== true) {
+										throw new ReconfigureError(`Local drift detected for source ${source.target}; fresh authorization is required.`, "ERR_LOCAL_DRIFT");
+									}
+								}
+							}
+						}
+					}
 					outcome = await applyEffect(effect, { state: structuredClone(state), context });
 					state.appliedIds.push(effect.id);
 					if (outcome?.identity !== undefined) state.returnedIdentities[effect.id] = outcome.identity;

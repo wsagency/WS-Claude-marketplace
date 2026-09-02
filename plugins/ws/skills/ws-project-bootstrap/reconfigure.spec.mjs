@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { acceptPartial, apply, plan, resume } from "./reconfigure.mjs";
+import { acceptPartial, apply, plan, resume, createReconfigurePlan, applyConfirmedPlan } from "./reconfigure.mjs";
 import { createMockReconfigureAdapters, RECONFIGURE_NOW_FIXTURE } from "./reconfigure.test-support.mjs";
 
 const BASE_CONFIG = Object.freeze({
@@ -422,4 +422,79 @@ test("successful transaction verifies every effect and writes durable audit befo
 	assert.equal(adapters.getJournal(), null);
 	assert.equal(applied.ownershipReport.repo, "owned");
 	assert.ok(adapters.getHistory().indexOf("appendAudit") < adapters.getHistory().indexOf("removeJournal"));
+});
+
+test("dependent external effects revalidate their preserved local sources immediately before application", async () => {
+	const choices = phasedChoices();
+	const machine = phasedMachine();
+	let localChecks = 0;
+	const adapters = createMockReconfigureAdapters({
+		revalidateLocalFingerprints: async (expected) => {
+			if (Object.keys(expected).some(id => id.startsWith("preserve:"))) {
+				localChecks++;
+				if (localChecks > 1) return false;
+			}
+			return true;
+		},
+	});
+	const contribution = {
+		effects: [
+			{
+				id: "preserve:local:source",
+				target: "local:source",
+				classification: "PRESERVE",
+				kind: "state",
+				phase: "prepare",
+				fingerprint: "old-local",
+			},
+			{
+				id: "remote:effect:1",
+				target: "remote:tracker:issue:1",
+				classification: "UPDATE",
+				kind: "record",
+				phase: "cutover",
+				dependencies: ["preserve:local:source"],
+			}
+		]
+	};
+	const planned = createReconfigurePlan(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, contribution);
+	const failure = await applyConfirmedPlan(planned, { config: BASE_CONFIG, snapshot: PHASED_SNAPSHOT, machine, choices }, adapters);
+	assert.equal(adapters.getApplied().includes("remote:effect:1"), false);
+	assert.match(failure.report, /Local drift detected for source/);
+});
+
+test("dependent external effects revalidate their preserved remote sources immediately before application", async () => {
+	const choices = phasedChoices();
+	const machine = phasedMachine();
+	const contribution = {
+		effects: [
+			{
+				id: "preserve:remote:source",
+				target: "remote:tracker:issue:2",
+				classification: "PRESERVE",
+				kind: "record",
+				phase: "prepare",
+				remoteFingerprint: "old-remote",
+			},
+			{
+				id: "remote:effect:2",
+				target: "remote:tracker:issue:3",
+				classification: "UPDATE",
+				kind: "record",
+				phase: "cutover",
+				dependencies: ["preserve:remote:source"],
+			}
+		]
+	};
+	const planned = createReconfigurePlan(BASE_CONFIG, PHASED_SNAPSHOT, machine, choices, contribution);
+	const adapters = createMockReconfigureAdapters({
+		refetchRemoteFingerprint: async (effect) => {
+			if (effect.id === "preserve:remote:source") return "stale";
+			return effect.remoteFingerprint ?? effect.fingerprint ?? null;
+		}
+	});
+	const failure = await applyConfirmedPlan(planned, { config: BASE_CONFIG, snapshot: PHASED_SNAPSHOT, machine, choices }, adapters);
+	assert.equal(failure.success, false);
+	assert.equal(adapters.getApplied().includes("remote:effect:2"), false);
+	assert.match(failure.report, /Remote drift detected/);
 });

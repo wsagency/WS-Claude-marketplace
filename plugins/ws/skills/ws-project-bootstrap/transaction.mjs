@@ -1,12 +1,48 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseCanonicalConfigYaml, validateCanonicalConfig } from "./config.mjs";
 import { checkTrackerReadiness, getAdapterContent, parseOriginIdentity, planTrackerEffects } from "./trackers.mjs";
 import { DOCUMENTATION_CONTEXT_FRAGMENTS } from "../ws-docs-bootstrap/transaction.mjs";
+
+async function nearestExistingRealPath(target) {
+	let candidate = target;
+	while (true) {
+		try {
+			return await realpath(candidate);
+		} catch (error) {
+			if (error?.code !== "ENOENT") throw error;
+			const parent = path.dirname(candidate);
+			if (parent === candidate) throw error;
+			candidate = parent;
+		}
+	}
+}
+
+async function validateContainment(resolvedRoot, target) {
+	const absolute = path.resolve(resolvedRoot, target);
+	if (absolute !== resolvedRoot && !absolute.startsWith(`${resolvedRoot}${path.sep}`)) {
+		throw new Error(`Target escapes the repository: ${target}`);
+	}
+	let candidate = absolute;
+	while (candidate !== resolvedRoot) {
+		try {
+			if ((await lstat(candidate)).isSymbolicLink()) {
+				throw new Error(`Target uses symlinked ancestry: ${target}`);
+			}
+		} catch (error) {
+			if (error?.code !== "ENOENT") throw error;
+		}
+		candidate = path.dirname(candidate);
+	}
+	const nearest = await nearestExistingRealPath(absolute);
+	if (nearest !== resolvedRoot && !nearest.startsWith(`${resolvedRoot}${path.sep}`)) {
+		throw new Error(`Target ancestry escapes the repository: ${target}`);
+	}
+}
 
 const SKILL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MISSING_FINGERPRINT = null;
@@ -595,7 +631,7 @@ export function deriveReadiness(discovery, choices = {}) {
 	const validation = validateCanonicalConfig(targetConfig);
 	const config = validation.status === "valid" ? validation.config : null;
 	const configValid = Boolean(config) && discovery.entries[".wsagency/config.yaml"]?.content === targetConfig;
-	const engineeringSelected = Boolean(config?.tracker && config?.triage && config?.domain && config?.commit && config?.runtime);
+	const engineeringSelected = Boolean(config?.tracker && config?.triage && config?.domain && config?.commit && config?.changelog && config?.ui && config?.runtime);
 	const tracker = config?.tracker ? checkTrackerReadiness(config, discovery, choices.jiraValidation, choices.capabilities) : { trackerReady: false, blockers: ["Tracker policy is not configured."] };
 	const runtimeReady = Boolean(config?.runtime) && runtimeCapabilitiesAligned(config, discovery.machine);
 	return {
@@ -657,13 +693,19 @@ function failedVerificationReport(plan, readiness) {
 }
 
 export async function applyPlan(root, plan, injectedFailure) {
+	const resolvedRoot = await realpath(path.resolve(root));
 	const operations = [];
 	const completed = [];
 	const pending = [];
 	for (const effect of plan.effects) {
 		if (!isWriteEffect(effect)) continue;
-		const current = effect.kind === "state" ? { kind: "state" } : await readSnapshotEntry(root, effect.target, effect.kind);
-		if (current.fingerprint !== effect.fingerprint && effect.kind !== "state") throw new Error(`Authorization is stale: ${effect.target} changed before apply.`);
+		if (effect.kind !== "state") {
+			await validateContainment(resolvedRoot, effect.target);
+			const current = await readSnapshotEntry(resolvedRoot, effect.target, effect.kind);
+			if (current.fingerprint !== effect.fingerprint) {
+				throw new Error(`Authorization is stale: ${effect.target} changed before apply.`);
+			}
+		}
 		pending.push(effect.target);
 	}
 	for (const effect of plan.effects) {
@@ -672,7 +714,10 @@ export async function applyPlan(root, plan, injectedFailure) {
 			if (injectedFailure?.phase === "write" && injectedFailure?.target === effect.target) {
 				throw new Error("Injected write failure");
 			}
-			const absolute = path.join(root, effect.target);
+			if (effect.kind !== "state") {
+				await validateContainment(resolvedRoot, effect.target);
+			}
+			const absolute = path.resolve(resolvedRoot, effect.target);
 			operations.push({ action: "write", target: effect.target });
 			if (effect.kind === "directory") {
 				await mkdir(absolute, { recursive: true });
@@ -681,16 +726,16 @@ export async function applyPlan(root, plan, injectedFailure) {
 				await writeFile(absolute, effect.after, "utf8");
 			} else if (effect.kind === "state") {
 				if (effect.target === "git:repository") {
-					await runGit(root, ["init"]);
+					await runGit(resolvedRoot, ["init"]);
 				} else if (effect.target === "git:origin") {
-					await runGit(root, ["remote", "add", "origin", effect.after]);
+					await runGit(resolvedRoot, ["remote", "add", "origin", effect.after]);
 				}
 			}
 
 			if (injectedFailure?.phase === "verify" && injectedFailure?.target === effect.target) {
 				throw new Error("Injected verify failure");
 			}
-			const verified = effect.kind === "state" ? { kind: "state" } : await readSnapshotEntry(root, effect.target, effect.kind);
+			const verified = effect.kind === "state" ? { kind: "state" } : await readSnapshotEntry(resolvedRoot, effect.target, effect.kind);
 			if (effect.kind === "directory" ? verified.kind !== "directory" : (effect.kind === "file" && verified.content !== effect.after)) {
 				throw new Error(`Verification failed after writing ${effect.target}.`);
 			}

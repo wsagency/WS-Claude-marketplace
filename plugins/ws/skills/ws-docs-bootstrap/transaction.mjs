@@ -1,12 +1,48 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
 	DEFAULT_CHANGELOG_POLICY,
 	DEFAULT_DOCUMENTATION_POLICY,
 } from "./policy.mjs";
+
+async function nearestExistingRealPath(target) {
+	let candidate = target;
+	while (true) {
+		try {
+			return await realpath(candidate);
+		} catch (error) {
+			if (error?.code !== "ENOENT") throw error;
+			const parent = path.dirname(candidate);
+			if (parent === candidate) throw error;
+			candidate = parent;
+		}
+	}
+}
+
+async function validateContainment(resolvedRoot, target) {
+	const absolute = path.resolve(resolvedRoot, target);
+	if (absolute !== resolvedRoot && !absolute.startsWith(`${resolvedRoot}${path.sep}`)) {
+		throw new Error(`Target escapes the repository: ${target}`);
+	}
+	let candidate = absolute;
+	while (candidate !== resolvedRoot) {
+		try {
+			if ((await lstat(candidate)).isSymbolicLink()) {
+				throw new Error(`Target uses symlinked ancestry: ${target}`);
+			}
+		} catch (error) {
+			if (error?.code !== "ENOENT") throw error;
+		}
+		candidate = path.dirname(candidate);
+	}
+	const nearest = await nearestExistingRealPath(absolute);
+	if (nearest !== resolvedRoot && !nearest.startsWith(`${resolvedRoot}${path.sep}`)) {
+		throw new Error(`Target ancestry escapes the repository: ${target}`);
+	}
+}
 
 const SKILL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MISSING_FINGERPRINT = null;
@@ -241,12 +277,17 @@ export async function applyDocumentation(root, plan, authorization, failureInjec
 		error.operations = operations;
 		throw error;
 	}
+	for (const effect of writes) {
+		await validateContainment(resolvedRoot, effect.target);
+		const current = await readSnapshotEntry(resolvedRoot, effect.target, effect.kind);
+		if (current.fingerprint !== effect.fingerprint) {
+			throw new Error(`Documentation plan drift detected for ${effect.target}.`);
+		}
+	}
+
 	for (let index = 0; index < writes.length; index += 1) {
 		const effect = writes[index];
 		const absolute = path.resolve(resolvedRoot, effect.target);
-		if (absolute !== resolvedRoot && !absolute.startsWith(`${resolvedRoot}${path.sep}`)) {
-			throw new Error(`Documentation target escapes the repository: ${effect.target}.`);
-		}
 		if (failureInjection === effect.target) {
 			const error = new Error(`Injected failure writing ${effect.target}.`);
 			error.completed = completed;
@@ -256,8 +297,7 @@ export async function applyDocumentation(root, plan, authorization, failureInjec
 		}
 
 		try {
-			const current = await readSnapshotEntry(resolvedRoot, effect.target, effect.kind);
-			if (current.fingerprint !== effect.fingerprint) throw new Error(`Documentation plan drift detected for ${effect.target}.`);
+			await validateContainment(resolvedRoot, effect.target);
 			operations.push({ action: "write", target: effect.target });
 			if (effect.kind === "directory") await mkdir(absolute, { recursive: true });
 			else {

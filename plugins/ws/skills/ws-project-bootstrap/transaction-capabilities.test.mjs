@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseCanonicalConfigYaml, serializeCanonicalConfig } from "./config.mjs";
-import { buildPlan, CANONICAL_CONFIG_YAML } from "./transaction.mjs";
+import { buildPlan, CANONICAL_CONFIG_YAML, deriveReadiness } from "./transaction.mjs";
 
 function discovery(origin, machine = {}) {
 	const fileTargets = [".wsagency/config.yaml", "dev-docs/agents/issue-tracker.md", "dev-docs/agents/triage-labels.md", "dev-docs/agents/domain.md", "CONTEXT.md", "AGENTS.md", "CLAUDE.md"];
@@ -56,4 +56,20 @@ test("docs selection remains an explicitly delegated worker effect", () => {
 		config.docs = { user_track: "docs", dev_track: "dev-docs", default_audience: "ask", default_scope: "repo", adr_for_arch_changes: true };
 	}));
 	assert.equal(plan.effects.find(effect => effect.target === "documentation:bootstrap").classification, "PRESERVE");
+});
+
+test("engineering readiness requires changelog and UI policy sections", () => {
+	const config = parseCanonicalConfigYaml(CANONICAL_CONFIG_YAML);
+	delete config.changelog;
+	delete config.ui;
+	const targetConfig = serializeCanonicalConfig(config);
+	const snapshot = discovery(null);
+	snapshot.entries[".wsagency/config.yaml"] = {
+		kind: "file",
+		content: targetConfig,
+		fingerprint: "aligned",
+	};
+	const readiness = deriveReadiness(snapshot, { targetConfig });
+	assert.equal(readiness.configValid, true);
+	assert.equal(readiness.engineeringReady, false);
 });

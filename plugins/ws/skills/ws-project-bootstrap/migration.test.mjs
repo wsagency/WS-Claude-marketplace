@@ -311,3 +311,70 @@ test("Jira cleanup fails closed for non-file and symlinked Markdown ticket entri
 		});
 	}
 });
+
+test("Claude settings with unrelated authored hooks remain byte-identical", async () => {
+	const settings = JSON.stringify({
+		hooks: {
+			PreToolUse: [
+				{ command: "ws dangerous-git guard" },
+				{ command: "./scripts/team-policy.sh", timeout: 30 },
+			],
+		},
+	}, null, 2);
+	await withRepository({ ".claude/settings.json": settings }, async root => {
+		const plan = planLegacyMigration(await discoverLegacySetup(root, machine));
+		const effect = plan.effects.find(item => item.target === ".claude/settings.json");
+		assert.equal(effect.classification, "PRESERVE");
+		assert.equal(effect.after, settings);
+		assert.equal(await readFile(path.join(root, ".claude/settings.json"), "utf8"), settings);
+	});
+});
+
+test("empty scratch and exact omp rule are cleanup candidates while custom prose is extracted", async () => {
+	const template = await readFile(new URL("../../rules/omp-edge-discipline.md", import.meta.url), "utf8");
+	await withRepository({ ".omp/rules/omp-edge-discipline.md": template }, async root => {
+		await mkdir(path.join(root, ".scratch"));
+		const plan = planLegacyMigration(await discoverLegacySetup(root, machine));
+		assert.equal(plan.effects.find(item => item.target === ".scratch").classification, "UPDATE");
+		assert.equal(plan.effects.find(item => item.target === ".scratch").after, null);
+		assert.equal(plan.effects.find(item => item.target === ".omp/rules/omp-edge-discipline.md").classification, "UPDATE");
+		assert.equal(plan.effects.find(item => item.target === ".omp/rules/omp-edge-discipline.md").after, null);
+	});
+
+	const authored = "\n# Project-specific policy\n\nKeep this exact prose.\n";
+	await withRepository({
+		".claude/ws-project.yaml": "jira:\n  project: WCM\n  default_issue_type: Task\n",
+		".omp/rules/omp-edge-discipline.md": `${template}${authored}`,
+	}, async root => {
+		const plan = planLegacyMigration(await discoverLegacySetup(root, machine));
+		const effect = plan.effects.find(item => item.target === ".omp/rules/omp-edge-discipline.md");
+		assert.equal(effect.classification, "UPDATE");
+		assert.equal(effect.after, authored);
+		await materializeMigrationEvidence(root, plan);
+		assert.deepEqual(await applyLegacyCleanup(root, plan, plan.hash, machine), [
+			{ action: "delete", target: ".claude/ws-project.yaml" },
+			{ action: "update", target: ".omp/rules/omp-edge-discipline.md" },
+		]);
+		assert.equal(await readFile(path.join(root, ".omp/rules/omp-edge-discipline.md"), "utf8"), authored);
+	});
+});
+
+test("applyLegacyCleanup exposes preflight failure progress", async () => {
+	await withRepository({
+		".claude/ws-project.yaml": "jira:\n  project: WCM\n  default_issue_type: Task\n",
+	}, async root => {
+		const plan = planLegacyMigration(await discoverLegacySetup(root, machine));
+		await materializeMigrationEvidence(root, plan);
+		await rm(path.join(root, ".claude/ws-project.yaml"));
+		await assert.rejects(
+			() => applyLegacyCleanup(root, plan, plan.hash, machine),
+			error => {
+				assert.match(error.message, /drift detected/i);
+				assert.deepEqual(error.cleanupProgress.completed, []);
+				assert.equal(error.cleanupProgress.failed.target, ".claude/ws-project.yaml");
+				assert.deepEqual(error.cleanupProgress.pending, [".claude/ws-project.yaml"]);
+				return true;
+			},
+		);
+	});
+});

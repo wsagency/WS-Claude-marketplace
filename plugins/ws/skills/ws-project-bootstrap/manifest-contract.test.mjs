@@ -57,6 +57,10 @@ function createBackfillHarness({
 			}
 			durable = structuredClone(state);
 		},
+		async readLocalTickets() {
+			if (!localTickets) throw new Error("Unreadable source");
+			return structuredClone(localTickets);
+		},
 		async readSyncState() {
 			return structuredClone(durable);
 		},
@@ -485,6 +489,43 @@ test("Local Jira backfill is authorized once and resumes a returned-key crash wi
 	}
 });
 
+test("Local Jira backfill fails on execution if local tickets drift after authorization with zero remote writes", async () => {
+	const { parent, root } = await createStandaloneRepository("ws-manifest-backfill-drift-");
+	const sourceTickets = {
+		"local-1": {
+			title: "Original Title",
+			description: "Original Description",
+			status: "open",
+		},
+	};
+	const backfill = createBackfillHarness({
+		localTickets: sourceTickets,
+	});
+	try {
+		const choices = materializedSetupChoices(config => {
+			config.jira = { project: "WCM", default_issue_type: "Task", sync: "all_local_tickets" };
+		});
+		const request = {
+			mode: "setup",
+			root,
+			snapshot: await discoverStandaloneRepository(root, MACHINE),
+			choices,
+			adapters: { jiraBackfill: backfill.adapter() },
+		};
+		const planned = await runManifestTransaction(request);
+		
+		// Drift local tickets before execution
+		sourceTickets["local-1"].title = "Drifted Title";
+		
+		const failed = await runManifestTransaction({ ...request, authorization: planned.manifest.hash });
+		assert.equal(failed.applied, false);
+		assert.match(failed.failure.error, /Local tickets changed after manifest authorization/);
+		assert.equal(backfill.jiraAdapter.getCallLog().filter(call => call.method === "createTicket").length, 0);
+	} finally {
+		await rm(parent, { recursive: true, force: true });
+	}
+});
+
 test("documentation failure preserves completed core work and a fresh manifest resumes it", async () => {
 	const { parent, root } = await createStandaloneRepository("ws-manifest-docs-failure-");
 	try {
@@ -536,6 +577,42 @@ test("documentation failure preserves completed core work and a fresh manifest r
 			await readFile(path.join(root, "CLAUDE.md"), "utf8"),
 			"<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n",
 		);
+	} finally {
+		await rm(parent, { recursive: true, force: true });
+	}
+});
+
+test("migration cleanup failure preserves earlier applied operations and resumes properly", async () => {
+	const { parent, root } = await temporaryRepository("reconfigure-ready");
+	try {
+		const request = await migrationRequest(root);
+		const planned = await runManifestTransaction(request);
+		
+		const interrupted = await runManifestTransaction({
+			...request,
+			authorization: planned.manifest.hash,
+			injection: { cleanupFailure: "migration:cleanup" }
+		});
+		
+		assert.equal(interrupted.applied, false);
+		assert.equal(interrupted.readiness.runtimeReady, false);
+		assert.match(interrupted.report, /No rollback was performed/);
+		assert.equal(interrupted.failure.target, "migration:cleanup");
+		// Core/Backfill/Docs operations should still be included
+		assert.ok(interrupted.operations.length > 0);
+
+		const resumedRequest = {
+			...request,
+			snapshot: {
+				legacy: await discoverLegacySetup(root, REPOSITORY_MACHINE),
+				core: await discoverStandaloneRepository(root, MACHINE),
+			},
+		};
+		const resumedPlan = await runManifestTransaction(resumedRequest);
+		const resumed = await runManifestTransaction({ ...resumedRequest, authorization: resumedPlan.manifest.hash });
+		
+		assert.equal(resumed.applied, true);
+		assert.ok(resumed.readiness.runtimeReady);
 	} finally {
 		await rm(parent, { recursive: true, force: true });
 	}

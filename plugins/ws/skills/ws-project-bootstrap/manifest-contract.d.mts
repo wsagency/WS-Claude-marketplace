@@ -54,11 +54,11 @@ export interface ManifestBackfillAdapters {
 	localTickets: Record<string, LocalTicket>;
 	syncState: SyncState;
 	jiraAdapter: BackfillJiraAdapter;
-	persistence: BackfillPersistence;
+	persistence: BackfillPersistence & { readLocalTickets(): Promise<Record<string, LocalTicket>> };
 }
 
 export type ManifestOperation = SetupOperation | HubOperation | ReconfigureApplyResult["operationReport"][number] | {
-	action: "verify" | "pending";
+	action: "verify" | "pending" | "delete" | "update";
 	target: string;
 	remoteId?: string | null;
 };
@@ -91,6 +91,7 @@ export interface ManifestResult {
 
 export interface ManifestInjection {
 	docsFailure?: string;
+	cleanupFailure?: string;
 	failure?: { phase: "write" | "verify"; target: string } | {
 		targetRoot: string;
 		phase: "write" | "verify" | "core_write" | "core_verify" | "docs_write";

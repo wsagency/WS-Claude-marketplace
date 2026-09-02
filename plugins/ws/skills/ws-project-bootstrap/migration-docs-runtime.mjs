@@ -71,8 +71,32 @@ export function discoverDocsRuntimeState(snapshots, machine = {}) {
 	const unknownDocsFields = Object.keys(flattenPaths(docsParsed.value)).filter(key => !KNOWN_DOCS_LEAVES.has(key));
 	const context = contextShape(entries["AGENTS.md"]?.content, entries["CLAUDE.md"]?.content);
 	const settingsText = entries[REPO_SETTINGS]?.content ?? "";
-	const runtimeOwned = typeof settingsText === "string" && /ws[^\n]*(session|guard|dashboard)|dangerous[-_ ]git/i.test(settingsText);
-	const runtimeCustomized = runtimeOwned && !settingsParsed.malformed && Object.keys(settingsParsed.value ?? {}).some(key => key !== "hooks");
+	let runtimeOwned = false;
+	let runtimeCustomized = true;
+	if (typeof settingsText === "string" && !settingsParsed.malformed && settingsText.trim() !== "") {
+		const val = settingsParsed.value || {};
+		const keys = Object.keys(val);
+		const hasOnlyHooks = keys.length === 1 && keys[0] === "hooks";
+		const hooks = val.hooks || {};
+		const hookKeys = Object.keys(hooks);
+		const hasOnlyPreToolUse = hookKeys.length === 1 && hookKeys[0] === "PreToolUse";
+		const ptu = hooks.PreToolUse || [];
+		const isExactHook = Array.isArray(ptu) && ptu.length === 1 && typeof ptu[0]?.command === "string" && ptu[0].command === "ws dangerous-git guard" && Object.keys(ptu[0]).length === 1;
+
+		if (hasOnlyHooks && hasOnlyPreToolUse && isExactHook) {
+			runtimeOwned = true;
+			runtimeCustomized = false;
+		} else if (/ws[^\n]*(session|guard|dashboard)|dangerous[-_ ]git/i.test(settingsText)) {
+			runtimeOwned = true;
+			runtimeCustomized = true;
+		} else {
+			runtimeOwned = false;
+			runtimeCustomized = false;
+		}
+	} else if (typeof settingsText === "string" && settingsParsed.malformed && /ws[^\n]*(session|guard|dashboard)|dangerous[-_ ]git/i.test(settingsText)) {
+		runtimeOwned = true;
+		runtimeCustomized = true;
+	}
 	return {
 		entries,
 		docs: docsParsed.value,

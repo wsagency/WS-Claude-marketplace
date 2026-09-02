@@ -63,4 +63,5 @@ export function applyLegacyCleanup(
 	plan: LegacyMigrationPlan,
 	authorization: string,
 	runtimeEvidence?: LegacyCleanupRuntimeEvidence,
-): Promise<Array<{ action: "delete"; target: string }>>;
+	injectedFailure?: string,
+): Promise<Array<{ action: "delete" | "update"; target: string }>>;

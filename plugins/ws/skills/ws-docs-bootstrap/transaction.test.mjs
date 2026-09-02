@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -111,6 +111,7 @@ test("apply rejects wrong authorization and drift without overwriting authored c
 		await writeFile(path.join(root, "CHANGELOG.md"), "authored during confirmation\n", "utf8");
 		await assert.rejects(() => applyDocumentation(root, plan, plan.hash), /drift/i);
 		assert.equal(await readFile(path.join(root, "CHANGELOG.md"), "utf8"), "authored during confirmation\n");
+		await assert.rejects(() => access(path.join(root, "docs")), /ENOENT/);
 	});
 });
 
@@ -152,5 +153,19 @@ test("failure before writes reports the entire pending manifest", async () => {
 		assert.deepEqual(failure.completed, []);
 		assert.equal(failure.pending.length, plan.effects.filter(effect => effect.classification === "CREATE").length);
 		assert.deepEqual(failure.operations, []);
+	});
+});
+
+test("apply rejects symlinked target ancestry before writing outside the repository", async () => {
+	await withTemporaryRoot(async root => {
+		const outside = await realpath(await mkdtemp(path.join(tmpdir(), "ws-docs-outside-")));
+		try {
+			await symlink(outside, path.join(root, "docs"));
+			const plan = planDocumentation(await discoverDocumentation(root, "standalone"));
+			await assert.rejects(() => applyDocumentation(root, plan, plan.hash), /symlink/i);
+			await assert.rejects(() => access(path.join(outside, "index.md")), /ENOENT/);
+		} finally {
+			await rm(outside, { recursive: true, force: true });
+		}
 	});
 });

@@ -1,4 +1,4 @@
-import { lstat, readFile, readdir, realpath, rm } from "node:fs/promises";
+import { lstat, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
 import { isDeepStrictEqual } from "node:util";
 import path from "node:path";
 import { parseCanonicalConfigYaml, serializeCanonicalConfig, validateCanonicalConfig, validateCanonicalConfigObject } from "./config.mjs";
@@ -10,7 +10,7 @@ import { getAdapterContent } from "./trackers.mjs";
 import { CANONICAL_CONFIG_YAML } from "./transaction.mjs";
 import { DOCUMENTATION_CONTEXT_FRAGMENTS } from "../ws-docs-bootstrap/transaction.mjs";
 
-const LOCAL_LEGACY_SOURCES = [".claude/ws-project.yaml", ".claude/docs-config.yaml", ".claude/settings.json"];
+const LOCAL_LEGACY_SOURCES = [".claude/ws-project.yaml", ".claude/docs-config.yaml", ".claude/settings.json", ".scratch", ".omp/rules/omp-edge-discipline.md"];
 const DISCOVERY_TARGETS = [
 	".wsagency/config.yaml",
 	...LOCAL_LEGACY_SOURCES,
@@ -62,7 +62,14 @@ async function snapshotEntry(root, target) {
 	try {
 		const stat = await lstat(absolute);
 		if (stat.isSymbolicLink()) return { kind: "blocked", content: null, fingerprint: null };
-		if (stat.isDirectory()) return { kind: "directory", content: null, fingerprint: sha256("directory") };
+		if (stat.isDirectory()) {
+			let isEmpty = false;
+			try {
+				const children = await readdir(absolute);
+				isEmpty = children.length === 0 || (children.length === 1 && children[0] === ".gitkeep");
+			} catch {}
+			return { kind: "directory", content: null, fingerprint: sha256(`directory:${isEmpty}`), empty: isEmpty };
+		}
 		if (!stat.isFile()) return { kind: "blocked", content: null, fingerprint: null };
 		const content = await readFile(absolute, "utf8");
 		return { kind: "file", content, fingerprint: sha256(content) };
@@ -120,7 +127,11 @@ export async function discoverLegacySetup(root, machine = {}) {
 	} catch {}
 	const canonicalEntry = entries[".wsagency/config.yaml"];
 	const canonicalValidation = canonicalEntry.kind === "file" ? validateCanonicalConfig(canonicalEntry.content) : null;
-	return { root: resolvedRoot, entries, machine, activeLocalWork, canonicalValidation };
+	let ompEdgeTemplate = "";
+	try {
+		ompEdgeTemplate = await readFile(new URL("../../rules/omp-edge-discipline.md", import.meta.url), "utf8");
+	} catch {}
+	return { root: resolvedRoot, entries, machine, activeLocalWork, canonicalValidation, ompEdgeTemplate };
 }
 
 export function planLegacyMigration(discovery, options = {}) {
@@ -208,8 +219,32 @@ export function planLegacyMigration(discovery, options = {}) {
 	for (const [index, target] of LOCAL_LEGACY_SOURCES.entries()) {
 		const entry = discovery.entries[target];
 		if (!entry || entry.kind === "missing") continue;
-		const known = target !== ".claude/settings.json" || (docsDiscovery.runtime.repositoryOwned && !docsDiscovery.runtime.customized);
-		effects.push(migrationEffect(900 + index, target, "file", blockers.length === 0 && known ? "UPDATE" : "PRESERVE", blockers.length === 0 && known ? "Final cleanup: delete the verified repository-local legacy source after all readiness gates pass." : "Preserve unknown, customized, or blocked legacy source.", entry, blockers.length === 0 && known ? null : entry.content));
+		const order = 900 + index;
+		let classification = "PRESERVE";
+		let after = entry.content;
+		let reason = "Preserve unknown, customized, or blocked legacy source.";
+		if (blockers.length === 0 && target === ".scratch" && entry.kind === "directory" && entry.empty === true) {
+			classification = "UPDATE";
+			after = null;
+			reason = "Remove the verified empty or generated scratch remnant after all readiness gates pass.";
+		} else if (blockers.length === 0 && target === ".omp/rules/omp-edge-discipline.md" && entry.kind === "file") {
+			if (discovery.ompEdgeTemplate && entry.content === discovery.ompEdgeTemplate) {
+				classification = "UPDATE";
+				after = null;
+				reason = "Remove the exact generated omp rule now supplied by the native package.";
+			} else if (discovery.ompEdgeTemplate && entry.content.split(discovery.ompEdgeTemplate).length === 2) {
+				classification = "UPDATE";
+				after = entry.content.replace(discovery.ompEdgeTemplate, "");
+				reason = "Remove only the exact generated graph contract and byte-preserve project-specific rule prose.";
+			}
+		} else if (blockers.length === 0 && target !== ".claude/settings.json" && entry.kind === "file") {
+			classification = "UPDATE";
+			after = null;
+			reason = "Delete the verified repository-local legacy source after all readiness gates pass.";
+		} else if (target === ".claude/settings.json") {
+			reason = "Preserve repository- or user-owned Claude settings; setup only inspects runtime delivery.";
+		}
+		effects.push(migrationEffect(order, target, target === ".scratch" ? "directory" : "file", classification, reason, entry, after));
 	}
 	effects.sort((left, right) => left.order - right.order || left.target.localeCompare(right.target));
 	const requiresConfirmation = blockers.length === 0 && effects.some(item => ["CREATE", "UPDATE"].includes(item.classification));
@@ -352,57 +387,97 @@ async function verifyJiraRecovery(root, config) {
 		const evidence = ticketRecoveryMetadata(ticket.content);
 		if (evidence.error) throw new Error(`Legacy cleanup is not eligible: ${ticket.target} has ${evidence.error}.`);
 		if (!evidence.recoverable) throw new Error(`Legacy cleanup is not eligible: Local ticket ${ticket.target} is unmapped and has no durable Jira recovery evidence.`);
-		if (evidence.correlation) {
-			const duplicate = correlations.get(evidence.correlation);
-			if (duplicate) throw new Error(`Legacy cleanup is not eligible: Local tickets ${duplicate} and ${ticket.target} share Jira correlation evidence.`);
-			correlations.set(evidence.correlation, ticket.target);
-		}
-		const jiraIdentity = evidence.jiraKey ?? evidence.returnedId;
-		if (jiraIdentity) {
-			const duplicate = jiraIdentities.get(jiraIdentity);
-			if (duplicate) throw new Error(`Legacy cleanup is not eligible: Local tickets ${duplicate} and ${ticket.target} share Jira identity evidence.`);
-			jiraIdentities.set(jiraIdentity, ticket.target);
+			if (evidence.correlation) {
+				const duplicate = correlations.get(evidence.correlation);
+				if (duplicate) throw new Error(`Legacy cleanup is not eligible: Local tickets ${duplicate} and ${ticket.target} share Jira correlation evidence.`);
+				correlations.set(evidence.correlation, ticket.target);
+			}
+			const jiraIdentity = evidence.jiraKey ?? evidence.returnedId;
+			if (jiraIdentity) {
+				const duplicate = jiraIdentities.get(jiraIdentity);
+				if (duplicate) throw new Error(`Legacy cleanup is not eligible: Local tickets ${duplicate} and ${ticket.target} share Jira identity evidence.`);
+				jiraIdentities.set(jiraIdentity, ticket.target);
+			}
 		}
 	}
-}
 
 async function verifyAuthorizedEffects(root, plan) {
 	for (const item of plan.effects) {
-		if (item.kind !== "file") continue;
+		if (item.kind !== "file" && item.kind !== "directory") continue;
 		const current = await snapshotEntry(root, item.target);
-		if (item.order >= 900 && item.classification === "UPDATE" && item.after == null) {
-			if (current.kind !== "file" || current.fingerprint !== item.fingerprint) throw new Error(`Legacy cleanup drift detected for ${item.target}.`);
+		if (item.order >= 900 && item.classification === "UPDATE") {
+			if (current.kind !== item.kind || current.fingerprint !== item.fingerprint) {
+				throw new Error(`Legacy cleanup drift detected for ${item.target}.`);
+			}
 			continue;
 		}
 		if (["CREATE", "UPDATE", "NO-OP"].includes(item.classification) && item.after != null && item.target !== ".wsagency/config.yaml") {
-			if (current.kind !== "file" || current.content !== item.after) throw new Error(`Legacy cleanup drift detected for ${item.target}.`);
+			if (current.kind !== "file" || current.content !== item.after) {
+				throw new Error(`Legacy cleanup drift detected for ${item.target}.`);
+			}
 		}
 	}
 }
 
-export async function applyLegacyCleanup(root, plan, authorization, runtimeEvidence = {}) {
+export async function applyLegacyCleanup(root, plan, authorization, runtimeEvidence = {}, injectedFailure) {
 	const resolvedRoot = await realpath(path.resolve(root));
 	if (authorization !== plan.hash || plan.hash !== sha256(JSON.stringify(planHashPayload(plan)))) throw new Error("Legacy cleanup authorization is stale or invalid.");
 	if (plan.blockers.length > 0 || plan.conflicts.length > 0 || !plan.config) throw new Error("Legacy cleanup is not eligible: the authorized migration plan is blocked.");
-	await verifyCanonicalReadBack(resolvedRoot, plan);
-	await verifyEngineeringEvidence(resolvedRoot, plan.config);
-	await verifyContextEvidence(resolvedRoot, plan.config);
-	if (!runtimeEvidenceAligned(plan.config, runtimeEvidence)) throw new Error("Legacy cleanup is not eligible: active runtime delivery is not verified.");
-	await verifyDocsEvidence(resolvedRoot, plan.config);
-	await verifyAuthorizedEffects(resolvedRoot, plan);
-	await verifyJiraRecovery(resolvedRoot, plan.config);
 
-	const cleanup = plan.effects.filter(item => item.order >= 900 && item.classification === "UPDATE" && item.after == null);
+	const cleanup = plan.effects.filter(item => item.order >= 900 && item.classification === "UPDATE");
 	const operations = [];
-	for (const item of cleanup) {
-		const current = await snapshotEntry(resolvedRoot, item.target);
-		if (current.kind !== "file" || current.fingerprint !== item.fingerprint) throw new Error(`Legacy cleanup drift detected for ${item.target}.`);
-		const target = await repositoryLocalTarget(resolvedRoot, item.target);
-		if (!target) throw new Error(`Legacy cleanup refused non-local target ${item.target}.`);
-		await rm(target);
-		const verified = await snapshotEntry(resolvedRoot, item.target);
-		if (verified.kind !== "missing") throw new Error(`Legacy cleanup verification failed for ${item.target}.`);
-		operations.push({ action: "delete", target: item.target });
+	const pending = cleanup.map(item => item.target);
+	const completed = [];
+	let currentTarget = "migration:cleanup:preflight";
+	try {
+		await verifyCanonicalReadBack(resolvedRoot, plan);
+		await verifyEngineeringEvidence(resolvedRoot, plan.config);
+		await verifyContextEvidence(resolvedRoot, plan.config);
+		if (!runtimeEvidenceAligned(plan.config, runtimeEvidence)) throw new Error("Legacy cleanup is not eligible: active runtime delivery is not verified.");
+		await verifyDocsEvidence(resolvedRoot, plan.config);
+		await verifyAuthorizedEffects(resolvedRoot, plan);
+		await verifyJiraRecovery(resolvedRoot, plan.config);
+		if (injectedFailure === "migration:cleanup") {
+			currentTarget = injectedFailure;
+			throw new Error("Injected cleanup failure");
+		}
+
+		for (const item of cleanup) {
+			currentTarget = item.target;
+			if (injectedFailure === item.target) throw new Error(`Injected cleanup failure at ${item.target}`);
+			const current = await snapshotEntry(resolvedRoot, item.target);
+			if (current.kind !== item.kind || current.fingerprint !== item.fingerprint) {
+				throw new Error(`Legacy cleanup drift detected for ${item.target}.`);
+			}
+			const target = await repositoryLocalTarget(resolvedRoot, item.target);
+			if (!target) throw new Error(`Legacy cleanup refused non-local target ${item.target}.`);
+			if (item.after == null) {
+				await rm(target, { recursive: item.kind === "directory", force: true });
+				const verified = await snapshotEntry(resolvedRoot, item.target);
+				if (verified.kind !== "missing") throw new Error(`Legacy cleanup verification failed for ${item.target}.`);
+				operations.push({ action: "delete", target: item.target });
+			} else {
+				if (item.kind !== "file") throw new Error(`Legacy cleanup cannot rewrite non-file target ${item.target}.`);
+				await writeFile(target, item.after, "utf8");
+				const verified = await snapshotEntry(resolvedRoot, item.target);
+				if (verified.kind !== "file" || verified.content !== item.after) {
+					throw new Error(`Legacy cleanup verification failed for ${item.target}.`);
+				}
+				operations.push({ action: "update", target: item.target });
+			}
+			pending.shift();
+			completed.push(operations.at(-1));
+		}
+		return operations;
+	} catch (cause) {
+		if (cause?.cleanupProgress) throw cause;
+		const failedTarget = cleanup.find(item => cause?.message?.includes(item.target))?.target ?? currentTarget;
+		const error = new Error(cause?.message ?? String(cause), { cause });
+		error.cleanupProgress = {
+			completed: [...completed],
+			failed: { target: failedTarget, reason: error.message },
+			pending: [...pending],
+		};
+		throw error;
 	}
-	return operations;
 }
