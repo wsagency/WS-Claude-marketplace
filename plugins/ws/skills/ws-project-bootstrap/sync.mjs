@@ -249,12 +249,10 @@ export async function runTrackerOperation({
 	return result;
 }
 
-function hashTicketFields(fields) {
+export function hashTicketFields(fields) {
 	const hashes = {};
 	for (const [key, value] of Object.entries(fields)) {
-		if (key !== 'id' && key !== 'localMetadata') {
-			hashes[key] = hashField(value);
-		}
+		hashes[key] = hashField(value);
 	}
 	return hashes;
 }

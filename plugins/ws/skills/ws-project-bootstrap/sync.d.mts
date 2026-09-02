@@ -76,6 +76,7 @@ export interface RunTrackerOperationResult {
 
 export function runTrackerOperation(args: RunTrackerOperationArgs): Promise<RunTrackerOperationResult>;
 export function hashField(value: unknown): string;
+export function hashTicketFields(fields: Partial<TicketFields>): Record<string, string>;
 export class FakeJiraAdapterTemplate implements JiraAdapter {
 	constructor(initialData?: Record<string, JiraTicket>);
 	getTicket(id: string): Promise<JiraTicket | null>;
