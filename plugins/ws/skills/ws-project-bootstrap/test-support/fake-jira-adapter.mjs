@@ -1,6 +1,9 @@
 export class FakeJiraAdapter {
 	constructor(initialData = {}) {
-		this.existingData = { ...initialData };
+		this.existingData = Object.fromEntries(Object.entries(initialData).map(([id, ticket]) => [
+			id,
+			{ version: 1, ...structuredClone(ticket) },
+		]));
 		this.outage = false;
 		this.callLog = [];
 		this.idCounter = 1;
@@ -25,14 +28,14 @@ export class FakeJiraAdapter {
 	async getTicket(id) {
 		this.callLog.push({ method: "getTicket", args: { id } });
 		if (this.outage) throw new Error("Jira is unreachable");
-		return this.existingData[id] || null;
+		return this.existingData[id] ? structuredClone(this.existingData[id]) : null;
 	}
 
 	async findTicketByCorrelation(correlationId) {
 		this.callLog.push({ method: "findTicketByCorrelation", args: { correlationId } });
 		if (this.outage) throw new Error("Jira is unreachable");
 		const jiraId = this.correlatedTickets.get(correlationId);
-		return jiraId ? this.existingData[jiraId] || null : null;
+		return jiraId && this.existingData[jiraId] ? structuredClone(this.existingData[jiraId]) : null;
 	}
 
 	async createTicket(fields, correlationId) {
@@ -43,27 +46,48 @@ export class FakeJiraAdapter {
 		do {
 			id = `PROJ-${this.idCounter++}`;
 		} while (this.existingData[id]);
-		const ticket = { id, ...fields };
+		const ticket = { id, version: 1, ...structuredClone(fields) };
 		this.existingData[id] = ticket;
 		if (correlationId) this.correlatedTickets.set(correlationId, id);
 		call.args.resultId = id;
-		return ticket;
+		return structuredClone(ticket);
 	}
 
 	async updateTicket(id, fields) {
 		this.callLog.push({ method: "updateTicket", args: { id, fields } });
 		if (this.outage) throw new Error("Jira is unreachable");
-		if (this.existingData[id]) this.existingData[id] = { ...this.existingData[id], ...fields };
+		if (!this.existingData[id]) throw new Error(`Unknown Jira ticket ${id}`);
+		this.existingData[id] = {
+			...this.existingData[id],
+			...structuredClone(fields),
+			version: this.existingData[id].version + 1,
+		};
+		return structuredClone(this.existingData[id]);
+	}
+
+	async updateStatus(id, status) {
+		this.callLog.push({ method: "updateStatus", args: { id, status } });
+		if (this.outage) throw new Error("Jira is unreachable");
+		if (!this.existingData[id]) throw new Error(`Unknown Jira ticket ${id}`);
+		this.existingData[id] = {
+			...this.existingData[id],
+			status,
+			version: this.existingData[id].version + 1,
+		};
+		return structuredClone(this.existingData[id]);
 	}
 
 	async addComment(id, text) {
 		this.callLog.push({ method: "addComment", args: { id, text } });
 		if (this.outage) throw new Error("Jira is unreachable");
+		if (!this.existingData[id]) throw new Error(`Unknown Jira ticket ${id}`);
 		const commentId = `comment-${this.idCounter++}`;
-		if (this.existingData[id]) {
-			const comments = [...(this.existingData[id].comments || []), { id: commentId, text }];
-			this.existingData[id] = { ...this.existingData[id], comments };
-		}
-		return { id: commentId };
+		const comments = [...(this.existingData[id].comments || []), { id: commentId, text }];
+		this.existingData[id] = {
+			...this.existingData[id],
+			comments,
+			version: this.existingData[id].version + 1,
+		};
+		return { id: commentId, version: this.existingData[id].version };
 	}
 }

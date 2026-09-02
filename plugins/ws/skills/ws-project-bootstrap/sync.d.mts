@@ -1,5 +1,5 @@
 import type { CanonicalProjectConfig } from "./config.d.mts";
-
+export type JiraVersion = string | number;
 export interface TicketFields {
 	title?: string;
 	description?: string;
@@ -17,11 +17,13 @@ export interface LocalTicket extends TicketFields {
 
 export interface JiraTicket extends TicketFields {
 	id: string;
+	version: JiraVersion;
 }
 
 export interface SyncMapping {
 	jiraId: string;
 	fieldHashes: Record<string, string>;
+	jiraVersion?: JiraVersion;
 }
 
 export interface PendingSyncOperation {
@@ -29,6 +31,7 @@ export interface PendingSyncOperation {
 	localId: string;
 	action: "create" | "update" | "comment" | "status";
 	payload: Record<string, unknown>;
+	returnedVersion?: JiraVersion;
 	returnedId?: string;
 }
 
@@ -59,10 +62,18 @@ export interface ConflictChoice {
 
 export interface JiraAdapter {
 	getTicket(id: string): Promise<JiraTicket | null>;
-	findTicketByCorrelation?(correlationId: string): Promise<JiraTicket | null>;
-	createTicket(fields: TicketFields, correlationId?: string): Promise<JiraTicket>;
-	updateTicket(id: string, fields: Partial<TicketFields>): Promise<void>;
-	addComment(id: string, text: string): Promise<{ id: string }>;
+	findTicketByCorrelation(correlationId: string): Promise<JiraTicket | null>;
+	createTicket(fields: TicketFields, correlationId: string): Promise<JiraTicket>;
+	updateTicket(id: string, fields: Partial<TicketFields>): Promise<JiraTicket | void>;
+	updateStatus(id: string, status: string): Promise<JiraTicket | void>;
+	addComment(id: string, text: string): Promise<{ id: string; version: JiraVersion }>;
+}
+
+export interface TrackerPersistence {
+	persistSyncState(syncState: SyncState): Promise<void>;
+	readSyncState(): Promise<SyncState>;
+	persistLocalStore(localStore: Record<string, LocalTicket>): Promise<void>;
+	readLocalStore(): Promise<Record<string, LocalTicket>>;
 }
 
 export interface RunTrackerOperationArgs {
@@ -71,6 +82,7 @@ export interface RunTrackerOperationArgs {
 	syncState: SyncState;
 	operation: TrackerOperation | null;
 	jiraAdapter: JiraAdapter;
+	persistence: TrackerPersistence;
 	conflictChoices?: ConflictChoice[];
 }
 
@@ -85,4 +97,6 @@ export interface RunTrackerOperationResult {
 
 export function runTrackerOperation(args: RunTrackerOperationArgs): Promise<RunTrackerOperationResult>;
 export function hashField(value: unknown): string;
+export const MAPPED_TICKET_FIELDS: readonly (keyof TicketFields)[];
+export function sanitizeTicketFields(fields: Record<string, unknown>): Partial<TicketFields>;
 export function hashTicketFields(fields: Partial<TicketFields>): Record<string, string>;

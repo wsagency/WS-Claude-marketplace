@@ -1,11 +1,11 @@
 import type { CanonicalProjectConfig } from "./config.d.mts";
-import type { LocalTicket, SyncState, JiraAdapter } from "./sync.d.mts";
+import type { JiraAdapter, LocalTicket, SyncState, TicketFields } from "./sync.d.mts";
 
 export interface BackfillAudit {
 	missing: Array<{ localId: string; jiraId: string }>;
 	stale: Array<{ localId: string; jiraId: string }>;
 	duplicated: Array<{ localId: string; jiraId: string; otherLocalId: string }>;
-	conflicting: Array<{ localId: string; jiraId: string }>;
+	conflicting: Array<{ localId: string; jiraId: string; fields: Array<keyof TicketFields> }>;
 	valid: Array<{ localId: string; jiraId: string }>;
 }
 

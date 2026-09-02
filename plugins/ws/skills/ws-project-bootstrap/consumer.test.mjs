@@ -80,6 +80,25 @@ function jiraConfig(primary = "jira", sync = "disabled") {
 		jira: { project: "WCM", default_issue_type: "Task", sync },
 	};
 }
+function durablePersistence(localStore, syncState) {
+	let durableLocalStore = structuredClone(localStore);
+	let durableSyncState = structuredClone(syncState);
+	return {
+		async persistLocalStore(store) {
+			durableLocalStore = structuredClone(store);
+		},
+		async readLocalStore() {
+			return structuredClone(durableLocalStore);
+		},
+		async persistSyncState(state) {
+			durableSyncState = structuredClone(state);
+		},
+		async readSyncState() {
+			return structuredClone(durableSyncState);
+		},
+	};
+}
+
 
 describe("canonical capability inspection", () => {
 	test("Local readiness needs no external integration", () => {
@@ -262,16 +281,19 @@ describe("canonical Local/Jira operation boundary", () => {
 		const adapter = new FakeJiraAdapter({
 			"WCM-1": { id: "WCM-1", title: "Before" },
 		});
+		const localStore = { local1: { id: "local1", title: "After" } };
+		const syncState = {
+			mappings: { local1: { jiraId: "WCM-1", fieldHashes: { title: hashField("After") } } },
+			pendingOperations: [{ correlationId: "pending-1", localId: "local1", action: "update", payload: { title: "After" } }],
+		};
 		const result = await runCanonicalSynchronizedTrackerOperation({
 			root,
 			snapshot: { integrations: { jira: true }, sync: { pending: 1 } },
-			localStore: { local1: { id: "local1", title: "After" } },
-			syncState: {
-				mappings: { local1: { jiraId: "WCM-1", fieldHashes: { title: hashField("After") } } },
-				pendingOperations: [{ correlationId: "pending-1", localId: "local1", action: "update", payload: { title: "After" } }],
-			},
+			localStore,
+			syncState,
 			operation: { action: "status", localId: "local1", payload: { status: "done" } },
 			jiraAdapter: adapter,
+			persistence: durablePersistence(localStore, syncState),
 		});
 		assert.equal(result.nextSyncState.pendingOperations.length, 0);
 		assert.deepEqual(result.externalCallLog.map(call => call.method), [
@@ -279,10 +301,10 @@ describe("canonical Local/Jira operation boundary", () => {
 			"updateTicket",
 			"getTicket",
 			"getTicket",
-			"updateTicket"
+			"updateStatus"
 		]);
 		assert.equal(result.externalCallLog[1].args.fields.title, "After");
-		assert.equal(result.externalCallLog[4].args.fields.status, "done");
+		assert.equal(result.externalCallLog[4].args.status, "done");
 		assert.equal(result.nextLocalStore.local1.status, "done");
 	});
 
@@ -302,10 +324,14 @@ describe("canonical Local/Jira operation boundary", () => {
 			},
 			operation: { action: "update", localId: "local2", payload: { title: "Local" } },
 			jiraAdapter: adapter,
+			persistence: durablePersistence(localStore, {
+				mappings: { local2: { jiraId: "WCM-2", fieldHashes: { title: hashField("Original") } } },
+				pendingOperations: [],
+			}),
 		});
 		assert.deepEqual(result.conflicts, [{ localId: "local2", field: "title", localValue: "Local", jiraValue: "Remote" }]);
 		assert.equal(result.nextLocalStore.local2.title, "Local before");
-		assert.deepEqual(adapter.existingData["WCM-2"], { id: "WCM-2", title: "Remote" });
+		assert.equal(adapter.existingData["WCM-2"].title, "Remote");
 	});
 });
 

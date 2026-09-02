@@ -104,6 +104,13 @@ export function repositoryPolicyProblem(state: RepositoryPolicyState, helper: st
 	const detail = state.errors[0]?.message;
 	return `${helper}: ${CANONICAL_POLICY_PATH} is invalid${detail ? ` (${detail})` : ""}; run /ws-setup to repair it.`;
 }
+export function repositoryWritePolicyProblem(state: RepositoryPolicyState, helper: string): string | undefined {
+	if (state.status === "missing" && state.legacySources.length === 0) {
+		return `${helper}: ${CANONICAL_POLICY_PATH} is missing; run /ws-setup before continuing.`;
+	}
+	return repositoryPolicyProblem(state, helper);
+}
+
 
 export function missingPolicyCapability(helper: string, capability: string): string {
 	return `${helper}: ${CANONICAL_POLICY_PATH} does not configure ${capability}; run /ws-setup before continuing.`;

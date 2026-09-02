@@ -1,6 +1,6 @@
 import type { CanonicalProjectConfig, DerivedSetupReadiness } from "./config.d.mts";
 import type { ConsumerCapability } from "./routing.d.mts";
-import type { JiraAdapter, LocalTicket, SyncState, TrackerOperation } from "./sync.d.mts";
+import type { JiraAdapter, LocalTicket, SyncState, TrackerOperation, TrackerPersistence } from "./sync.d.mts";
 
 export type { ConsumerCapability } from "./routing.d.mts";
 
@@ -52,6 +52,7 @@ export interface SynchronizedTrackerOperationOptions {
 	syncState: SyncState;
 	operation: TrackerOperation | null;
 	jiraAdapter: JiraAdapter;
+	persistence: TrackerPersistence;
 	conflictChoices?: Array<{ localId: string; field: string; resolution: "local" | "jira" | "manual"; manualValue?: unknown }>;
 }
 

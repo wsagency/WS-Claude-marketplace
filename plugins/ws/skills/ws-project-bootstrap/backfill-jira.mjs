@@ -1,4 +1,4 @@
-import { hashField, hashTicketFields } from "./sync.mjs";
+import { MAPPED_TICKET_FIELDS, hashField, hashTicketFields, sanitizeTicketFields } from "./sync.mjs";
 
 export async function auditBackfill(localTickets, syncState, jiraAdapter) {
 	const audit = {
@@ -30,7 +30,7 @@ export async function auditBackfill(localTickets, syncState, jiraAdapter) {
 		let remoteTicket;
 		try {
 			remoteTicket = await jiraAdapter.getTicket(mapping.jiraId);
-		} catch (err) {
+		} catch {
 			remoteTicket = null;
 		}
 
@@ -39,8 +39,21 @@ export async function auditBackfill(localTickets, syncState, jiraAdapter) {
 			continue;
 		}
 
-		// Conflict could be checked here if we compared local against remote hashes,
-		// but since backfill discovery shouldn't mutate, we just validate existing.
+		const localTicket = localTickets[localId];
+		const fields = MAPPED_TICKET_FIELDS.filter(field => {
+			const localValue = localTicket[field];
+			const jiraValue = remoteTicket[field];
+			const localHash = hashField(localValue);
+			const jiraHash = hashField(jiraValue);
+			if (localHash === jiraHash) return false;
+			const previousHash = mapping.fieldHashes?.[field];
+			if (previousHash === undefined) return false;
+			return localHash !== previousHash && jiraHash !== previousHash;
+		});
+		if (fields.length > 0) {
+			audit.conflicting.push({ localId, jiraId: mapping.jiraId, fields });
+			continue;
+		}
 		audit.valid.push({ localId, jiraId: mapping.jiraId });
 	}
 
@@ -124,6 +137,8 @@ export async function executeBackfill({ plan, syncState, jiraAdapter, persistenc
 				continue;
 			}
 
+			const mappedFields = sanitizeTicketFields(item.mappedFields);
+			const mappedHashes = hashTicketFields(mappedFields);
 			let pending = nextSyncState.pendingOperations.find(operation =>
 				operation.action === "create" &&
 				operation.localId === item.localId &&
@@ -134,35 +149,54 @@ export async function executeBackfill({ plan, syncState, jiraAdapter, persistenc
 					correlationId: item.correlationToken,
 					localId: item.localId,
 					action: "create",
-					payload: item.mappedFields
+					payload: mappedFields
 				};
 				nextSyncState.pendingOperations.push(pending);
 				await persistAndReadBack(state => state.pendingOperations.some(operation =>
 					operation.localId === item.localId &&
-					operation.correlationId === item.correlationToken
+					operation.correlationId === item.correlationToken &&
+					hashField(operation.payload) === hashField(mappedFields)
 				));
 				pending = nextSyncState.pendingOperations.find(operation => operation.correlationId === item.correlationToken);
 			}
 
 			let remoteTicket = pending.returnedId ? await jiraAdapter.getTicket(pending.returnedId) : null;
 			if (!remoteTicket) remoteTicket = await jiraAdapter.findTicketByCorrelation(item.correlationToken);
-			if (!remoteTicket) remoteTicket = await jiraAdapter.createTicket(item.mappedFields, item.correlationToken);
+			if (!remoteTicket) {
+				await persistAndReadBack(state => state.pendingOperations.some(operation =>
+					operation.localId === item.localId &&
+					operation.correlationId === item.correlationToken &&
+					hashField(operation.payload) === hashField(mappedFields)
+				));
+				pending = nextSyncState.pendingOperations.find(operation => operation.correlationId === item.correlationToken);
+				remoteTicket = await jiraAdapter.createTicket(mappedFields, item.correlationToken);
+			}
+			if (!remoteTicket?.id || remoteTicket.version === undefined) {
+				throw new Error("Jira create or recovery did not return an identity and version");
+			}
 
 			pending.returnedId = remoteTicket.id;
+			pending.returnedVersion = remoteTicket.version;
 			await persistAndReadBack(state => state.pendingOperations.some(operation =>
 				operation.correlationId === item.correlationToken &&
-				operation.returnedId === remoteTicket.id
+				operation.returnedId === remoteTicket.id &&
+				operation.returnedVersion === remoteTicket.version
 			));
 
 			nextSyncState.mappings[item.localId] = {
 				jiraId: remoteTicket.id,
-				fieldHashes: hashTicketFields(item.mappedFields)
+				jiraVersion: remoteTicket.version,
+				fieldHashes: mappedHashes
 			};
 			nextSyncState.pendingOperations = nextSyncState.pendingOperations.filter(operation =>
 				operation.correlationId !== item.correlationToken
 			);
 			await persistAndReadBack(state =>
 				state.mappings[item.localId]?.jiraId === remoteTicket.id &&
+				state.mappings[item.localId]?.jiraVersion === remoteTicket.version &&
+				Object.entries(mappedHashes).every(([field, fieldHash]) =>
+					state.mappings[item.localId]?.fieldHashes?.[field] === fieldHash
+				) &&
 				!state.pendingOperations.some(operation => operation.correlationId === item.correlationToken)
 			);
 

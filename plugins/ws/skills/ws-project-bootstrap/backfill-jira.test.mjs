@@ -66,6 +66,46 @@ test("auditBackfill classifies valid, missing, stale, and duplicated mappings", 
 	assert.deepEqual(audit.missing.map(item => item.localId), ["LOCAL-3"]);
 	assert.deepEqual(audit.duplicated, [{ localId: "LOCAL-5", jiraId: "PROJ-4", otherLocalId: "LOCAL-4" }]);
 });
+test("auditBackfill reports same-field conflicts without exposing Local-only metadata", async () => {
+	const localTickets = {
+		"LOCAL-1": {
+			id: "LOCAL-1",
+			title: "Local title",
+			status: "open",
+			localMetadata: { claim: "agent", secret: "repository-only" },
+		},
+		"LOCAL-2": { id: "LOCAL-2", title: "Before", status: "open" },
+		"LOCAL-3": { id: "LOCAL-3", title: "Legacy local title", status: "open" },
+	};
+	const syncState = {
+		mappings: {
+			"LOCAL-1": {
+				jiraId: "PROJ-1",
+				fieldHashes: { title: hashField("Before"), status: hashField("open") },
+			},
+			"LOCAL-2": {
+				jiraId: "PROJ-2",
+				fieldHashes: { title: hashField("Before"), status: hashField("open") },
+			},
+			"LOCAL-3": { jiraId: "PROJ-3", fieldHashes: {} },
+		},
+		pendingOperations: [],
+	};
+	const jiraAdapter = new FakeJiraAdapter({
+		"PROJ-1": { id: "PROJ-1", title: "Remote title", status: "open" },
+		"PROJ-2": { id: "PROJ-2", title: "Remote-only title", status: "open" },
+		"PROJ-3": { id: "PROJ-3", title: "Legacy remote title", status: "open" },
+	});
+
+	const audit = await auditBackfill(localTickets, syncState, jiraAdapter);
+	assert.deepEqual(audit.conflicting, [{ localId: "LOCAL-1", jiraId: "PROJ-1", fields: ["title"] }]);
+	assert.deepEqual(audit.valid, [
+		{ localId: "LOCAL-2", jiraId: "PROJ-2" },
+		{ localId: "LOCAL-3", jiraId: "PROJ-3" },
+	]);
+	assert.doesNotMatch(JSON.stringify(audit), /repository-only|claim|secret/);
+});
+
 
 test("planBackfill includes open and done tickets with deterministic correlations", () => {
 	const localTickets = {
@@ -108,6 +148,8 @@ test("every create is followed by durable returned-key journaling, mapping persi
 	const order = [];
 	const createTicket = jiraAdapter.createTicket.bind(jiraAdapter);
 	jiraAdapter.createTicket = async (fields, correlationId) => {
+		assert.deepEqual(persistence.events.slice(-2).map(event => event.type), ["persist", "read"]);
+		assert.equal(persistence.snapshot().pendingOperations[0]?.correlationId, correlationId);
 		order.push(`create:${correlationId}`);
 		return createTicket(fields, correlationId);
 	};

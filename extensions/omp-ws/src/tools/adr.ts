@@ -10,6 +10,12 @@ import * as path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import type { ZodType } from "zod/v4";
 import { slugify } from "../lib/slug";
+import {
+	loadRepositoryPolicy,
+	missingPolicyCapability,
+	repositoryWritePolicyProblem,
+} from "../lib/project-policy";
+
 
 /** Next ADR number: highest NNNN prefix among existing files + 1 (1 when none). */
 export function nextAdrNumber(fileNames: string[]): number {
@@ -53,14 +59,19 @@ export function registerAdrTool(pi: ExtensionAPI): void {
 		name: "ws_adr",
 		label: "WS ADR",
 		description:
-			"Record a lightweight Architecture Decision Record in dev-docs/decisions/ (WS two-tier convention: lightweight is the default tier). " +
-			"Auto-numbers as NNNN-slug.md continuing the existing sequence and returns the path. " +
-			"OPTIONAL convenience: the adr prose convention remains authoritative — use full MADR v4.0.0 (written manually or via /ws-docs adr) " +
-			"when the decision is breaking, costly to undo, or had multiple serious options.",
+			"Record a lightweight Architecture Decision Record in the canonical docs.dev_track/decisions directory. " +
+			"Requires strict-valid .wsagency/config.yaml policy and auto-numbers as NNNN-slug.md. " +
+			"Use full MADR v4.0.0 when the decision is breaking, costly to undo, or had multiple serious options.",
 		parameters,
 		approval: "write",
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const decisionsDir = path.join(ctx.cwd, "dev-docs", "decisions");
+			const policy = await loadRepositoryPolicy(ctx.cwd);
+			const policyProblem = repositoryWritePolicyProblem(policy, "ws_adr");
+			if (policyProblem !== undefined) return textResult(policyProblem, true);
+			if (policy.status !== "valid" || !policy.config?.docs) {
+				return textResult(missingPolicyCapability("ws_adr", "docs.dev_track"), true);
+			}
+			const decisionsDir = path.join(policy.root, policy.config.docs.dev_track, "decisions");
 			let fileNames: string[] = [];
 			try {
 				fileNames = await fs.readdir(decisionsDir);

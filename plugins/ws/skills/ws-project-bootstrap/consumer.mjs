@@ -316,6 +316,7 @@ export async function runCanonicalSynchronizedTrackerOperation(options) {
 		syncState: options.syncState,
 		operation: options.operation,
 		jiraAdapter: options.jiraAdapter,
+		persistence: options.persistence,
 		conflictChoices: options.conflictChoices,
 	});
 }
