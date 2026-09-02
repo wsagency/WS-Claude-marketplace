@@ -29,6 +29,7 @@ export interface PendingSyncOperation {
 	localId: string;
 	action: "create" | "update" | "comment" | "status";
 	payload: Record<string, unknown>;
+	returnedId?: string;
 }
 
 export interface SyncState {
@@ -36,10 +37,17 @@ export interface SyncState {
 	pendingOperations: PendingSyncOperation[];
 }
 
-export interface TrackerOperation {
+export interface EffectiveTrackerOperation {
 	action: "create" | "update" | "comment" | "status";
 	localId: string;
 	payload: Record<string, unknown>;
+}
+
+export interface TrackerOperation extends EffectiveTrackerOperation {
+	perform?: (
+		localStore: Record<string, LocalTicket>,
+		operation: EffectiveTrackerOperation,
+	) => Record<string, LocalTicket> | Promise<Record<string, LocalTicket>>;
 }
 
 export interface ConflictChoice {
@@ -51,6 +59,7 @@ export interface ConflictChoice {
 
 export interface JiraAdapter {
 	getTicket(id: string): Promise<JiraTicket | null>;
+	findTicketByCorrelation?(correlationId: string): Promise<JiraTicket | null>;
 	createTicket(fields: TicketFields, correlationId?: string): Promise<JiraTicket>;
 	updateTicket(id: string, fields: Partial<TicketFields>): Promise<void>;
 	addComment(id: string, text: string): Promise<{ id: string }>;
@@ -77,12 +86,3 @@ export interface RunTrackerOperationResult {
 export function runTrackerOperation(args: RunTrackerOperationArgs): Promise<RunTrackerOperationResult>;
 export function hashField(value: unknown): string;
 export function hashTicketFields(fields: Partial<TicketFields>): Record<string, string>;
-export class FakeJiraAdapterTemplate implements JiraAdapter {
-	constructor(initialData?: Record<string, JiraTicket>);
-	getTicket(id: string): Promise<JiraTicket | null>;
-	createTicket(fields: TicketFields, correlationId?: string): Promise<JiraTicket>;
-	updateTicket(id: string, fields: Partial<TicketFields>): Promise<void>;
-	addComment(id: string, text: string): Promise<{ id: string }>;
-	simulateOutage(active: boolean): void;
-	getCallLog(): Array<{ method: string; args: Record<string, unknown> }>;
-}

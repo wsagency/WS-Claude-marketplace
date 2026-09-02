@@ -6,57 +6,6 @@ export function hashField(value) {
 	return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
 
-export class FakeJiraAdapterTemplate {
-	constructor(initialData = {}) {
-		this.existingData = initialData;
-		this.outage = false;
-		this.callLog = [];
-		this.idCounter = 1;
-	}
-
-	simulateOutage(active) {
-		this.outage = active;
-	}
-
-	getCallLog() {
-		return this.callLog;
-	}
-
-	async getTicket(id) {
-		this.callLog.push({ method: "getTicket", args: { id } });
-		if (this.outage) throw new Error("Jira is unreachable");
-		return this.existingData[id] || null;
-	}
-
-	async createTicket(fields, correlationId) {
-		this.callLog.push({ method: "createTicket", args: { fields, correlationId } });
-		if (this.outage) throw new Error("Jira is unreachable");
-		const id = `PROJ-${this.idCounter++}`;
-		const ticket = { id, ...fields };
-		this.existingData[id] = ticket;
-		this.callLog[this.callLog.length - 1].args.resultId = id;
-		return ticket;
-	}
-
-	async updateTicket(id, fields) {
-		this.callLog.push({ method: "updateTicket", args: { id, fields } });
-		if (this.outage) throw new Error("Jira is unreachable");
-		if (this.existingData[id]) {
-			this.existingData[id] = { ...this.existingData[id], ...fields };
-		}
-	}
-
-	async addComment(id, text) {
-		this.callLog.push({ method: "addComment", args: { id, text } });
-		if (this.outage) throw new Error("Jira is unreachable");
-		const commentId = `comment-${this.idCounter++}`;
-		if (this.existingData[id]) {
-			this.existingData[id].comments = this.existingData[id].comments || [];
-			this.existingData[id].comments.push({ id: commentId, text });
-		}
-		return { id: commentId };
-	}
-}
 
 export async function runTrackerOperation({
 	config,
@@ -69,8 +18,14 @@ export async function runTrackerOperation({
 	const result = {
 		nextLocalStore: { ...localStore },
 		nextSyncState: {
-			mappings: { ...syncState.mappings },
-			pendingOperations: [...syncState.pendingOperations]
+			mappings: Object.fromEntries(Object.entries(syncState.mappings || {}).map(([localId, mapping]) => [
+				localId,
+				{ ...mapping, fieldHashes: { ...(mapping.fieldHashes || {}) } }
+			])),
+			pendingOperations: (syncState.pendingOperations || []).map(pending => ({
+				...pending,
+				payload: { ...pending.payload }
+			}))
 		},
 		externalCallLog: [],
 		blockers: [],
@@ -95,157 +50,193 @@ export async function runTrackerOperation({
 	const logCall = (method, args) => {
 		result.externalCallLog.push({ method, args });
 	};
-
 	const adapter = {
-		getTicket: async (id) => { logCall("getTicket", { id }); return jiraAdapter.getTicket(id); },
-		createTicket: async (fields, corrId) => { logCall("createTicket", { fields, correlationId: corrId }); return jiraAdapter.createTicket(fields, corrId); },
-		updateTicket: async (id, fields) => { logCall("updateTicket", { id, fields }); return jiraAdapter.updateTicket(id, fields); },
-		addComment: async (id, text) => { logCall("addComment", { id, text }); return jiraAdapter.addComment(id, text); }
+		getTicket: async id => {
+			logCall("getTicket", { id });
+			return jiraAdapter.getTicket(id);
+		},
+		findTicketByCorrelation: typeof jiraAdapter.findTicketByCorrelation === "function"
+			? async correlationId => {
+				logCall("findTicketByCorrelation", { correlationId });
+				return jiraAdapter.findTicketByCorrelation(correlationId);
+			}
+			: null,
+		createTicket: async (fields, correlationId) => {
+			logCall("createTicket", { fields, correlationId });
+			return jiraAdapter.createTicket(fields, correlationId);
+		},
+		updateTicket: async (id, fields) => {
+			logCall("updateTicket", { id, fields });
+			return jiraAdapter.updateTicket(id, fields);
+		},
+		addComment: async (id, text) => {
+			logCall("addComment", { id, text });
+			return jiraAdapter.addComment(id, text);
+		}
 	};
 
-	// 1. Process Pending Operations
-	const pendingToKeep = [];
-	const ops = result.nextSyncState.pendingOperations;
-	for (let i = 0; i < ops.length; i++) {
-		const pending = ops[i];
-		try {
-			const mapping = result.nextSyncState.mappings[pending.localId];
-			if (pending.action === "update" || pending.action === "status") {
-				if (mapping) {
-					await adapter.updateTicket(mapping.jiraId, pending.payload);
-					result.nextSyncState.mappings[pending.localId].fieldHashes = {
-						...result.nextSyncState.mappings[pending.localId].fieldHashes,
-						...hashTicketFields(pending.payload)
+	const sanitizePayload = payload => {
+		const sanitized = { ...(payload || {}) };
+		delete sanitized.localMetadata;
+		delete sanitized.id;
+		delete sanitized.claim;
+		delete sanitized.claims;
+		delete sanitized.shares;
+		delete sanitized.map;
+		delete sanitized.mapPointer;
+		delete sanitized.agentState;
+		return sanitized;
+	};
+
+	const mergeLocalFields = (localId, payload) => {
+		const current = result.nextLocalStore[localId] || { id: localId, comments: [], localMetadata: {} };
+		result.nextLocalStore[localId] = { ...current, ...payload };
+	};
+
+	const resolveConflicts = (pending, mapping, jiraTicket, updateLocal) => {
+		const payload = { ...pending.payload };
+		let blocked = false;
+		if (pending.action !== "update" && pending.action !== "status") return { payload, blocked };
+
+		for (const key of Object.keys(payload)) {
+			const oldHash = mapping.fieldHashes?.[key] || "hash_empty";
+			const jiraHash = hashField(jiraTicket[key]);
+			const localHash = hashField(payload[key]);
+			if (jiraHash === oldHash || localHash === oldHash || jiraHash === localHash) continue;
+
+			const choice = conflictChoices.find(candidate => candidate.localId === pending.localId && candidate.field === key);
+			if (!choice) {
+				result.conflicts.push({
+					localId: pending.localId,
+					field: key,
+					localValue: payload[key],
+					jiraValue: jiraTicket[key]
+				});
+				result.blockers.push(`Conflict on ${key}`);
+				blocked = true;
+				continue;
+			}
+			if (choice.resolution === "jira") {
+				payload[key] = jiraTicket[key];
+			} else if (choice.resolution === "manual") {
+				payload[key] = choice.manualValue;
+			}
+		}
+
+		if (updateLocal && !blocked) mergeLocalFields(pending.localId, payload);
+		return { payload, blocked };
+	};
+
+	const initialPendingCreates = new Set(
+		result.nextSyncState.pendingOperations
+			.filter(pending => pending.action === "create")
+			.map(pending => pending.correlationId)
+	);
+
+	const reconcilePending = async () => {
+		const operations = result.nextSyncState.pendingOperations;
+		const pendingToKeep = [];
+		for (let index = 0; index < operations.length; index++) {
+			const pending = operations[index];
+			try {
+				const mapping = result.nextSyncState.mappings[pending.localId];
+				if (pending.action === "create") {
+					let jiraTicket = pending.returnedId ? await adapter.getTicket(pending.returnedId) : null;
+					if (!jiraTicket && initialPendingCreates.has(pending.correlationId) && adapter.findTicketByCorrelation) {
+						jiraTicket = await adapter.findTicketByCorrelation(pending.correlationId);
+					}
+					if (!jiraTicket) jiraTicket = await adapter.createTicket(pending.payload, pending.correlationId);
+					result.nextSyncState.mappings[pending.localId] = {
+						jiraId: jiraTicket.id,
+						fieldHashes: hashTicketFields(pending.payload)
 					};
-				}
-			} else if (pending.action === "create") {
-				const jiraTicket = await adapter.createTicket(pending.payload, pending.correlationId);
-				result.nextSyncState.mappings[pending.localId] = {
-					jiraId: jiraTicket.id,
-					fieldHashes: hashTicketFields(pending.payload)
-				};
-			} else if (pending.action === "comment") {
-				if (mapping) {
+				} else if (pending.action === "update" || pending.action === "status") {
+					if (mapping) {
+						const jiraTicket = await adapter.getTicket(mapping.jiraId);
+						if (!jiraTicket) throw new Error(`Mapped Jira ticket ${mapping.jiraId} is unavailable`);
+						const resolved = resolveConflicts(pending, mapping, jiraTicket, true);
+						if (resolved.blocked) {
+							pendingToKeep.push(pending, ...operations.slice(index + 1));
+							result.nextSyncState.pendingOperations = pendingToKeep;
+							return { conflict: true, outage: false };
+						}
+						const changed = Object.entries(resolved.payload).some(([key, value]) => hashField(value) !== hashField(jiraTicket[key]));
+						if (changed) await adapter.updateTicket(mapping.jiraId, resolved.payload);
+						mapping.fieldHashes = {
+							...mapping.fieldHashes,
+							...hashTicketFields(resolved.payload)
+						};
+					}
+				} else if (pending.action === "comment" && mapping) {
 					await adapter.addComment(mapping.jiraId, pending.payload.text);
 				}
+			} catch {
+				pendingToKeep.push(pending, ...operations.slice(index + 1));
+				result.nextSyncState.pendingOperations = pendingToKeep;
+				return { conflict: false, outage: true };
 			}
-		} catch (err) {
-			pendingToKeep.push(...ops.slice(i));
-			break; // Stop on first error (outage)
 		}
-	}
-	result.nextSyncState.pendingOperations = pendingToKeep;
+		result.nextSyncState.pendingOperations = pendingToKeep;
+		return { conflict: false, outage: false };
+	};
 
-	if (!operation) {
-		return result;
-	}
+	const before = await reconcilePending();
+	if (before.conflict || !operation) return result;
 
-	const { action, localId, payload } = operation;
-	const mapping = result.nextSyncState.mappings[localId];
-	
-	// Exclude localMetadata from sync payload
-	const syncPayload = { ...payload };
-	delete syncPayload.localMetadata;
-	delete syncPayload.id;
-
-	let jiraTicket = null;
-	if (mapping) {
+	const effectiveOperation = {
+		...operation,
+		payload: sanitizePayload(operation.payload)
+	};
+	const mapping = result.nextSyncState.mappings[effectiveOperation.localId];
+	if (!before.outage && mapping) {
 		try {
-			jiraTicket = await adapter.getTicket(mapping.jiraId);
-		} catch (err) {
-			// Outage
+			const jiraTicket = await adapter.getTicket(mapping.jiraId);
+			if (jiraTicket) {
+				const resolved = resolveConflicts(effectiveOperation, mapping, jiraTicket, false);
+				if (resolved.blocked) return result;
+				effectiveOperation.payload = resolved.payload;
+			}
+		} catch {
+			// Jira outages degrade synchronization, but do not block the Local operation.
 		}
 	}
 
-	// 2. Conflict Detection (if updating mapped ticket)
-	if (mapping && jiraTicket && (action === "update" || action === "status")) {
-		for (const key of Object.keys(syncPayload)) {
-			const oldHash = mapping.fieldHashes[key] || "hash_empty";
-			const currentJiraHash = hashField(jiraTicket[key]);
-			const currentLocalHash = hashField(syncPayload[key]);
-
-			if (currentJiraHash !== oldHash && currentLocalHash !== oldHash && currentJiraHash !== currentLocalHash) {
-				const choice = conflictChoices.find(c => c.localId === localId && c.field === key);
-				if (choice) {
-					if (choice.resolution === "jira") {
-						syncPayload[key] = jiraTicket[key];
-					} else if (choice.resolution === "manual") {
-						syncPayload[key] = choice.manualValue;
-					}
-					// if "local", keep syncPayload[key]
-				} else {
-					result.conflicts.push({
-						localId,
-						field: key,
-						localValue: syncPayload[key],
-						jiraValue: jiraTicket[key]
-					});
-					result.blockers.push(`Conflict on ${key}`);
-				}
-			}
+	if (typeof operation.perform === "function") {
+		const performedStore = await operation.perform(result.nextLocalStore, effectiveOperation);
+		if (!performedStore || typeof performedStore !== "object") {
+			throw new TypeError("Tracker operation perform() must return the resulting Local store.");
 		}
+		result.nextLocalStore = performedStore;
+	} else if (effectiveOperation.action === "comment") {
+		const current = result.nextLocalStore[effectiveOperation.localId] || {
+			id: effectiveOperation.localId,
+			comments: [],
+			localMetadata: {}
+		};
+		const comments = [...(current.comments || []), {
+			id: `c-${hashField({
+				localId: effectiveOperation.localId,
+				text: effectiveOperation.payload.text,
+				count: current.comments?.length || 0
+			}).slice(0, 12)}`,
+			text: effectiveOperation.payload.text
+		}];
+		result.nextLocalStore[effectiveOperation.localId] = { ...current, comments };
+	} else {
+		mergeLocalFields(effectiveOperation.localId, effectiveOperation.payload);
 	}
 
-	if (result.conflicts.length > 0) {
-		return result; // Stop before overwrite
-	}
-
-	// 3. Aligned no-op check
-	let isNoOp = false;
-	if (mapping && jiraTicket && (action === "update" || action === "status")) {
-		isNoOp = true;
-		for (const [key, value] of Object.entries(syncPayload)) {
-			if (hashField(value) !== hashField(jiraTicket[key])) {
-				isNoOp = false;
-				break;
-			}
-		}
-	}
-
-	// 4. Synchronize resulting local change
-	const correlationId = hashField({ localId, action, payload: syncPayload });
-	try {
-		if (action === "create") {
-			const created = await adapter.createTicket(syncPayload, correlationId);
-			result.nextSyncState.mappings[localId] = {
-				jiraId: created.id,
-				fieldHashes: hashTicketFields(syncPayload)
-			};
-		} else if (action === "update" || action === "status") {
-			if (mapping) {
-				if (!isNoOp) {
-					await adapter.updateTicket(mapping.jiraId, syncPayload);
-				}
-				result.nextSyncState.mappings[localId].fieldHashes = {
-					...result.nextSyncState.mappings[localId].fieldHashes,
-					...hashTicketFields(syncPayload)
-				};
-			}
-		} else if (action === "comment") {
-			if (mapping) {
-				await adapter.addComment(mapping.jiraId, syncPayload.text);
-			}
-		}
-	} catch (err) {
-		result.nextSyncState.pendingOperations.push({
-			correlationId,
-			localId,
-			action,
-			payload: syncPayload
-		});
-	}
-	
-	// 5. Local Operation execution
-	let nextLocalStoreEntry = result.nextLocalStore[localId] || { id: localId, comments: [], localMetadata: {} };
-	if (action === "create" || action === "update" || action === "status") {
-		nextLocalStoreEntry = { ...nextLocalStoreEntry, ...syncPayload };
-	} else if (action === "comment") {
-		nextLocalStoreEntry.comments = nextLocalStoreEntry.comments || [];
-		nextLocalStoreEntry.comments.push({ id: `c-${Date.now()}`, text: syncPayload.text });
-	}
-	
-	result.nextLocalStore[localId] = nextLocalStoreEntry;
-
+	result.nextSyncState.pendingOperations.push({
+		correlationId: hashField({
+			localId: effectiveOperation.localId,
+			action: effectiveOperation.action,
+			payload: effectiveOperation.payload
+		}),
+		localId: effectiveOperation.localId,
+		action: effectiveOperation.action,
+		payload: effectiveOperation.payload
+	});
+	await reconcilePending();
 	return result;
 }
 

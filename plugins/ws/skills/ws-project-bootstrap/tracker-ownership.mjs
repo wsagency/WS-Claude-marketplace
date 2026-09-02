@@ -101,7 +101,7 @@ function trackerSnapshot(localStore, choices) {
 	};
 }
 
-export function planTrackerOwnership(config, localStore, syncState, choices) {
+export function planTrackerOwnership({ config, localStore, syncState, choices }) {
 	if (!choices) throw new TrackerOwnershipError("Tracker ownership choices are required.", "ERR_MISSING_CHOICES");
 	if (!Array.isArray(choices.fields)) throw new TrackerOwnershipError("Concrete tracker/Jira field selection is required.", "ERR_MISSING_FIELD_SELECTION");
 	const stores = sourceStores(localStore, choices);
@@ -229,20 +229,20 @@ export function planTrackerOwnership(config, localStore, syncState, choices) {
 	return { ...plan, stores, sourcePreservation };
 }
 
-export async function applyTrackerOwnership(config, localStore, syncState, choices, planHash, effects, adapters, injection = {}) {
-	const expected = planTrackerOwnership(config, localStore, syncState, choices);
+export async function applyTrackerOwnership(context, { planHash, effects, adapters, injection = {} }) {
+	const expected = planTrackerOwnership(context);
 	if (expected.hash !== planHash || JSON.stringify(expected.effects) !== JSON.stringify(effects)) {
 		throw new TrackerOwnershipError("The confirmed plan no longer matches current inputs.", "ERR_PLAN_MISMATCH");
 	}
-	return applyConfirmedPlan(expected, { config, localStore, syncState, choices }, adapters, injection);
+	return applyConfirmedPlan(expected, context, adapters, injection);
 }
 
-export async function resumeTrackerOwnership(config, localStore, syncState, choices, adapters, injection = {}) {
-	const expected = planTrackerOwnership(config, localStore, syncState, choices);
-	return resumeConfirmedPlan(expected, { config, localStore, syncState, choices }, adapters, injection);
+export async function resumeTrackerOwnership(context, { adapters, injection = {} }) {
+	const expected = planTrackerOwnership(context);
+	return resumeConfirmedPlan(expected, context, adapters, injection);
 }
 
-export async function acceptPartialTrackerOwnership(config, localStore, syncState, choices, adapters) {
-	const expected = planTrackerOwnership(config, localStore, syncState, choices);
-	return acceptConfirmedPartial(config, expected, { config, localStore, syncState, choices }, adapters);
+export async function acceptPartialTrackerOwnership(context, { adapters }) {
+	const expected = planTrackerOwnership(context);
+	return acceptConfirmedPartial(context.config, expected, context, adapters);
 }

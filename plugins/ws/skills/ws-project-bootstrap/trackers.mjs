@@ -47,6 +47,19 @@ export function discoverProviders(originUrl) {
 	}
 	return available;
 }
+export function evaluateProviderReadiness(primary, originUrl, capabilities) {
+	if (primary !== "github" && primary !== "gitlab") return { ready: true };
+	const provider = parseOriginIdentity(originUrl)?.provider;
+	if (provider !== primary) {
+		return { ready: false, reason: `${primary} selected as primary but repository origin does not match` };
+	}
+	const cliReady = primary === "github" ? capabilities?.ghCli : capabilities?.glabCli;
+	if (!cliReady) {
+		return { ready: false, reason: `${primary === "github" ? "gh" : "glab"} CLI is not available` };
+	}
+	return { ready: true };
+}
+
 
 export class FakeJiraAdapter {
 	constructor(options = {}) {
@@ -114,15 +127,9 @@ export function planTrackerEffects(config, discovery, jiraValidation, capabiliti
 		}
 	}
 
-	const providers = discoverProviders(discovery?.git?.origin);
-	if (primary === "github" || primary === "gitlab") {
-		if (!providers.includes(primary)) {
-			effects.push(stateEffect(93, `integration:${primary}`, "BLOCKING_CONFLICT", `${primary} selected as primary but repository origin does not match`));
-		} else if (primary === "github" && !capabilities?.ghCli) {
-			effects.push(stateEffect(94, "integration:github", "BLOCKING_CONFLICT", "gh CLI is not available"));
-		} else if (primary === "gitlab" && !capabilities?.glabCli) {
-			effects.push(stateEffect(95, "integration:gitlab", "BLOCKING_CONFLICT", "glab CLI is not available"));
-		}
+	const providerReadiness = evaluateProviderReadiness(primary, discovery?.git?.origin, capabilities);
+	if (!providerReadiness.ready) {
+		effects.push(stateEffect(93, `integration:${primary}`, "BLOCKING_CONFLICT", providerReadiness.reason));
 	}
 	if (effects.some(effect => effect.classification === "BLOCKING_CONFLICT")) return effects;
 
@@ -165,14 +172,8 @@ export function checkTrackerReadiness(config, discovery, jiraValidation, capabil
 		blockers.push("Jira primary tracker requires Jira sync to be disabled");
 	}
 
-	const providers = discoverProviders(discovery?.git?.origin);
-	if ((primary === "github" || primary === "gitlab") && !providers.includes(primary)) {
-		blockers.push(`${primary} selected as primary but repository origin does not match`);
-	} else if (primary === "github" && !capabilities?.ghCli) {
-		blockers.push("gh CLI is not available");
-	} else if (primary === "gitlab" && !capabilities?.glabCli) {
-		blockers.push("glab CLI is not available");
-	}
+	const providerReadiness = evaluateProviderReadiness(primary, discovery?.git?.origin, capabilities);
+	if (!providerReadiness.ready) blockers.push(providerReadiness.reason);
 
 	return {
 		trackerReady: blockers.length === 0,

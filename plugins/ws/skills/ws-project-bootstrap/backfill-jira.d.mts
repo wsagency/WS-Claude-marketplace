@@ -31,7 +31,23 @@ export interface BackfillResult {
 	errors: Array<{ localId: string; error: string }>;
 	nextSyncState: SyncState;
 }
+export interface BackfillJiraAdapter extends JiraAdapter {
+	findTicketByCorrelation(correlationId: string): ReturnType<JiraAdapter["getTicket"]>;
+}
+
+export interface BackfillPersistence {
+	persistSyncState(syncState: SyncState): Promise<void>;
+	readSyncState(): Promise<SyncState>;
+}
+
+export interface ExecuteBackfillArgs {
+	plan: BackfillPlan;
+	syncState: SyncState;
+	jiraAdapter: BackfillJiraAdapter;
+	persistence: BackfillPersistence;
+}
+
 
 export function auditBackfill(localTickets: Record<string, LocalTicket>, syncState: SyncState, jiraAdapter: JiraAdapter): Promise<BackfillAudit>;
 export function planBackfill(localTickets: Record<string, LocalTicket>, syncState: SyncState, config: CanonicalProjectConfig): BackfillPlan;
-export function executeBackfill(plan: BackfillPlan, syncState: SyncState, jiraAdapter: JiraAdapter): Promise<BackfillResult>;
+export function executeBackfill(args: ExecuteBackfillArgs): Promise<BackfillResult>;

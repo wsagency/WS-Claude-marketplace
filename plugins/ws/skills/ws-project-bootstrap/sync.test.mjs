@@ -1,322 +1,261 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { runTrackerOperation, FakeJiraAdapterTemplate, hashField } from "./sync.mjs";
+import { runTrackerOperation, hashField } from "./sync.mjs";
+import { FakeJiraAdapter } from "./test-support/fake-jira-adapter.mjs";
 
-test("rejects synchronization if config is Jira-primary or lacks Jira binding", async () => {
-	const result = await runTrackerOperation({
-		config: { schema_version: 1, tracker: { primary: "jira", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "disabled" } },
-		localStore: {},
-		syncState: { mappings: {}, pendingOperations: [] },
-		operation: null,
-		jiraAdapter: new FakeJiraAdapterTemplate()
-	});
-	assert.equal(result.readiness.ready, false);
-	assert.match(result.readiness.reason, /Local Markdown must be primary/);
-
-	const result2 = await runTrackerOperation({
-		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" } },
-		localStore: {},
-		syncState: { mappings: {}, pendingOperations: [] },
-		operation: null,
-		jiraAdapter: new FakeJiraAdapterTemplate()
-	});
-	assert.equal(result2.readiness.ready, false);
-	assert.match(result2.readiness.reason, /explicit ready Jira binding required/);
+const CONFIG = Object.freeze({
+	schema_version: 1,
+	tracker: { primary: "local", pull_requests: "ignore" },
+	jira: { project: "WCM", default_issue_type: "Task", sync: "all_local_tickets" }
 });
 
-test("creates ticket in Jira, hashes fields, and ignores local metadata", async () => {
-	const adapter = new FakeJiraAdapterTemplate();
-	const localStore = {
-		"loc-1": {
-			id: "loc-1",
-			title: "Test Ticket",
-			description: "Desc",
-			status: "open",
-			type: "bug",
-			comments: [],
-			localMetadata: { claims: ["me"], sessionShares: 1 }
-		}
+function mapping(jiraId, fields) {
+	return {
+		jiraId,
+		fieldHashes: Object.fromEntries(Object.entries(fields).map(([field, value]) => [field, hashField(value)]))
 	};
-	const result = await runTrackerOperation({
-		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
-		localStore,
-		syncState: { mappings: {}, pendingOperations: [] },
-		operation: { action: "create", localId: "loc-1", payload: localStore["loc-1"] },
-		jiraAdapter: adapter
-	});
+}
 
-	assert.equal(result.readiness.ready, true);
-	assert.equal(result.externalCallLog.length, 1);
-	assert.equal(result.externalCallLog[0].method, "createTicket");
-	assert.equal(result.externalCallLog[0].args.fields.title, "Test Ticket");
-	assert.equal(result.externalCallLog[0].args.fields.localMetadata, undefined); // never leaves repo
-	
-	const jiraId = result.nextSyncState.mappings["loc-1"].jiraId;
-	assert.ok(result.nextSyncState.mappings["loc-1"]);
-	assert.equal(result.nextSyncState.mappings["loc-1"].jiraId, jiraId);
-	assert.ok(result.nextSyncState.mappings["loc-1"].fieldHashes.title);
+test("rejects synchronization unless Local/Jira all-ticket policy is ready", async () => {
+	const jiraAdapter = new FakeJiraAdapter();
+	const jiraPrimary = await runTrackerOperation({
+		config: { ...CONFIG, tracker: { primary: "jira", pull_requests: "ignore" }, jira: { ...CONFIG.jira, sync: "disabled" } },
+		localStore: {},
+		syncState: { mappings: {}, pendingOperations: [] },
+		operation: null,
+		jiraAdapter
+	});
+	assert.equal(jiraPrimary.readiness.ready, false);
+	assert.match(jiraPrimary.readiness.reason, /Local Markdown must be primary/);
+
+	const noBinding = await runTrackerOperation({
+		config: { schema_version: 1, tracker: CONFIG.tracker },
+		localStore: {},
+		syncState: { mappings: {}, pendingOperations: [] },
+		operation: null,
+		jiraAdapter
+	});
+	assert.equal(noBinding.readiness.ready, false);
+	assert.match(noBinding.readiness.reason, /explicit ready Jira binding required/);
 });
 
-test("synchronizes pending operations before local action", async () => {
-	const adapter = new FakeJiraAdapterTemplate();
-	const syncState = {
-		mappings: {
-			"loc-2": { jiraId: "PROJ-2", fieldHashes: { title: "old-hash" } }
+test("reconciles before, performs the Local operation once, then reconciles after", async () => {
+	const jiraAdapter = new FakeJiraAdapter({
+		"WCM-1": { id: "WCM-1", title: "Before" },
+		"WCM-2": { id: "WCM-2", title: "Current" }
+	});
+	const order = [];
+	let localPerformed = false;
+	let localCalls = 0;
+	const getTicket = jiraAdapter.getTicket.bind(jiraAdapter);
+	jiraAdapter.getTicket = async id => {
+		order.push(`${localPerformed ? "post" : "pre"}:get:${id}`);
+		return getTicket(id);
+	};
+	const updateTicket = jiraAdapter.updateTicket.bind(jiraAdapter);
+	jiraAdapter.updateTicket = async (id, fields) => {
+		order.push(`${localPerformed ? "post" : "pre"}:update:${id}`);
+		return updateTicket(id, fields);
+	};
+
+	const result = await runTrackerOperation({
+		config: CONFIG,
+		localStore: { "local-2": { id: "local-2", title: "Current" } },
+		syncState: {
+			mappings: {
+				"local-1": mapping("WCM-1", { title: "Before" }),
+				"local-2": mapping("WCM-2", { title: "Current" })
+			},
+			pendingOperations: [{
+				correlationId: "pending-1",
+				localId: "local-1",
+				action: "update",
+				payload: { title: "Pending" }
+			}]
 		},
-		pendingOperations: [
-			{ correlationId: "c1", localId: "loc-2", action: "update", payload: { title: "Pending Title" } }
-		]
-	};
-	const localStore = {
-		"loc-2": {
-			id: "loc-2",
-			title: "Newest Title",
-			description: "Desc",
-			status: "open",
-			comments: [],
-			localMetadata: {}
-		}
-	};
-	adapter.existingData["PROJ-2"] = {
-		id: "PROJ-2",
-		title: "Pending Title",
-		description: "Desc",
-		status: "open",
-		comments: []
-	};
-
-	const result = await runTrackerOperation({
-		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
-		localStore,
-		syncState,
-		operation: { action: "update", localId: "loc-2", payload: { title: "Newest Title" } },
-		jiraAdapter: adapter
+		operation: {
+			action: "update",
+			localId: "local-2",
+			payload: { title: "After" },
+			perform: (store, operation) => {
+				localCalls += 1;
+				localPerformed = true;
+				order.push("local");
+				return { ...store, [operation.localId]: { ...store[operation.localId], ...operation.payload } };
+			}
+		},
+		jiraAdapter
 	});
 
-	assert.equal(result.readiness.ready, true);
-	const calls = result.externalCallLog;
-	assert.equal(calls[0].method, "updateTicket");
-	assert.equal(calls[0].args.fields.title, "Pending Title");
-	assert.equal(calls[1].method, "getTicket");
-	assert.equal(calls[2].method, "updateTicket");
-	assert.equal(calls[2].args.fields.title, "Newest Title");
-	
+	assert.equal(localCalls, 1);
+	assert.deepEqual(order, [
+		"pre:get:WCM-1",
+		"pre:update:WCM-1",
+		"pre:get:WCM-2",
+		"local",
+		"post:get:WCM-2",
+		"post:update:WCM-2"
+	]);
+	assert.equal(result.nextLocalStore["local-2"].title, "After");
 	assert.equal(result.nextSyncState.pendingOperations.length, 0);
 });
 
-test("stops on semantic conflict when both sides change a mapped field", async () => {
-	const adapter = new FakeJiraAdapterTemplate();
-	const syncState = {
-		mappings: {
-			"loc-3": { jiraId: "PROJ-3", fieldHashes: { title: "hash1" } }
-		},
-		pendingOperations: []
-	};
-	const localStore = {
-		"loc-3": {
-			id: "loc-3",
-			title: "Local Changed Title",
-			description: "Desc",
-			status: "open",
-			comments: [],
-			localMetadata: {}
-		}
-	};
-	adapter.existingData["PROJ-3"] = {
-		id: "PROJ-3",
-		title: "Jira Changed Title",
-		description: "Desc",
-		status: "open",
-		comments: []
-	};
-
+test("same-field title and status conflicts stop before either overwrite", async () => {
+	const jiraAdapter = new FakeJiraAdapter({
+		"WCM-3": { id: "WCM-3", title: "Remote", status: "remote-status" }
+	});
+	let localCalls = 0;
 	const result = await runTrackerOperation({
-		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
-		localStore,
-		syncState,
-		operation: { action: "update", localId: "loc-3", payload: { title: "Local Changed Title" } },
-		jiraAdapter: adapter
+		config: CONFIG,
+		localStore: { "local-3": { id: "local-3", title: "Before", status: "open" } },
+		syncState: {
+			mappings: { "local-3": mapping("WCM-3", { title: "Before", status: "open" }) },
+			pendingOperations: []
+		},
+		operation: {
+			action: "update",
+			localId: "local-3",
+			payload: { title: "Local", status: "closed" },
+			perform: store => {
+				localCalls += 1;
+				return store;
+			}
+		},
+		jiraAdapter
 	});
 
-	assert.equal(result.blockers.length, 1);
-	assert.equal(result.conflicts.length, 1);
-	assert.equal(result.conflicts[0].field, "title");
-	assert.equal(result.conflicts[0].localValue, "Local Changed Title");
-	assert.equal(result.conflicts[0].jiraValue, "Jira Changed Title");
-	assert.equal(result.externalCallLog.length, 1);
-	assert.equal(result.externalCallLog[0].method, "getTicket");
+	assert.equal(localCalls, 0);
+	assert.deepEqual(result.conflicts.map(conflict => conflict.field), ["title", "status"]);
+	assert.equal(result.nextLocalStore["local-3"].title, "Before");
+	assert.deepEqual(jiraAdapter.getCallLog().map(call => call.method), ["getTicket"]);
 });
 
-test("outage permits local operation and records pending sync", async () => {
-	const adapter = new FakeJiraAdapterTemplate();
-	adapter.simulateOutage(true);
-	const localStore = {
-		"loc-4": {
-			id: "loc-4",
-			title: "Offline Title",
-			description: "Desc",
-			status: "open",
-			comments: [],
-			localMetadata: {}
-		}
-	};
-
+test("a pre-pass outage permits one Local operation and retains old and new pending intent", async () => {
+	const jiraAdapter = new FakeJiraAdapter();
+	jiraAdapter.simulateOutage(true);
+	let localCalls = 0;
 	const result = await runTrackerOperation({
-		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
-		localStore,
+		config: CONFIG,
+		localStore: { "local-4": { id: "local-4", title: "Before" } },
+		syncState: {
+			mappings: { "local-4": mapping("WCM-4", { title: "Before" }) },
+			pendingOperations: [{ correlationId: "older", localId: "older", action: "create", payload: { title: "Older" } }]
+		},
+		operation: {
+			action: "update",
+			localId: "local-4",
+			payload: { title: "Offline" },
+			perform: (store, operation) => {
+				localCalls += 1;
+				return { ...store, [operation.localId]: { ...store[operation.localId], ...operation.payload } };
+			}
+		},
+		jiraAdapter
+	});
+
+	assert.equal(localCalls, 1);
+	assert.equal(result.nextLocalStore["local-4"].title, "Offline");
+	assert.deepEqual(result.nextSyncState.pendingOperations.map(pending => pending.localId), ["older", "local-4"]);
+});
+
+test("the next operation retries outage-pending work first", async () => {
+	const jiraAdapter = new FakeJiraAdapter();
+	jiraAdapter.simulateOutage(true);
+	const offline = await runTrackerOperation({
+		config: CONFIG,
+		localStore: {},
 		syncState: { mappings: {}, pendingOperations: [] },
-		operation: { action: "create", localId: "loc-4", payload: localStore["loc-4"] },
-		jiraAdapter: adapter
+		operation: { action: "create", localId: "local-5", payload: { title: "Offline" } },
+		jiraAdapter
 	});
+	assert.equal(offline.nextSyncState.pendingOperations.length, 1);
 
-	assert.equal(result.readiness.ready, true);
-	assert.equal(result.nextSyncState.pendingOperations.length, 1);
-	assert.equal(result.nextSyncState.pendingOperations[0].action, "create");
+	jiraAdapter.simulateOutage(false);
+	const recovered = await runTrackerOperation({
+		config: CONFIG,
+		localStore: offline.nextLocalStore,
+		syncState: offline.nextSyncState,
+		operation: { action: "update", localId: "local-5", payload: { title: "Recovered" } },
+		jiraAdapter
+	});
+	assert.equal(recovered.nextSyncState.pendingOperations.length, 0);
+	assert.equal(jiraAdapter.existingData[recovered.nextSyncState.mappings["local-5"].jiraId].title, "Recovered");
+	const recoveryMethods = recovered.externalCallLog.map(call => call.method);
+	assert.deepEqual(recoveryMethods.slice(0, 2), ["findTicketByCorrelation", "createTicket"]);
 });
 
-test("resolves conflict with manual choice", async () => {
-	const adapter = new FakeJiraAdapterTemplate();
-	const syncState = {
-		mappings: {
-			"loc-5": { jiraId: "PROJ-5", fieldHashes: { title: "hash1" } }
+test("an after-pass failure preserves recoverable state", async () => {
+	const jiraAdapter = new FakeJiraAdapter({ "WCM-6": { id: "WCM-6", title: "Before" } });
+	const updateTicket = jiraAdapter.updateTicket.bind(jiraAdapter);
+	jiraAdapter.updateTicket = async () => {
+		throw new Error("transient write failure");
+	};
+	const failed = await runTrackerOperation({
+		config: CONFIG,
+		localStore: { "local-6": { id: "local-6", title: "Before" } },
+		syncState: { mappings: { "local-6": mapping("WCM-6", { title: "Before" }) }, pendingOperations: [] },
+		operation: { action: "update", localId: "local-6", payload: { title: "After" } },
+		jiraAdapter
+	});
+	assert.equal(failed.nextLocalStore["local-6"].title, "After");
+	assert.equal(failed.nextSyncState.pendingOperations.length, 1);
+
+	jiraAdapter.updateTicket = updateTicket;
+	const recovered = await runTrackerOperation({
+		config: CONFIG,
+		localStore: failed.nextLocalStore,
+		syncState: failed.nextSyncState,
+		operation: null,
+		jiraAdapter
+	});
+	assert.equal(recovered.nextSyncState.pendingOperations.length, 0);
+	assert.equal(jiraAdapter.existingData["WCM-6"].title, "After");
+});
+
+test("create and comment synchronization never disclose Local workflow metadata", async () => {
+	const jiraAdapter = new FakeJiraAdapter();
+	const created = await runTrackerOperation({
+		config: CONFIG,
+		localStore: {},
+		syncState: { mappings: {}, pendingOperations: [] },
+		operation: {
+			action: "create",
+			localId: "local-7",
+			payload: {
+				title: "Private metadata",
+				localMetadata: { claimed: true },
+				claims: ["agent"],
+				shares: ["session"],
+				mapPointer: "secret",
+				agentState: { active: true }
+			}
 		},
-		pendingOperations: []
-	};
-	const localStore = {
-		"loc-5": {
-			id: "loc-5",
-			title: "Local Title",
-			description: "Desc",
-			status: "open",
-			comments: [],
-			localMetadata: {}
-		}
-	};
-	adapter.existingData["PROJ-5"] = {
-		id: "PROJ-5",
-		title: "Jira Title",
-		description: "Desc",
-		status: "open",
-		comments: []
-	};
-
-	const result = await runTrackerOperation({
-		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
-		localStore,
-		syncState,
-		operation: { action: "update", localId: "loc-5", payload: { title: "Local Title" } },
-		jiraAdapter: adapter,
-		conflictChoices: [{ localId: "loc-5", field: "title", resolution: "manual", manualValue: "Merged Title" }]
+		jiraAdapter
 	});
+	const createFields = created.externalCallLog.find(call => call.method === "createTicket").args.fields;
+	assert.deepEqual(createFields, { title: "Private metadata" });
 
-	assert.equal(result.blockers.length, 0);
-	assert.equal(result.conflicts.length, 0);
-	assert.equal(result.nextLocalStore["loc-5"].title, "Merged Title");
-	assert.equal(result.externalCallLog.length, 2);
-	assert.equal(result.externalCallLog[1].method, "updateTicket");
-	assert.equal(result.externalCallLog[1].args.fields.title, "Merged Title");
+	const commented = await runTrackerOperation({
+		config: CONFIG,
+		localStore: created.nextLocalStore,
+		syncState: created.nextSyncState,
+		operation: { action: "comment", localId: "local-7", payload: { text: "Hello" } },
+		jiraAdapter
+	});
+	assert.equal(commented.nextLocalStore["local-7"].comments[0].text, "Hello");
+	assert.equal(jiraAdapter.existingData[created.nextSyncState.mappings["local-7"].jiraId].comments[0].text, "Hello");
 });
 
-test("comment synchronizes correctly without conflict detection", async () => {
-	const adapter = new FakeJiraAdapterTemplate();
-	const syncState = {
-		mappings: { "loc-6": { jiraId: "PROJ-6", fieldHashes: { title: "hash" } } },
-		pendingOperations: []
-	};
-	adapter.existingData["PROJ-6"] = { id: "PROJ-6", title: "Title" };
-
-	const result = await runTrackerOperation({
-		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
-		localStore: { "loc-6": { id: "loc-6", comments: [] } },
-		syncState,
-		operation: { action: "comment", localId: "loc-6", payload: { text: "Hello" } },
-		jiraAdapter: adapter
+test("aligned updates are post-pass no-ops and Jira conflict choices update Local", async () => {
+	const jiraAdapter = new FakeJiraAdapter({ "WCM-8": { id: "WCM-8", title: "Remote" } });
+	const jiraChoice = await runTrackerOperation({
+		config: CONFIG,
+		localStore: { "local-8": { id: "local-8", title: "Before" } },
+		syncState: { mappings: { "local-8": mapping("WCM-8", { title: "Before" }) }, pendingOperations: [] },
+		operation: { action: "update", localId: "local-8", payload: { title: "Local" } },
+		jiraAdapter,
+		conflictChoices: [{ localId: "local-8", field: "title", resolution: "jira" }]
 	});
-	
-	assert.equal(result.externalCallLog.length, 2);
-	assert.equal(result.externalCallLog[1].method, "addComment");
-	assert.equal(result.nextLocalStore["loc-6"].comments.length, 1);
-	assert.equal(result.nextLocalStore["loc-6"].comments[0].text, "Hello");
-});
-
-test("status synchronizes correctly with conflict detection", async () => {
-	const adapter = new FakeJiraAdapterTemplate();
-	const syncState = {
-		mappings: { "loc-7": { jiraId: "PROJ-7", fieldHashes: { status: hashField("open") } } },
-		pendingOperations: []
-	};
-	adapter.existingData["PROJ-7"] = { id: "PROJ-7", status: "open_changed" };
-
-	const result = await runTrackerOperation({
-		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
-		localStore: { "loc-7": { id: "loc-7", status: "open" } },
-		syncState,
-		operation: { action: "status", localId: "loc-7", payload: { status: "closed" } },
-		jiraAdapter: adapter
-	});
-	
-	assert.equal(result.externalCallLog.length, 1); // getTicket only because conflict blocks update
-	assert.equal(result.externalCallLog[0].method, "getTicket");
-	assert.equal(result.conflicts.length, 1);
-});
-
-test("aligned no-op skips external update when Jira matches local", async () => {
-	const adapter = new FakeJiraAdapterTemplate();
-	const syncState = {
-		mappings: { "loc-8": { jiraId: "PROJ-8", fieldHashes: { title: "hash" } } },
-		pendingOperations: []
-	};
-	adapter.existingData["PROJ-8"] = { id: "PROJ-8", title: "Same Title" };
-
-	const result = await runTrackerOperation({
-		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
-		localStore: { "loc-8": { id: "loc-8", title: "Old Title" } },
-		syncState,
-		operation: { action: "update", localId: "loc-8", payload: { title: "Same Title" } },
-		jiraAdapter: adapter
-	});
-	
-	assert.equal(result.externalCallLog.length, 1); 
-	assert.equal(result.externalCallLog[0].method, "getTicket");
-	assert.equal(result.nextLocalStore["loc-8"].title, "Same Title");
-});
-
-test("resolves conflict with local or jira choices", async () => {
-	const adapterLocal = new FakeJiraAdapterTemplate();
-	const syncStateLocal = {
-		mappings: { "loc-9": { jiraId: "PROJ-9", fieldHashes: { title: "hash1" } } },
-		pendingOperations: []
-	};
-	adapterLocal.existingData["PROJ-9"] = { id: "PROJ-9", title: "Jira Title" };
-
-	const resultLocal = await runTrackerOperation({
-		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
-		localStore: { "loc-9": { id: "loc-9", title: "Old Title" } },
-		syncState: syncStateLocal,
-		operation: { action: "update", localId: "loc-9", payload: { title: "Local Title" } },
-		jiraAdapter: adapterLocal,
-		conflictChoices: [{ localId: "loc-9", field: "title", resolution: "local" }]
-	});
-
-	assert.equal(resultLocal.conflicts.length, 0);
-	assert.equal(resultLocal.nextLocalStore["loc-9"].title, "Local Title");
-
-	const adapterJira = new FakeJiraAdapterTemplate();
-	const syncStateJira = {
-		mappings: { "loc-9": { jiraId: "PROJ-9", fieldHashes: { title: "hash1" } } },
-		pendingOperations: []
-	};
-	adapterJira.existingData["PROJ-9"] = { id: "PROJ-9", title: "Jira Title" };
-
-	const resultJira = await runTrackerOperation({
-		config: { schema_version: 1, tracker: { primary: "local", pull_requests: "ignore" }, jira: { project: "PROJ", default_issue_type: "Task", sync: "all_local_tickets" } },
-		localStore: { "loc-9": { id: "loc-9", title: "Old Title" } },
-		syncState: syncStateJira,
-		operation: { action: "update", localId: "loc-9", payload: { title: "Local Title" } },
-		jiraAdapter: adapterJira,
-		conflictChoices: [{ localId: "loc-9", field: "title", resolution: "jira" }]
-	});
-
-	assert.equal(resultJira.conflicts.length, 0);
-	assert.equal(resultJira.nextLocalStore["loc-9"].title, "Jira Title");
+	assert.equal(jiraChoice.nextLocalStore["local-8"].title, "Remote");
+	assert.equal(jiraChoice.externalCallLog.filter(call => call.method === "updateTicket").length, 0);
 });

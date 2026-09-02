@@ -42,6 +42,29 @@ describe("Tracker Providers Module", () => {
 
 	describe("Tracker Effects & Readiness", () => {
 		const discoveryGitLab = { git: { origin: "git@gitlab.com:owner/repo.git" } };
+		test("evaluates provider readiness once per planning or readiness pass", () => {
+			let originReads = 0;
+			const discovery = {
+				git: {
+					get origin() {
+						originReads += 1;
+						return "git@gitlab.com:owner/repo.git";
+					}
+				}
+			};
+			const config = { tracker: { primary: "gitlab" } };
+			const capabilities = { glabCli: true };
+
+			assert.equal(planTrackerEffects(config, discovery, null, capabilities)[0].classification, "CREATE");
+			assert.equal(originReads, 1);
+			originReads = 0;
+			assert.deepEqual(checkTrackerReadiness(config, discovery, null, capabilities), {
+				trackerReady: true,
+				blockers: []
+			});
+			assert.equal(originReads, 1);
+		});
+
 		
 		test("returns CREATE adapter content effect for valid GitLab (first run)", () => {
 			const config = { tracker: { primary: "gitlab" } };

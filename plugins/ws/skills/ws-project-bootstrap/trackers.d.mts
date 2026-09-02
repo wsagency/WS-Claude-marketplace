@@ -8,6 +8,12 @@ export interface OriginIdentity {
 export function parseOriginIdentity(originUrl: string | null | undefined): OriginIdentity | null;
 
 export function discoverProviders(originUrl: string | null | undefined): string[];
+export function evaluateProviderReadiness(
+	primary: string | null | undefined,
+	originUrl: string | null | undefined,
+	capabilities?: CapabilitiesSnapshot,
+): JiraValidationResult;
+
 
 export interface JiraValidationResult {
 	ready: boolean;

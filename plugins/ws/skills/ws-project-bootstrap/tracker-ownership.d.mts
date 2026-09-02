@@ -64,38 +64,43 @@ export interface TrackerTicket extends LocalTicket {
 	localMetadata?: Record<string, unknown>;
 	[key: string]: unknown;
 }
+export interface TrackerOwnershipContext {
+	config: CanonicalProjectConfig;
+	localStore: Record<string, TrackerTicket>;
+	syncState: SyncState & { conflicts?: Array<{ localId: string; resolved?: boolean }> };
+	choices: TrackerOwnershipChoices;
+}
 
-export function planTrackerOwnership(
-	config: CanonicalProjectConfig,
-	localStore: Record<string, TrackerTicket>,
-	syncState: SyncState & { conflicts?: Array<{ localId: string; resolved?: boolean }> },
-	choices: TrackerOwnershipChoices,
-): TrackerOwnershipPlanResult;
+export interface ApplyTrackerOwnershipOptions {
+	planHash: string;
+	effects: ReconfigureEffect[];
+	adapters: ReconfigureAdapters;
+	injection?: ReconfigureInjection;
+}
+
+export interface ResumeTrackerOwnershipOptions {
+	adapters: ReconfigureAdapters;
+	injection?: ReconfigureInjection;
+}
+
+export interface AcceptPartialTrackerOwnershipOptions {
+	adapters: ReconfigureAdapters;
+}
+
+
+export function planTrackerOwnership(context: TrackerOwnershipContext): TrackerOwnershipPlanResult;
 
 export function applyTrackerOwnership(
-	config: CanonicalProjectConfig,
-	localStore: Record<string, TrackerTicket>,
-	syncState: SyncState,
-	choices: TrackerOwnershipChoices,
-	planHash: string,
-	effects: ReconfigureEffect[],
-	adapters: ReconfigureAdapters,
-	injection?: ReconfigureInjection,
+	context: TrackerOwnershipContext,
+	options: ApplyTrackerOwnershipOptions,
 ): Promise<ReconfigureApplyResult>;
 
 export function resumeTrackerOwnership(
-	config: CanonicalProjectConfig,
-	localStore: Record<string, TrackerTicket>,
-	syncState: SyncState,
-	choices: TrackerOwnershipChoices,
-	adapters: ReconfigureAdapters,
-	injection?: ReconfigureInjection,
+	context: TrackerOwnershipContext,
+	options: ResumeTrackerOwnershipOptions,
 ): Promise<ReconfigureApplyResult>;
 
 export function acceptPartialTrackerOwnership(
-	config: CanonicalProjectConfig,
-	localStore: Record<string, TrackerTicket>,
-	syncState: SyncState,
-	choices: TrackerOwnershipChoices,
-	adapters: ReconfigureAdapters,
+	context: TrackerOwnershipContext,
+	options: AcceptPartialTrackerOwnershipOptions,
 ): Promise<ReconfigureApplyResult>;

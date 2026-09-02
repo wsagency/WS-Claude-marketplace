@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { serializeCanonicalConfig } from "./config.mjs";
 import { getAdapterContent } from "./trackers.mjs";
-import { FakeJiraAdapterTemplate, hashField } from "./sync.mjs";
+import { hashField } from "./sync.mjs";
+import { FakeJiraAdapter } from "./test-support/fake-jira-adapter.mjs";
 import {
 	detectRepositoryLegacyPolicy,
 	inspectCanonicalCapability,
@@ -244,7 +245,7 @@ describe("canonical capability inspection", () => {
 describe("canonical Local/Jira operation boundary", () => {
 	test("retries pending synchronization before the requested operation", async () => {
 		const root = createRepository(jiraConfig("local", "all_local_tickets"));
-		const adapter = new FakeJiraAdapterTemplate({
+		const adapter = new FakeJiraAdapter({
 			"WCM-1": { id: "WCM-1", title: "Before" },
 		});
 		const result = await runCanonicalSynchronizedTrackerOperation({
@@ -259,13 +260,21 @@ describe("canonical Local/Jira operation boundary", () => {
 			jiraAdapter: adapter,
 		});
 		assert.equal(result.nextSyncState.pendingOperations.length, 0);
-		assert.equal(result.externalCallLog[0].method, "updateTicket");
+		assert.deepEqual(result.externalCallLog.map(call => call.method), [
+			"getTicket",
+			"updateTicket",
+			"getTicket",
+			"getTicket",
+			"updateTicket"
+		]);
+		assert.equal(result.externalCallLog[1].args.fields.title, "After");
+		assert.equal(result.externalCallLog[4].args.fields.status, "done");
 		assert.equal(result.nextLocalStore.local1.status, "done");
 	});
 
 	test("returns same-field conflict choices before local or remote overwrite", async () => {
 		const root = createRepository(jiraConfig("local", "all_local_tickets"));
-		const adapter = new FakeJiraAdapterTemplate({
+		const adapter = new FakeJiraAdapter({
 			"WCM-2": { id: "WCM-2", title: "Remote" },
 		});
 		const localStore = { local2: { id: "local2", title: "Local before" } };

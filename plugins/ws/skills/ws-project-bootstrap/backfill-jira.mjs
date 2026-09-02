@@ -1,5 +1,4 @@
 import { hashField, hashTicketFields } from "./sync.mjs";
-import crypto from "node:crypto";
 
 export async function auditBackfill(localTickets, syncState, jiraAdapter) {
 	const audit = {
@@ -88,12 +87,25 @@ export function planBackfill(localTickets, syncState, config) {
 	return plan;
 }
 
-export async function executeBackfill(plan, syncState, jiraAdapter) {
-	const nextSyncState = {
-		mappings: { ...(syncState.mappings || {}) },
-		pendingOperations: [...(syncState.pendingOperations || [])]
-	};
+export async function executeBackfill({ plan, syncState, jiraAdapter, persistence }) {
+	if (!persistence || typeof persistence.persistSyncState !== "function" || typeof persistence.readSyncState !== "function") {
+		throw new TypeError("Backfill requires durable persistSyncState and readSyncState callbacks.");
+	}
+	if (typeof jiraAdapter.findTicketByCorrelation !== "function") {
+		throw new TypeError("Backfill Jira adapter must support correlation recovery.");
+	}
 
+	const cloneSyncState = state => ({
+		mappings: Object.fromEntries(Object.entries(state.mappings || {}).map(([localId, mapping]) => [
+			localId,
+			{ ...mapping, fieldHashes: { ...(mapping.fieldHashes || {}) } }
+		])),
+		pendingOperations: (state.pendingOperations || []).map(pending => ({
+			...pending,
+			payload: { ...pending.payload }
+		}))
+	});
+	const nextSyncState = cloneSyncState(syncState);
 	const result = {
 		completed: [],
 		pending: [],
@@ -101,38 +113,68 @@ export async function executeBackfill(plan, syncState, jiraAdapter) {
 		nextSyncState
 	};
 
+	const persistAndReadBack = async verify => {
+		await persistence.persistSyncState(cloneSyncState(nextSyncState));
+		const persisted = cloneSyncState(await persistence.readSyncState());
+		nextSyncState.mappings = persisted.mappings;
+		nextSyncState.pendingOperations = persisted.pendingOperations;
+		if (!verify(persisted)) throw new Error("Durable sync-state read-back verification failed");
+	};
+
 	for (const item of plan.unmapped) {
 		try {
-			// Enqueue intent
-			const pendingOp = {
-				correlationId: item.correlationToken,
-				localId: item.localId,
-				action: "create",
-				payload: item.mappedFields
-			};
-			nextSyncState.pendingOperations.push(pendingOp);
+			if (nextSyncState.mappings[item.localId]) {
+				result.completed.push(item.localId);
+				continue;
+			}
 
-			const remoteTicket = await jiraAdapter.createTicket(item.mappedFields, item.correlationToken);
+			let pending = nextSyncState.pendingOperations.find(operation =>
+				operation.action === "create" &&
+				operation.localId === item.localId &&
+				operation.correlationId === item.correlationToken
+			);
+			if (!pending) {
+				pending = {
+					correlationId: item.correlationToken,
+					localId: item.localId,
+					action: "create",
+					payload: item.mappedFields
+				};
+				nextSyncState.pendingOperations.push(pending);
+				await persistAndReadBack(state => state.pendingOperations.some(operation =>
+					operation.localId === item.localId &&
+					operation.correlationId === item.correlationToken
+				));
+				pending = nextSyncState.pendingOperations.find(operation => operation.correlationId === item.correlationToken);
+			}
 
-			// Persist durable key
+			let remoteTicket = pending.returnedId ? await jiraAdapter.getTicket(pending.returnedId) : null;
+			if (!remoteTicket) remoteTicket = await jiraAdapter.findTicketByCorrelation(item.correlationToken);
+			if (!remoteTicket) remoteTicket = await jiraAdapter.createTicket(item.mappedFields, item.correlationToken);
+
+			pending.returnedId = remoteTicket.id;
+			await persistAndReadBack(state => state.pendingOperations.some(operation =>
+				operation.correlationId === item.correlationToken &&
+				operation.returnedId === remoteTicket.id
+			));
+
 			nextSyncState.mappings[item.localId] = {
 				jiraId: remoteTicket.id,
 				fieldHashes: hashTicketFields(item.mappedFields)
 			};
-
-			// Remove intent on success
-			nextSyncState.pendingOperations = nextSyncState.pendingOperations.filter(p => p.correlationId !== item.correlationToken);
-
-			// Read-back verification
-			if (!nextSyncState.mappings[item.localId]) {
-				throw new Error("Local mapping read-back verification failed");
-			}
+			nextSyncState.pendingOperations = nextSyncState.pendingOperations.filter(operation =>
+				operation.correlationId !== item.correlationToken
+			);
+			await persistAndReadBack(state =>
+				state.mappings[item.localId]?.jiraId === remoteTicket.id &&
+				!state.pendingOperations.some(operation => operation.correlationId === item.correlationToken)
+			);
 
 			result.completed.push(item.localId);
 		} catch (err) {
 			result.errors.push({ localId: item.localId, error: err.message });
 			result.pending.push(item.localId);
-			break; // Sequential apply, stop on first failure
+			break;
 		}
 	}
 
