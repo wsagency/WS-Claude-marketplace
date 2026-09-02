@@ -63,6 +63,18 @@ function triageLabels(content) {
 	return Object.keys(labels).length === 5 ? labels : null;
 }
 
+function isManagedAdapter(target, content) {
+	if (!content) return false;
+	const markers = {
+		"dev-docs/agents/issue-tracker.md": "issue-tracker",
+		"dev-docs/agents/triage-labels.md": "triage-labels",
+		"dev-docs/agents/domain.md": "domain",
+	};
+	const marker = markers[target];
+	if (!marker) return false;
+	return content.includes(`<!-- WS-MANAGED:${marker}:START -->`) && content.includes(`<!-- WS-MANAGED:${marker}:END -->`);
+}
+
 function extractContextBlock(content) {
 	if (!content) return null;
 	const markedStart = content.indexOf(MANAGED_START);
@@ -89,7 +101,7 @@ export function discoverEngineeringState(snapshots) {
 	const claudeEntry = entries["CLAUDE.md"] ?? normalizeMigrationEntry(null);
 	const contextEntry = entries["CONTEXT.md"] ?? normalizeMigrationEntry(null);
 	const contextMapEntry = entries["CONTEXT-MAP.md"] ?? normalizeMigrationEntry(null);
-	const tracker = trackerEntry.kind === "file" ? classifyTracker(trackerEntry.content) : null;
+	const tracker = trackerEntry.kind === "file" ? { ...classifyTracker(trackerEntry.content), managed: isManagedAdapter("dev-docs/agents/issue-tracker.md", trackerEntry.content) } : null;
 	const labels = triageEntry.kind === "file" ? triageLabels(triageEntry.content) : null;
 	const agentsBlock = extractContextBlock(agentsEntry.content);
 	const claudeBlock = extractContextBlock(claudeEntry.content);
@@ -99,8 +111,8 @@ export function discoverEngineeringState(snapshots) {
 		hasEngineeringState: [trackerEntry, triageEntry, domainEntry, agentsEntry, claudeEntry, contextEntry, contextMapEntry].some(entry => entry.kind !== "missing"),
 		entries,
 		tracker,
-		triage: triageEntry.kind === "file" ? { generated: triageEntry.content === TRIAGE_TEMPLATE, labels } : null,
-		domain: domainEntry.kind === "file" ? { generated: domainEntry.content === DOMAIN_TEMPLATE, layout: contextMapEntry.kind === "file" ? "multi_context" : contextEntry.kind === "file" ? "single_context" : undefined } : null,
+		triage: triageEntry.kind === "file" ? { generated: triageEntry.content === TRIAGE_TEMPLATE, managed: isManagedAdapter("dev-docs/agents/triage-labels.md", triageEntry.content), labels } : null,
+		domain: domainEntry.kind === "file" ? { generated: domainEntry.content === DOMAIN_TEMPLATE, managed: isManagedAdapter("dev-docs/agents/domain.md", domainEntry.content), layout: contextMapEntry.kind === "file" ? "multi_context" : contextEntry.kind === "file" ? "single_context" : undefined } : null,
 		context: { agentsBlock, claudeBlock, conflict: Boolean(contextConflict) },
 		activeLocalWork: Boolean(snapshots?.activeLocalWork),
 	};
@@ -115,7 +127,7 @@ export function planEngineeringMigration(discovery, currentCanonical = {}, resol
 	const effects = [];
 
 	if (!discovery.hasEngineeringState) return { patch, effects, conflicts, suggestions, blockers };
-	if (discovery.tracker) {
+	if (discovery.tracker && !discovery.tracker.managed) {
 		if (!discovery.tracker.recognized) {
 			conflicts.push({ field: "tracker.primary", source: "dev-docs/agents/issue-tracker.md", classification: "unsupported-custom" });
 			blockers.push("Unsupported custom tracker requires an explicit canonical tracker choice.");
@@ -128,22 +140,50 @@ export function planEngineeringMigration(discovery, currentCanonical = {}, resol
 				setIfAbsent(patch, "jira.sync", discovery.tracker.sync, changes, "dev-docs/agents/issue-tracker.md");
 			}
 		}
+		const resolution = resolutions["adapter.tracker"];
+		const validResolution = resolution === undefined || resolution === "preserve" || resolution === "replace";
+		if (!validResolution || (!discovery.tracker.generated && resolution === undefined)) {
+			blockers.push(validResolution
+				? "Customized tracker adapter requires an explicit preserve or replace resolution."
+				: `Invalid tracker adapter resolution: ${resolution}. Choose preserve or replace.`);
+			conflicts.push({ field: "adapter.tracker", source: "dev-docs/agents/issue-tracker.md", classification: "replace-or-preserve" });
+		}
+		const replace = validResolution && (resolution === "replace" || (discovery.tracker.generated && resolution !== "preserve"));
 		const trackerEntry = discovery.entries["dev-docs/agents/issue-tracker.md"];
-		effects.push(migrationEffect(40, "dev-docs/agents/issue-tracker.md", "file", discovery.tracker.generated ? "UPDATE" : "PRESERVE", discovery.tracker.generated ? "Replace a released generated adapter after canonical read-back." : "Preserve customized tracker semantics for reviewed merge.", trackerEntry, discovery.tracker.generated ? getAdapterContent(discovery.tracker.primary) : trackerEntry.content));
+		const adapterPrimary = patch.tracker?.primary ?? discovery.tracker.primary;
+		effects.push(migrationEffect(40, "dev-docs/agents/issue-tracker.md", "file", replace ? "UPDATE" : "PRESERVE", replace ? "Replace adapter after canonical read-back." : "Preserve customized tracker semantics for reviewed merge.", trackerEntry, replace ? getAdapterContent(adapterPrimary) : trackerEntry.content));
 	}
-	if (discovery.triage) {
+	if (discovery.triage && !discovery.triage.managed) {
 		if (!discovery.triage.labels) {
 			blockers.push("Triage adapter does not contain a complete five-role mapping.");
 			conflicts.push({ field: "triage.labels", source: "dev-docs/agents/triage-labels.md", classification: "lossy" });
 		} else setIfAbsent(patch, "triage.labels", resolutions["triage.labels"] ?? discovery.triage.labels, changes, "dev-docs/agents/triage-labels.md");
+		const resolution = resolutions["adapter.triage"];
+		const validResolution = resolution === undefined || resolution === "preserve" || resolution === "replace";
+		if (!validResolution || (!discovery.triage.generated && resolution === undefined)) {
+			blockers.push(validResolution
+				? "Customized triage adapter requires an explicit preserve or replace resolution."
+				: `Invalid triage adapter resolution: ${resolution}. Choose preserve or replace.`);
+			conflicts.push({ field: "adapter.triage", source: "dev-docs/agents/triage-labels.md", classification: "replace-or-preserve" });
+		}
+		const replace = validResolution && (resolution === "replace" || (discovery.triage.generated && resolution !== "preserve"));
 		const triageEntry = discovery.entries["dev-docs/agents/triage-labels.md"];
-		effects.push(migrationEffect(41, "dev-docs/agents/triage-labels.md", "file", discovery.triage.generated ? "UPDATE" : "PRESERVE", discovery.triage.generated ? "Replace a released generated triage adapter after canonical read-back." : "Preserve customized triage labels.", triageEntry, discovery.triage.generated ? CURRENT_TRIAGE_TEMPLATE : triageEntry.content));
+		effects.push(migrationEffect(41, "dev-docs/agents/triage-labels.md", "file", replace ? "UPDATE" : "PRESERVE", replace ? "Replace triage adapter after canonical read-back." : "Preserve customized triage labels.", triageEntry, replace ? CURRENT_TRIAGE_TEMPLATE : triageEntry.content));
 	}
-	if (discovery.domain) {
+	if (discovery.domain && !discovery.domain.managed) {
 		if (discovery.domain.layout) setIfAbsent(patch, "domain.layout", resolutions["domain.layout"] ?? discovery.domain.layout, changes, discovery.domain.layout === "multi_context" ? "CONTEXT-MAP.md" : "CONTEXT.md");
 		else suggestions.push({ field: "domain.layout", source: "dev-docs/agents/domain.md", classification: "choice-required" });
+		const resolution = resolutions["adapter.domain"];
+		const validResolution = resolution === undefined || resolution === "preserve" || resolution === "replace";
+		if (!validResolution || (!discovery.domain.generated && resolution === undefined)) {
+			blockers.push(validResolution
+				? "Customized domain adapter requires an explicit preserve or replace resolution."
+				: `Invalid domain adapter resolution: ${resolution}. Choose preserve or replace.`);
+			conflicts.push({ field: "adapter.domain", source: "dev-docs/agents/domain.md", classification: "replace-or-preserve" });
+		}
+		const replace = validResolution && (resolution === "replace" || (discovery.domain.generated && resolution !== "preserve"));
 		const domainEntry = discovery.entries["dev-docs/agents/domain.md"];
-		effects.push(migrationEffect(42, "dev-docs/agents/domain.md", "file", discovery.domain.generated ? "UPDATE" : "PRESERVE", discovery.domain.generated ? "Replace a released generated domain adapter after canonical read-back." : "Preserve customized domain guidance.", domainEntry, discovery.domain.generated ? CURRENT_DOMAIN_TEMPLATE : domainEntry.content));
+		effects.push(migrationEffect(42, "dev-docs/agents/domain.md", "file", replace ? "UPDATE" : "PRESERVE", replace ? "Replace domain adapter after canonical read-back." : "Preserve customized domain guidance.", domainEntry, replace ? CURRENT_DOMAIN_TEMPLATE : domainEntry.content));
 	}
 	if (discovery.context.conflict && !resolutions["context.source"]) {
 		blockers.push("Conflicting authored Agent skills blocks require an explicit merge choice.");

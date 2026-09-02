@@ -160,6 +160,27 @@ describe("complete hub preflight", () => {
 			["delivery", "product-docs", ...removedRepositories],
 		);
 	});
+
+	test("documented sibling repository paths remain inside the hub workspace boundary", async () => {
+		const { parent, hubRoot } = await createHub([
+			registryEntry({ name: "work", repoPath: "../work" }),
+		]);
+		const siblingRoot = path.join(parent, "work");
+		await initRepository(siblingRoot, "work");
+
+		const discovery = await discoverHubTransaction(hubRoot, MACHINE);
+		const planned = await runHubTransaction({ root: hubRoot, discovery });
+		assert.equal(planned.blockers.length, 0);
+		assert.equal(planned.requiresConfirmation, true);
+
+		const applied = await runHubTransaction({
+			root: hubRoot,
+			discovery,
+			authorization: planned.plan.hash,
+		});
+		assert.equal(await exists(path.join(siblingRoot, ".wsagency", "config.yaml")), true);
+		assert.ok(applied.operations.some(operation => operation.repository === "work" && operation.phase === "core"));
+	});
 });
 
 describe("dirty-path preflight", () => {

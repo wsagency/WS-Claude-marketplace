@@ -118,13 +118,14 @@ export function planTrackerEffects(config, discovery, jiraValidation, capabiliti
 	}
 	if (!primary) return effects;
 
-	if (primary === "jira") {
+	const jiraSynchronization = primary === "local" && config.jira?.sync === "all_local_tickets";
+	if (primary === "jira" || jiraSynchronization) {
 		if (!jiraValidation?.ready) {
 			effects.push(stateEffect(91, "integration:jira", "BLOCKING_CONFLICT", jiraValidation?.reason || "Jira capability not verified"));
 		}
-		if (config.jira?.sync !== "disabled") {
-			effects.push(stateEffect(92, "configuration:jira.sync", "BLOCKING_CONFLICT", "Jira primary tracker requires Jira sync to be disabled"));
-		}
+	}
+	if (primary === "jira" && config.jira?.sync !== "disabled") {
+		effects.push(stateEffect(92, "configuration:jira.sync", "BLOCKING_CONFLICT", "Jira primary tracker requires Jira sync to be disabled"));
 	}
 
 	const providerReadiness = evaluateProviderReadiness(primary, discovery?.git?.origin, capabilities);
@@ -164,7 +165,8 @@ export function checkTrackerReadiness(config, discovery, jiraValidation, capabil
 	if (!primary) return { trackerReady: false, blockers: ["No primary tracker configured"] };
 
 	const blockers = [];
-	if (primary === "jira" && !jiraValidation?.ready) {
+	const jiraSynchronization = primary === "local" && config.jira?.sync === "all_local_tickets";
+	if ((primary === "jira" || jiraSynchronization) && !jiraValidation?.ready) {
 		blockers.push(jiraValidation?.reason || "Jira capability not verified");
 	}
 

@@ -1,3 +1,5 @@
+import type { BackfillJiraAdapter, BackfillPersistence } from "./backfill-jira.d.mts";
+import type { LocalTicket, SyncState } from "./sync.d.mts";
 import type { CanonicalProjectConfig, DerivedSetupReadiness } from "./config.d.mts";
 import type { HubChoices, HubDiscovery, HubOutcome, HubOperation, HubTransactionResult } from "./hub-transaction.d.mts";
 import type { LegacyDiscovery, LegacyMigrationOptions, LegacyMigrationPlan } from "./migration.d.mts";
@@ -48,6 +50,19 @@ export interface DeterministicManifest {
 	delegated: unknown;
 }
 
+export interface ManifestBackfillAdapters {
+	localTickets: Record<string, LocalTicket>;
+	syncState: SyncState;
+	jiraAdapter: BackfillJiraAdapter;
+	persistence: BackfillPersistence;
+}
+
+export type ManifestOperation = SetupOperation | HubOperation | ReconfigureApplyResult["operationReport"][number] | {
+	action: "verify" | "pending";
+	target: string;
+	remoteId?: string | null;
+};
+
 export interface MigrationManifestReadiness {
 	configValid: boolean;
 	semanticReadBack: boolean;
@@ -57,13 +72,15 @@ export interface MigrationManifestReadiness {
 	fingerprintsReady: boolean;
 	docsReady: boolean;
 	jiraReady: boolean;
+	jiraBackfillReady?: boolean;
+	blockers?: Record<string, string[]>;
 }
 
 export interface ManifestResult {
 	manifest: DeterministicManifest;
 	requiresAuthorization: boolean;
 	applied: boolean;
-	operations: SetupOperation[] | HubOperation[] | ReconfigureApplyResult["operationReport"];
+	operations: ManifestOperation[];
 	readiness?: SetupReadiness | MigrationManifestReadiness | DerivedSetupReadiness | HubTransactionResult["readiness"];
 	report: string;
 	failure?: SetupTransactionFailure;
@@ -89,7 +106,7 @@ export interface SetupManifestRequest {
 	choices: SetupChoices;
 	authorization?: string;
 	injection?: ManifestInjection;
-	adapters?: { originVerifier?: OriginVerifier };
+	adapters?: { originVerifier?: OriginVerifier; jiraBackfill?: ManifestBackfillAdapters };
 }
 
 export interface MigrationManifestRequest {
@@ -100,6 +117,7 @@ export interface MigrationManifestRequest {
 	authorization?: string;
 	injection?: ManifestInjection;
 	adapters?: {
+		jiraBackfill?: ManifestBackfillAdapters;
 		verifyMigrationReadiness?: (input: {
 			manifest: DeterministicManifest;
 			legacyPlan: LegacyMigrationPlan;

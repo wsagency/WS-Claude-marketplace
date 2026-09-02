@@ -12,7 +12,8 @@
     "runtimeReady": true,
     "fingerprintsReady": true,
     "docsReady": true,
-    "jiraReady": true
+    "jiraReady": true,
+    "jiraBackfillReady": true
   },
   "reportIncludes": ["Legacy migration verified", "WS setup verified"],
   "externalCalls": ["verifyMigrationReadiness"],

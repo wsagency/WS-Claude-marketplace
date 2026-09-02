@@ -98,13 +98,13 @@ function legacyDirective(sources) {
 
 function artifactSnapshot(root, supplied = {}) {
 	return {
-		issueTracker: isFile(root, TRACKER_ADAPTER_PATH),
-		triageLabels: isFile(root, TRIAGE_ADAPTER_PATH),
-		domain: isFile(root, DOMAIN_ADAPTER_PATH),
+		...supplied,
+		issueTracker: isManagedOperationalAdapter(root, TRACKER_ADAPTER_PATH),
+		triageLabels: isManagedOperationalAdapter(root, TRIAGE_ADAPTER_PATH),
+		domain: isManagedOperationalAdapter(root, DOMAIN_ADAPTER_PATH),
 		agents: isFile(root, "AGENTS.md"),
 		claude: isFile(root, "CLAUDE.md"),
 		localTracker: isDirectory(root, "dev-docs/tickets/open") && isDirectory(root, "dev-docs/tickets/done"),
-		...supplied,
 	};
 }
 

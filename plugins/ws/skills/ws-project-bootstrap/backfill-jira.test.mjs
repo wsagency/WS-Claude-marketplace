@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { auditBackfill, planBackfill, executeBackfill } from "./backfill-jira.mjs";
 import { FakeJiraAdapter } from "./test-support/fake-jira-adapter.mjs";
+import { hashField } from "./sync.mjs";
 
 function clone(value) {
 	return structuredClone(value);
@@ -81,6 +82,23 @@ test("planBackfill includes open and done tickets with deterministic correlation
 	assert.deepEqual(first.unmapped[0].unsupportedFields, ["custom"]);
 	assert.equal(first.unmapped[1].proposedType, "Task");
 	assert.notEqual(first.unmapped[0].correlationToken, first.unmapped[1].correlationToken);
+});
+
+test("planBackfill retains unmapped tickets with pending create intents for recovery", () => {
+	const localTickets = { "LOCAL-1": { id: "LOCAL-1", title: "Recover", status: "open" } };
+	const pendingOperations = [{
+		correlationId: hashField("LOCAL-1:TKT"),
+		localId: "LOCAL-1",
+		action: "create",
+		payload: { title: "Recover" },
+	}];
+	const plan = planBackfill(
+		localTickets,
+		{ mappings: {}, pendingOperations },
+		{ jira: { project: "TKT", default_issue_type: "Task" } },
+	);
+	assert.deepEqual(plan.unmapped.map(item => item.localId), ["LOCAL-1"]);
+	assert.equal(plan.unmapped[0].correlationToken, pendingOperations[0].correlationId);
 });
 
 test("every create is followed by durable returned-key journaling, mapping persistence, and read-back", async () => {

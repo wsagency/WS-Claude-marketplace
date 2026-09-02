@@ -35,7 +35,7 @@ test("released docs configuration maps deterministic policy and drops presentati
 		skip_types: ["docs", "chore", "test", "style", "build", "ci"],
 		update_mode: "pull_request",
 	});
-	assert.deepEqual(plan.patch.runtime, { session_discipline: "required", dangerous_git_guard: "disabled" });
+	assert.deepEqual(plan.patch.runtime, { session_discipline: "required", dangerous_git_guard: "enabled" });
 	assert.ok(!JSON.stringify(plan.patch).includes("initialized"));
 	assert.ok(!JSON.stringify(plan.patch).includes("subagent_status"));
 	assert.equal(plan.blockers.length, 0);
@@ -79,7 +79,7 @@ test("conflicting fat context files preserve authored prose and require a choice
 	const blocked = planDocsRuntimeMigration(discovery, base());
 	assert.ok(blocked.blockers.some(blocker => blocker.includes("context.source")));
 	assert.deepEqual(blocked.effects.filter(effect => ["AGENTS.md", "CLAUDE.md"].includes(effect.target)).map(effect => effect.classification), ["PRESERVE", "PRESERVE"]);
-	
+
 	const resolvedAgents = planDocsRuntimeMigration(discovery, base(), { "context.source": "agents" });
 	assert.ok(!resolvedAgents.blockers.some(blocker => blocker.includes("context.source")));
 	assert.equal(resolvedAgents.effects.find(e => e.target === "AGENTS.md").classification, "UPDATE");
@@ -98,7 +98,7 @@ test("fat-only context fails closed and resolves to authorized effect", () => {
 	const blocked = planDocsRuntimeMigration(discovery, base());
 	assert.ok(blocked.blockers.some(blocker => blocker.includes("context.source")));
 	assert.deepEqual(blocked.effects.filter(effect => ["CLAUDE.md"].includes(effect.target)).map(effect => effect.classification), ["PRESERVE"]);
-	
+
 	const resolved = planDocsRuntimeMigration(discovery, base(), { "context.source": "claude" });
 	assert.ok(!resolved.blockers.some(blocker => blocker.includes("context.source")));
 	assert.equal(resolved.effects.find(e => e.target === "AGENTS.md").classification, "CREATE");
@@ -106,14 +106,40 @@ test("fat-only context fails closed and resolves to authorized effect", () => {
 	assert.equal(resolved.effects.find(e => e.target === "CLAUDE.md").classification, "UPDATE");
 });
 
-test("repository-encoded guard policy overrides machine capability", () => {
-	const discovery1 = discoverDocsRuntimeState({}, { dangerousGitGuard: true });
-	assert.equal(planDocsRuntimeMigration(discovery1, base()).patch.runtime.dangerous_git_guard, "disabled");
+test("invalid context resolutions fail closed without discarding authored bytes", () => {
+	const fatOnly = discoverDocsRuntimeState({ "CLAUDE.md": "# Claude-only context\n" });
+	for (const resolution of ["agents", "unknown"]) {
+		const plan = planDocsRuntimeMigration(fatOnly, base(), { "context.source": resolution });
+		assert.ok(plan.blockers.some(blocker => blocker.includes("context.source")));
+		assert.equal(plan.effects.find(effect => effect.target === "CLAUDE.md").classification, "PRESERVE");
+		assert.equal(plan.effects.find(effect => effect.target === "CLAUDE.md").after, "# Claude-only context\n");
+		assert.equal(plan.effects.some(effect => effect.target === "AGENTS.md" && effect.classification !== "PRESERVE"), false);
+	}
+});
 
-	const discovery2 = discoverDocsRuntimeState({
-		".claude/settings.json": JSON.stringify({ hooks: { PreToolUse: [{ command: "ws dangerous-git guard" }] } })
-	}, { dangerousGitGuard: false });
-	assert.equal(planDocsRuntimeMigration(discovery2, base()).patch.runtime.dangerous_git_guard, "enabled");
+test("merged context preserves every authored source byte", () => {
+	const agentsContent = "# Agent context\n\n";
+	const claudeContent = "  # Claude context without trailing newline";
+	const discovery = discoverDocsRuntimeState({
+		"AGENTS.md": agentsContent,
+		"CLAUDE.md": claudeContent,
+	});
+	const plan = planDocsRuntimeMigration(discovery, base(), { "context.source": "merge" });
+	const merged = plan.effects.find(effect => effect.target === "AGENTS.md").after;
+	assert.ok(merged.startsWith(agentsContent));
+	assert.ok(merged.endsWith(claudeContent));
+	assert.equal(merged, `${agentsContent}\n${claudeContent}`);
+});
+
+test("recommended guard policy is independent of machine capability and accepts explicit resolution", () => {
+	const capableMachine = discoverDocsRuntimeState({}, { dangerousGitGuard: true });
+	const incapableMachine = discoverDocsRuntimeState({}, { dangerousGitGuard: false });
+	assert.equal(planDocsRuntimeMigration(capableMachine, base()).patch.runtime.dangerous_git_guard, "enabled");
+	assert.equal(planDocsRuntimeMigration(incapableMachine, base()).patch.runtime.dangerous_git_guard, "enabled");
+	assert.equal(
+		planDocsRuntimeMigration(capableMachine, base(), { "runtime.dangerous_git_guard": "disabled" }).patch.runtime.dangerous_git_guard,
+		"disabled",
+	);
 });
 
 test("thin Claude import is recognized without a context conflict", () => {

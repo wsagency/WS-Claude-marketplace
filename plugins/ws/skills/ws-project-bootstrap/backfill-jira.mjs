@@ -56,10 +56,6 @@ export function planBackfill(localTickets, syncState, config) {
 
 	for (const [localId, ticket] of Object.entries(localTickets)) {
 		if (syncState.mappings?.[localId]) continue;
-		
-		if (syncState.pendingOperations?.some(p => p.localId === localId && p.action === "create")) {
-			continue; // Will be handled by normal sync retry
-		}
 
 		const mappedFields = {
 			title: ticket.title,

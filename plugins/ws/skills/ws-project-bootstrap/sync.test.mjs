@@ -184,6 +184,34 @@ test("the next operation retries outage-pending work first", async () => {
 	assert.deepEqual(recoveryMethods.slice(0, 2), ["findTicketByCorrelation", "createTicket"]);
 });
 
+test("unmapped pending updates, statuses, and comments remain queued without remote mutation", async t => {
+	for (const [action, payload] of [
+		["update", { title: "Pending title" }],
+		["status", { status: "done" }],
+		["comment", { text: "Pending comment" }],
+	]) {
+		await t.test(action, async () => {
+			const jiraAdapter = new FakeJiraAdapter();
+			const pendingOperations = [{
+				correlationId: `pending-${action}`,
+				localId: "unmapped-local",
+				action,
+				payload,
+			}];
+			const result = await runTrackerOperation({
+				config: CONFIG,
+				localStore: {},
+				syncState: { mappings: {}, pendingOperations },
+				operation: null,
+				jiraAdapter,
+			});
+			assert.deepEqual(result.nextSyncState.pendingOperations, pendingOperations);
+			assert.deepEqual(result.externalCallLog, []);
+			assert.deepEqual(jiraAdapter.getCallLog(), []);
+		});
+	}
+});
+
 test("an after-pass failure preserves recoverable state", async () => {
 	const jiraAdapter = new FakeJiraAdapter({ "WCM-6": { id: "WCM-6", title: "Before" } });
 	const updateTicket = jiraAdapter.updateTicket.bind(jiraAdapter);

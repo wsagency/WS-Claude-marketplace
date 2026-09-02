@@ -72,7 +72,6 @@ export function discoverDocsRuntimeState(snapshots, machine = {}) {
 	const context = contextShape(entries["AGENTS.md"]?.content, entries["CLAUDE.md"]?.content);
 	const settingsText = entries[REPO_SETTINGS]?.content ?? "";
 	const runtimeOwned = typeof settingsText === "string" && /ws[^\n]*(session|guard|dashboard)|dangerous[-_ ]git/i.test(settingsText);
-	const guardEncoded = typeof settingsText === "string" && /dangerous[-_ ]git/i.test(settingsText);
 	const runtimeCustomized = runtimeOwned && !settingsParsed.malformed && Object.keys(settingsParsed.value ?? {}).some(key => key !== "hooks");
 	return {
 		entries,
@@ -87,7 +86,6 @@ export function discoverDocsRuntimeState(snapshots, machine = {}) {
 			dangerousGitGuard: machine.dangerousGitGuard === true,
 			repositoryOwned: runtimeOwned,
 			customized: runtimeCustomized,
-			guardEncoded,
 		},
 	};
 }
@@ -123,30 +121,55 @@ export function planDocsRuntimeMigration(discovery, currentCanonical = {}, resol
 		setIfAbsent(patch, "changelog.update_mode", changelogMode(project, docs, resolutions, conflicts) ?? "pull_request", changes, "legacy changelog truth table");
 	}
 	setIfAbsent(patch, "runtime.session_discipline", "required", changes, "active harness contract");
-	
+
 	if (patch.runtime?.dangerous_git_guard === undefined) {
-		if (discovery.runtime.guardEncoded) {
-			setIfAbsent(patch, "runtime.dangerous_git_guard", "enabled", changes, REPO_SETTINGS);
-		} else {
-			setIfAbsent(patch, "runtime.dangerous_git_guard", resolutions["runtime.dangerous_git_guard"] ?? "disabled", changes, resolutions["runtime.dangerous_git_guard"] !== undefined ? "explicit resolution" : "repository default");
-		}
+		setIfAbsent(
+			patch,
+			"runtime.dangerous_git_guard",
+			resolutions["runtime.dangerous_git_guard"] ?? "enabled",
+			changes,
+			resolutions["runtime.dangerous_git_guard"] !== undefined ? "explicit resolution" : "recommended repository default",
+		);
 	}
 
 	const THIN_CLAUDE = "<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n";
 	const resolvedContext = resolutions["context.source"];
+	const contextRequiresResolution = discovery.context.conflicting || discovery.context.fatClaude;
+	const claudeContent = discovery.entries["CLAUDE.md"]?.content ?? "";
+	const agentsContent = discovery.entries["AGENTS.md"]?.content ?? "";
+	const contextSources = ["AGENTS.md", "CLAUDE.md"];
+	const preserveAuthoredContext = () => {
+		if (discovery.context.fatClaude) {
+			effects.push(migrationEffect(45, "CLAUDE.md", "file", "PRESERVE", "Preserve fat context until its reviewed diff is accepted into AGENTS.md.", discovery.entries["CLAUDE.md"]));
+		}
+		if (discovery.context.authoredAgents) {
+			effects.push(migrationEffect(45, "AGENTS.md", "file", "PRESERVE", "Byte-preserve authored canonical context.", discovery.entries["AGENTS.md"]));
+		}
+	};
 
-	if ((discovery.context.conflicting || discovery.context.fatClaude) && !resolvedContext) {
-		conflicts.push({ field: "context.source", classification: discovery.context.conflicting ? "ambiguous" : "insufficient-evidence", sources: ["AGENTS.md", "CLAUDE.md"] });
-		if (discovery.context.fatClaude) effects.push(migrationEffect(45, "CLAUDE.md", "file", "PRESERVE", "Preserve fat context until its reviewed diff is accepted into AGENTS.md.", discovery.entries["CLAUDE.md"]));
-		if (discovery.context.authoredAgents) effects.push(migrationEffect(45, "AGENTS.md", "file", "PRESERVE", "Byte-preserve authored canonical context.", discovery.entries["AGENTS.md"]));
+	let invalidContextResolution = false;
+	if (resolvedContext !== undefined) {
+		const knownResolution = ["agents", "claude", "merge"].includes(resolvedContext);
+		const hasSelectedSource =
+			(resolvedContext === "agents" && discovery.context.authoredAgents)
+			|| (resolvedContext === "claude" && discovery.context.fatClaude)
+			|| (resolvedContext === "merge" && discovery.context.authoredAgents && discovery.context.fatClaude);
+		invalidContextResolution = !knownResolution || !hasSelectedSource;
+	}
+
+	if (contextRequiresResolution && !resolvedContext) {
+		conflicts.push({ field: "context.source", classification: discovery.context.conflicting ? "ambiguous" : "insufficient-evidence", sources: contextSources });
+		preserveAuthoredContext();
+	} else if (invalidContextResolution) {
+		conflicts.push({ field: "context.source", classification: "invalid-resolution", sources: contextSources });
+		preserveAuthoredContext();
 	} else if (resolvedContext) {
-		const claudeContent = discovery.entries["CLAUDE.md"]?.content ?? "";
-		const agentsContent = discovery.entries["AGENTS.md"]?.content ?? "";
-		let mergedAgents = "";
-		if (resolvedContext === "agents") mergedAgents = agentsContent;
-		else if (resolvedContext === "claude") mergedAgents = claudeContent;
-		else if (resolvedContext === "merge") mergedAgents = `${agentsContent.trim()}\n\n${claudeContent.trim()}\n`;
-		else mergedAgents = agentsContent; // fallback
+		let mergedAgents = agentsContent;
+		if (resolvedContext === "claude") mergedAgents = claudeContent;
+		if (resolvedContext === "merge") {
+			const separator = agentsContent.endsWith("\n") ? "\n" : "\n\n";
+			mergedAgents = `${agentsContent}${separator}${claudeContent}`;
+		}
 
 		const agentsKind = (discovery.entries["AGENTS.md"]?.kind ?? "missing") === "missing" ? "CREATE" : "UPDATE";
 		effects.push(migrationEffect(45, "AGENTS.md", "file", agentsKind, `Apply resolved context source (${resolvedContext}).`, discovery.entries["AGENTS.md"], mergedAgents));

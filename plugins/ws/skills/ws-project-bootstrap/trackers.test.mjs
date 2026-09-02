@@ -131,6 +131,16 @@ describe("Tracker Providers Module", () => {
 			assert.equal(effects[0].reason, "jira-cli binary not found");
 		});
 
+		test("requires Jira capability for Local all-ticket synchronization", () => {
+			const config = { tracker: { primary: "local" }, jira: { sync: "all_local_tickets" } };
+			const validation = { ready: false, reason: "jira-cli authentication failed" };
+			const effects = planTrackerEffects(config, {}, validation, {});
+			assert.equal(effects.find(effect => effect.target === "integration:jira").classification, "BLOCKING_CONFLICT");
+			const readiness = checkTrackerReadiness(config, {}, validation, {});
+			assert.equal(readiness.trackerReady, false);
+			assert.deepEqual(readiness.blockers, ["jira-cli authentication failed"]);
+		});
+
 		test("blocks Jira if sync is not disabled", () => {
 			const config = { tracker: { primary: "jira" }, jira: { sync: "all_local_tickets" } };
 			const validation = { ready: true };

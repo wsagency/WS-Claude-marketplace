@@ -8,6 +8,7 @@ import { discoverEngineeringState, planEngineeringMigration } from "./migration-
 import { discoverJiraState, planJiraMigration } from "./migration-jira.mjs";
 import { getAdapterContent } from "./trackers.mjs";
 import { CANONICAL_CONFIG_YAML } from "./transaction.mjs";
+import { DOCUMENTATION_CONTEXT_FRAGMENTS } from "../ws-docs-bootstrap/transaction.mjs";
 
 const LOCAL_LEGACY_SOURCES = [".claude/ws-project.yaml", ".claude/docs-config.yaml", ".claude/settings.json"];
 const DISCOVERY_TARGETS = [
@@ -142,12 +143,12 @@ export function planLegacyMigration(discovery, options = {}) {
 	const snapshots = Object.fromEntries(Object.entries(discovery.entries).map(([target, entry]) => [target, entry]));
 	snapshots.activeLocalWork = discovery.activeLocalWork;
 	const engineeringDiscovery = discoverEngineeringState(snapshots);
-	const hasReleasedEngineeringAdapter = engineeringDiscovery.tracker?.generated === true
-		|| engineeringDiscovery.triage?.generated === true
-		|| engineeringDiscovery.domain?.generated === true;
+	const hasUnmanagedOperationalAdapter = (engineeringDiscovery.tracker && !engineeringDiscovery.tracker.managed)
+		|| (engineeringDiscovery.triage && !engineeringDiscovery.triage.managed)
+		|| (engineeringDiscovery.domain && !engineeringDiscovery.domain.managed);
 	const hasRepositoryLegacy = LOCAL_LEGACY_SOURCES.slice(0, 2).some(target => discovery.entries[target]?.kind !== "missing")
 		|| hasRuntimeLegacy
-		|| hasReleasedEngineeringAdapter;
+		|| hasUnmanagedOperationalAdapter;
 	if (canonical?.status === "valid" && !hasRepositoryLegacy) {
 		const plan = { config: canonical.config, effects: [], blockers: [], conflicts: [], requiresConfirmation: false, report: "Valid canonical configuration wins. No migration changes required." };
 		return { ...plan, hash: sha256(JSON.stringify(planHashPayload(plan))) };
@@ -261,7 +262,10 @@ async function verifyContextEvidence(root, config) {
 		&& agents.content.split(start).length === 2
 		&& agents.content.split(end).length === 2
 		&& agents.content.indexOf(start) < agents.content.indexOf(end);
-	if (!hasManagedContext || claude.kind !== "file" || claude.content.trim() !== "@AGENTS.md" || context.kind !== "file") {
+	const normalizedClaude = claude.kind === "file" ? claude.content.replaceAll("\r\n", "\n").trim() : "";
+	const knownThinClaude = normalizedClaude === "@AGENTS.md"
+		|| normalizedClaude === DOCUMENTATION_CONTEXT_FRAGMENTS.claude.trim();
+	if (!hasManagedContext || !knownThinClaude || context.kind !== "file") {
 		throw new Error("Legacy cleanup is not eligible: shared context is missing or drifted.");
 	}
 }

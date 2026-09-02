@@ -5,6 +5,7 @@ import { applyLegacyCleanup, planLegacyMigration } from "./migration.mjs";
 import { acceptConfirmedPartial, applyConfirmedPlan, createReconfigurePlan, resumeConfirmedPlan } from "./reconfigure.mjs";
 import { applyPlan, buildPlan, deriveReadiness, discoverStandaloneRepository, runSetupTransaction } from "./transaction.mjs";
 import { applyDocumentation, discoverDocumentation, planDocumentation } from "../ws-docs-bootstrap/transaction.mjs";
+import { auditBackfill, executeBackfill, planBackfill } from "./backfill-jira.mjs";
 
 export const MANIFEST_CONTRACT_VERSION = 1;
 export const MANIFEST_CLASSIFICATIONS = Object.freeze([
@@ -104,6 +105,156 @@ function migrationReadiness(core, plan) {
 function hasMutation(items) {
 	return items.some(entry => MUTATIONS.has(entry.classification));
 }
+
+function usesLocalJiraBackfill(config) {
+	return config?.tracker?.primary === "local" && config?.jira?.sync === "all_local_tickets";
+}
+
+function backfillStateEffect(classification, reason, fingerprint = null) {
+	return {
+		order: 200,
+		target: "jira:backfill:audit",
+		kind: "external",
+		classification,
+		reason,
+		diff: "",
+		fingerprint,
+	};
+}
+
+async function planLocalJiraBackfill(config, adapters) {
+	if (!usesLocalJiraBackfill(config)) return null;
+	const input = adapters?.jiraBackfill;
+	const requiredCallbacks = [
+		["jiraAdapter.getTicket", input?.jiraAdapter?.getTicket],
+		["jiraAdapter.findTicketByCorrelation", input?.jiraAdapter?.findTicketByCorrelation],
+		["jiraAdapter.createTicket", input?.jiraAdapter?.createTicket],
+		["persistence.persistSyncState", input?.persistence?.persistSyncState],
+		["persistence.readSyncState", input?.persistence?.readSyncState],
+	];
+	const missing = [
+		...(input?.localTickets && typeof input.localTickets === "object" ? [] : ["localTickets"]),
+		...(input?.syncState && typeof input.syncState === "object" ? [] : ["syncState"]),
+		...requiredCallbacks.filter(([, callback]) => typeof callback !== "function").map(([name]) => name),
+	];
+	if (missing.length > 0) {
+		const reason = `Local/Jira initial backfill requires ${missing.join(", ")}.`;
+		return {
+			audit: null,
+			plan: null,
+			effects: [backfillStateEffect("BLOCKING_CONFLICT", reason)],
+			blockers: [reason],
+			input,
+			localTicketsFingerprint: null,
+			syncFingerprint: null,
+		};
+	}
+
+	const audit = await auditBackfill(input.localTickets, input.syncState, input.jiraAdapter);
+	const auditProblems = ["missing", "stale", "duplicated", "conflicting"]
+		.flatMap(classification => audit[classification].map(entry => ({ classification, ...entry })));
+	const blockers = auditProblems.map(problem =>
+		`Local/Jira mapping audit found ${problem.classification} state for ${problem.localId}${problem.jiraId ? ` (${problem.jiraId})` : ""}.`,
+	);
+	const plan = planBackfill(input.localTickets, input.syncState, config);
+	const localTicketsFingerprint = hash(input.localTickets);
+	const syncFingerprint = hash(input.syncState);
+	const effects = [
+		backfillStateEffect(
+			blockers.length > 0 ? "BLOCKING_CONFLICT" : "NO-OP",
+			blockers.length > 0 ? "Resolve Local/Jira mapping audit failures before backfill." : "Local/Jira mapping audit completed without conflicts.",
+			hash({ audit, localTicketsFingerprint, syncFingerprint }),
+		),
+		...plan.unmapped.map((entry, index) => ({
+			order: 201 + index,
+			target: `jira:${entry.proposedProject}:${entry.localId}`,
+			kind: "external",
+			classification: "CREATE",
+			reason: `Create or recover the Jira issue for Local ticket ${entry.localId}.`,
+			diff: JSON.stringify({
+				sourceLink: entry.sourceLink,
+				proposedType: entry.proposedType,
+				mappedFields: entry.mappedFields,
+				unsupportedFields: entry.unsupportedFields,
+			}),
+			fingerprint: entry.correlationToken,
+		})),
+	];
+	return { audit, plan, effects, blockers, input, localTicketsFingerprint, syncFingerprint };
+}
+
+function publicBackfillPlan(backfill) {
+	if (!backfill) return null;
+	return {
+		audit: backfill.audit,
+		plan: backfill.plan,
+		localTicketsFingerprint: backfill.localTicketsFingerprint,
+		syncFingerprint: backfill.syncFingerprint,
+	};
+}
+
+function withBackfillReadiness(readiness, backfill, execution) {
+	if (!backfill) return readiness;
+	const pending = execution?.pending ?? backfill.plan?.unmapped.map(entry => entry.localId) ?? [];
+	const errors = execution?.errors?.map(entry => `${entry.localId}: ${entry.error}`) ?? [];
+	const blockers = [...backfill.blockers, ...errors];
+	const ready = blockers.length === 0 && pending.length === 0;
+	const backfillBlockers = blockers.length > 0
+		? blockers
+		: pending.length > 0
+			? [`Pending Local/Jira backfill: ${pending.join(", ")}.`]
+			: [];
+	return {
+		...(readiness ?? {}),
+		jiraBackfillReady: ready,
+		jiraReady: (readiness?.jiraReady ?? true) && ready,
+		...(readiness?.blockers || !ready
+			? {
+				blockers: {
+					...(readiness?.blockers ?? {}),
+					...(!ready ? { jiraBackfill: backfillBlockers } : {}),
+				},
+			}
+			: {}),
+	};
+}
+
+async function executePlannedBackfill(backfill) {
+	if (!backfill?.plan || backfill.plan.unmapped.length === 0) {
+		return { completed: [], pending: [], errors: [], nextSyncState: backfill?.input?.syncState };
+	}
+	const durableSyncState = await backfill.input.persistence.readSyncState();
+	if (hash(durableSyncState) !== backfill.syncFingerprint) {
+		throw new Error("Local/Jira sync state changed after manifest authorization.");
+	}
+	return executeBackfill({
+		plan: backfill.plan,
+		syncState: durableSyncState,
+		jiraAdapter: backfill.input.jiraAdapter,
+		persistence: backfill.input.persistence,
+	});
+}
+
+function backfillOperations(execution) {
+	return [
+		...execution.completed.map(localId => ({
+			action: "verify",
+			target: `jira:backfill:${localId}`,
+			remoteId: execution.nextSyncState?.mappings?.[localId]?.jiraId ?? null,
+		})),
+		...execution.pending.map(localId => ({ action: "pending", target: `jira:backfill:${localId}` })),
+	];
+}
+
+function backfillFailure(execution, error) {
+	const pending = execution?.pending ?? [];
+	return {
+		target: pending[0] ? `jira:backfill:${pending[0]}` : "jira:backfill",
+		error: error?.message ?? execution?.errors?.[0]?.error ?? "Local/Jira backfill did not complete.",
+		completed: execution?.completed ?? [],
+		pending,
+	};
+}
 async function planConfiguredDocumentation(root, projectShape, config) {
 	if (!config?.docs) return null;
 	return planDocumentation(await discoverDocumentation(
@@ -139,35 +290,48 @@ async function runSetup(request) {
 
 	const configSource = request.choices?.targetConfig;
 	const configValidation = configSource ? validateCanonicalConfig(configSource) : null;
-	const docsPlan = configValidation?.status === "valid"
-		? await planConfiguredDocumentation(request.root, request.snapshot.projectShape, configValidation.config)
-		: null;
+	const config = configValidation?.status === "valid" ? configValidation.config : null;
+	const [docsPlan, backfill] = await Promise.all([
+		config ? planConfiguredDocumentation(request.root, request.snapshot.projectShape, config) : null,
+		planLocalJiraBackfill(config, request.adapters),
+	]);
 	const items = [
 		...setupItems(planned.plan),
+		...(backfill?.effects ?? []).map((effect, index) => item(effect, index, { phase: "backfill", scope: "repository" })),
 		...(docsPlan?.effects ?? []).map((effect, index) => item(effect, index, { phase: "docs", scope: "repository" })),
 	];
 	const blockers = items
 		.filter(entry => entry.classification === "BLOCKING_CONFLICT")
 		.map(entry => entry.reason);
-	const completeHash = hash({ mode: "setup", core: planned.plan.hash, docs: docsPlan?.hash ?? null });
+	const completeHash = hash({
+		mode: "setup",
+		core: planned.plan.hash,
+		backfill: publicBackfillPlan(backfill),
+		docs: docsPlan?.hash ?? null,
+	});
 	const complete = manifest(
 		"setup",
 		completeHash,
 		planned.plan.scope,
 		items,
 		[...new Set(blockers)],
-		{ core: planned.plan, docs: docsPlan },
+		{ core: planned.plan, backfill: publicBackfillPlan(backfill), docs: docsPlan },
 	);
 	const requiresAuthorization = blockers.length === 0 && hasMutation(items);
 	if (!request.authorization || !requiresAuthorization) {
+		const readiness = withBackfillReadiness(
+			withDocumentationReadiness(planned.readiness, docsPlan),
+			backfill,
+		undefined,
+		);
 		return {
 			manifest: complete,
 			requiresAuthorization,
 			applied: !requiresAuthorization && blockers.length === 0,
 			operations: [],
-			readiness: withDocumentationReadiness(planned.readiness, docsPlan),
+			readiness,
 			report: blockers.length > 0
-				? planned.report
+				? [...new Set([planned.report, ...blockers])].join("\n")
 				: requiresAuthorization
 					? "Complete setup manifest ready. No files have been changed."
 					: planned.report,
@@ -190,9 +354,38 @@ async function runSetup(request) {
 			requiresAuthorization: false,
 			applied: false,
 			operations: applied.operations,
-			readiness: applied.readiness,
+			readiness: withBackfillReadiness(applied.readiness, backfill, undefined),
 			report: applied.report,
 			failure: applied.failure,
+		};
+	}
+
+	let backfillResult;
+	try {
+		backfillResult = await executePlannedBackfill(backfill);
+	} catch (error) {
+		const failure = backfillFailure(undefined, error);
+		return {
+			manifest: complete,
+			requiresAuthorization: false,
+			applied: false,
+			operations: applied.operations,
+			readiness: withBackfillReadiness(applied.readiness, backfill, { completed: [], pending: backfill?.plan?.unmapped.map(entry => entry.localId) ?? [], errors: [{ localId: "backfill", error: error.message }] }),
+			report: `Setup stopped at ${failure.target}: ${failure.error}. No rollback was performed.`,
+			failure,
+		};
+	}
+	const externalOperations = backfillOperations(backfillResult);
+	if (backfillResult.errors.length > 0 || backfillResult.pending.length > 0) {
+		const failure = backfillFailure(backfillResult);
+		return {
+			manifest: complete,
+			requiresAuthorization: false,
+			applied: false,
+			operations: [...applied.operations, ...externalOperations],
+			readiness: withBackfillReadiness(applied.readiness, backfill, backfillResult),
+			report: `Setup stopped at ${failure.target}: ${failure.error}. No rollback was performed.`,
+			failure,
 		};
 	}
 
@@ -212,8 +405,8 @@ async function runSetup(request) {
 				manifest: complete,
 				requiresAuthorization: false,
 				applied: false,
-				operations: [...applied.operations, ...(error.operations ?? [])],
-				readiness: applied.readiness,
+				operations: [...applied.operations, ...externalOperations, ...(error.operations ?? [])],
+				readiness: withBackfillReadiness(applied.readiness, backfill, backfillResult),
 				report: `Setup documentation stopped at ${pending[0] ?? "documentation:bootstrap"}: ${error.message}. No rollback was performed.`,
 				failure: {
 					target: pending[0] ?? "documentation:bootstrap",
@@ -228,8 +421,12 @@ async function runSetup(request) {
 		manifest: complete,
 		requiresAuthorization: false,
 		applied: true,
-		operations: [...applied.operations, ...docsOperations],
-		readiness: withDocumentationReadiness(applied.readiness, docsPlan),
+		operations: [...applied.operations, ...externalOperations, ...docsOperations],
+		readiness: withBackfillReadiness(
+			withDocumentationReadiness(applied.readiness, docsPlan),
+			backfill,
+			backfillResult,
+		),
 		report: docsPlan ? `Documentation bootstrap verified. ${applied.report}` : applied.report,
 	};
 }
@@ -301,15 +498,22 @@ async function runMigration(request) {
 	const corePlan = coreChoices
 		? materializeReviewedMigrationPlan(buildPlan(request.snapshot.core, coreChoices), legacyPlan)
 		: null;
-	const docsPlan = await planConfiguredDocumentation(
-		request.root,
-		request.snapshot.core.projectShape,
-		legacyPlan.config,
-	);
+	const [docsPlan, backfill] = await Promise.all([
+		planConfiguredDocumentation(
+			request.root,
+			request.snapshot.core.projectShape,
+			legacyPlan.config,
+		),
+		planLocalJiraBackfill(legacyPlan.config, request.adapters),
+	]);
+	const migrationEffects = legacyPlan.effects.filter(effect => effect.order < 900);
+	const cleanupEffects = legacyPlan.effects.filter(effect => effect.order >= 900);
 	const items = [
-		...legacyPlan.effects.map((effect, index) => item(effect, index, { phase: effect.order >= 900 ? "cleanup" : "migration", scope: "repository" })),
+		...migrationEffects.map((effect, index) => item(effect, index, { phase: "migration", scope: "repository" })),
 		...setupItems(corePlan ?? { effects: [] }, "core", "repository"),
+		...(backfill?.effects ?? []).map((effect, index) => item(effect, index, { phase: "backfill", scope: "repository" })),
 		...(docsPlan?.effects ?? []).map((effect, index) => item(effect, index, { phase: "docs", scope: "repository" })),
+		...cleanupEffects.map((effect, index) => item(effect, index, { phase: "cleanup", scope: "repository" })),
 	];
 	const blockers = [
 		...legacyPlan.blockers,
@@ -319,6 +523,7 @@ async function runMigration(request) {
 		mode: "migration",
 		legacy: legacyPlan.hash,
 		core: corePlan?.hash ?? null,
+		backfill: publicBackfillPlan(backfill),
 		docs: docsPlan?.hash ?? null,
 	});
 	const complete = manifest(
@@ -327,18 +532,24 @@ async function runMigration(request) {
 		{ root: request.root, projectShape: request.snapshot.core.projectShape },
 		items,
 		[...new Set(blockers)],
-		{ legacy: legacyPlan, core: corePlan, docs: docsPlan },
+		{ legacy: legacyPlan, core: corePlan, backfill: publicBackfillPlan(backfill), docs: docsPlan },
 	);
 	const requiresAuthorization = blockers.length === 0 && hasMutation(items);
 	if (!request.authorization || !requiresAuthorization) {
-		const readiness = coreChoices && !requiresAuthorization ? deriveReadiness(request.snapshot.core, coreChoices) : undefined;
+		const readiness = coreChoices && !requiresAuthorization
+			? withBackfillReadiness(deriveReadiness(request.snapshot.core, coreChoices), backfill, undefined)
+			: undefined;
 		return {
 			manifest: complete,
 			requiresAuthorization,
 			applied: !requiresAuthorization && blockers.length === 0,
 			operations: [],
 			readiness,
-			report: blockers.length > 0 ? legacyPlan.report : requiresAuthorization ? "Complete migration manifest ready. No files have been changed." : legacyPlan.report,
+			report: blockers.length > 0
+				? [...new Set([legacyPlan.report, ...blockers])].join("\n")
+				: requiresAuthorization
+					? "Complete migration manifest ready. No files have been changed."
+					: legacyPlan.report,
 		};
 	}
 	assertAuthorization(request.authorization, complete.hash);
@@ -367,11 +578,41 @@ async function runMigration(request) {
 			requiresAuthorization: false,
 			applied: false,
 			operations: core.operations,
-			readiness: migrationReadiness(core, legacyPlan),
+			readiness: withBackfillReadiness(migrationReadiness(core, legacyPlan), backfill, undefined),
 			report: core.report,
 			failure: core.failure,
 		};
 	}
+
+	let backfillResult;
+	try {
+		backfillResult = await executePlannedBackfill(backfill);
+	} catch (error) {
+		const failure = backfillFailure(undefined, error);
+		return {
+			manifest: complete,
+			requiresAuthorization: false,
+			applied: false,
+			operations: core.operations,
+			readiness: withBackfillReadiness(migrationReadiness(core, legacyPlan), backfill, { completed: [], pending: backfill?.plan?.unmapped.map(entry => entry.localId) ?? [], errors: [{ localId: "backfill", error: error.message }] }),
+			report: `Migration stopped at ${failure.target}: ${failure.error}. No rollback was performed.`,
+			failure,
+		};
+	}
+	const externalOperations = backfillOperations(backfillResult);
+	if (backfillResult.errors.length > 0 || backfillResult.pending.length > 0) {
+		const failure = backfillFailure(backfillResult);
+		return {
+			manifest: complete,
+			requiresAuthorization: false,
+			applied: false,
+			operations: [...core.operations, ...externalOperations],
+			readiness: withBackfillReadiness(migrationReadiness(core, legacyPlan), backfill, backfillResult),
+			report: `Migration stopped at ${failure.target}: ${failure.error}. No rollback was performed.`,
+			failure,
+		};
+	}
+
 	let docsOperations = [];
 	if (docsPlan) {
 		try {
@@ -388,8 +629,8 @@ async function runMigration(request) {
 				manifest: complete,
 				requiresAuthorization: false,
 				applied: false,
-				operations: [...core.operations, ...(error.operations ?? [])],
-				readiness: migrationReadiness(core, legacyPlan),
+				operations: [...core.operations, ...externalOperations, ...(error.operations ?? [])],
+				readiness: withBackfillReadiness(migrationReadiness(core, legacyPlan), backfill, backfillResult),
 				report: `Migration documentation stopped at ${pending[0] ?? "documentation:bootstrap"}: ${error.message}. No rollback was performed.`,
 				failure: {
 					target: pending[0] ?? "documentation:bootstrap",
@@ -407,6 +648,7 @@ async function runMigration(request) {
 			...await request.adapters.verifyMigrationReadiness({ manifest: complete, legacyPlan, coreResult: core }),
 		};
 	}
+	readiness = withBackfillReadiness(readiness, backfill, backfillResult);
 	const cleanupRuntimeEvidence = {
 		sessionDiscipline: readiness.runtimeReady === true && verifiedDiscovery.machine.sessionDiscipline === true,
 		dangerousGitGuard: readiness.runtimeReady === true && verifiedDiscovery.machine.dangerousGitGuard === true,
@@ -416,7 +658,7 @@ async function runMigration(request) {
 		manifest: complete,
 		requiresAuthorization: false,
 		applied: true,
-		operations: [...core.operations, ...docsOperations, ...cleanup],
+		operations: [...core.operations, ...externalOperations, ...docsOperations, ...cleanup],
 		readiness,
 		report: `Legacy migration verified. ${core.report}`,
 	};

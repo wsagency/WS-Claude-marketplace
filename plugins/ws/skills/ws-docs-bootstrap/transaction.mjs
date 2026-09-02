@@ -11,6 +11,11 @@ import {
 const SKILL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MISSING_FINGERPRINT = null;
 
+export const DOCUMENTATION_CONTEXT_FRAGMENTS = Object.freeze({
+	agents: "\n# Documentation maintenance\n\nDocumentation policy is read only from `.wsagency/config.yaml`. Run `/ws-docs` to inspect or maintain the configured tracks.\n",
+	claude: "<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n",
+});
+
 function documentationTargets(policy = {}) {
 	const docs = { ...DEFAULT_DOCUMENTATION_POLICY, ...(policy.docs ?? {}) };
 	const changelog = {
@@ -145,9 +150,10 @@ function fileEffect(order, target, desired, discovery) {
 	return baseEffect(order, target, "file", "PRESERVE", "Preserve existing authored content.", entry, entry.content);
 }
 
-function documentationPlanHash(scope, effects, configFragment) {
+function documentationPlanHash(scope, effects, configFragment, contextFragments) {
 	return sha256(JSON.stringify({
 		configFragment,
+		contextFragments,
 		scope,
 		effects: effects.map(effect => ({
 			order: effect.order,
@@ -206,15 +212,12 @@ export function planDocumentation(discovery) {
 	effects.push(fileEffect(order++, `${targets.docs.dev_track}/development.md`, "# Development\n\nThis guide covers project setup and development.\n", discovery));
 	effects.push(fileEffect(order++, `${targets.docs.dev_track}/index.md`, "# Internal Documentation\n\nWelcome to the dev-docs.\n", discovery));
 
-	const contextFragments = {
-		agents: "\n# Documentation maintenance\n\nDocumentation policy is read only from `.wsagency/config.yaml`. Run `/ws-docs` to inspect or maintain the configured tracks.\n",
-		claude: "<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n",
-	};
+	const contextFragments = { ...DOCUMENTATION_CONTEXT_FRAGMENTS };
 
 	effects.sort((left, right) => left.order - right.order);
 	const scope = { root: discovery.root, projectShape: discovery.projectShape };
 	return {
-		hash: documentationPlanHash(scope, effects, configFragment),
+		hash: documentationPlanHash(scope, effects, configFragment, contextFragments),
 		scope,
 		effects,
 		contextFragments,
@@ -225,7 +228,7 @@ export function planDocumentation(discovery) {
 export async function applyDocumentation(root, plan, authorization, failureInjection) {
 	const resolvedRoot = await realpath(path.resolve(root));
 	if (plan.scope?.root !== resolvedRoot) throw new Error("Documentation plan scope does not match the target root.");
-	if (authorization !== plan.hash || plan.hash !== documentationPlanHash(plan.scope, plan.effects, plan.configFragment)) {
+	if (authorization !== plan.hash || plan.hash !== documentationPlanHash(plan.scope, plan.effects, plan.configFragment, plan.contextFragments)) {
 		throw new Error("Documentation plan authorization is stale or invalid.");
 	}
 	const operations = [];

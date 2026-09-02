@@ -6,6 +6,7 @@ import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseCanonicalConfigYaml, validateCanonicalConfig } from "./config.mjs";
 import { checkTrackerReadiness, getAdapterContent, parseOriginIdentity, planTrackerEffects } from "./trackers.mjs";
+import { DOCUMENTATION_CONTEXT_FRAGMENTS } from "../ws-docs-bootstrap/transaction.mjs";
 
 const SKILL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MISSING_FINGERPRINT = null;
@@ -72,6 +73,22 @@ Read \`domain.layout\`, then follow \`dev-docs/agents/domain.md\` and the applic
 
 The active harness must deliver the session discipline and dangerous-git guard required by \`runtime\` before reporting runtime readiness.
 ${AGENT_BLOCK_END}`;
+
+function desiredAgentSkillsBlock(config) {
+	if (!config?.docs) return AGENT_SKILLS_BLOCK;
+	return AGENT_SKILLS_BLOCK.replace(
+		AGENT_BLOCK_END,
+		`${DOCUMENTATION_CONTEXT_FRAGMENTS.agents}${AGENT_BLOCK_END}`,
+	);
+}
+
+function desiredClaudeImport() {
+	return DOCUMENTATION_CONTEXT_FRAGMENTS.claude;
+}
+
+function claudeContentAligned(content, desired) {
+	return content === desired;
+}
 
 const TEMPLATE_CONTENT = Object.freeze({
 	"dev-docs/agents/issue-tracker.md": readTemplate("issue-tracker.md"),
@@ -205,8 +222,9 @@ export function discoveryIsAligned(discovery, targetConfig = CANONICAL_CONFIG_YA
 	}
 	if (discovery.entries["CONTEXT.md"]?.kind !== "file") return false;
 	const agents = discovery.entries["AGENTS.md"];
-	if (!agents || agents.kind !== "file" || !managedRegionAligned(agents.content ?? "", AGENT_SKILLS_BLOCK, AGENT_BLOCK_START, AGENT_BLOCK_END)) return false;
-	if (discovery.entries["CLAUDE.md"]?.content?.trim() !== "@AGENTS.md") return false;
+	const desiredAgents = desiredAgentSkillsBlock(config);
+	if (!agents || agents.kind !== "file" || !managedRegionAligned(agents.content ?? "", desiredAgents, AGENT_BLOCK_START, AGENT_BLOCK_END)) return false;
+	if (!claudeContentAligned(discovery.entries["CLAUDE.md"]?.content, desiredClaudeImport(config))) return false;
 	return checkTrackerReadiness(config, discovery, choices.jiraValidation, choices.capabilities).trackerReady;
 }
 
@@ -340,13 +358,15 @@ function contextEffect(order, discovery) {
 	return baseEffect(order, target, "file", "PRESERVE", "Preserve existing authored domain context.", entry, entry.content);
 }
 
-function claudeEffect(order, discovery) {
+function claudeEffect(order, discovery, desired) {
 	const target = "CLAUDE.md";
 	const entry = discovery.entries[target];
-	const desired = "@AGENTS.md\n";
 	if (entry.kind === "missing") return baseEffect(order, target, "file", "CREATE", "Create the thin canonical import.", entry, desired);
 	if (entry.kind !== "file") return baseEffect(order, target, "file", "BLOCKING_CONFLICT", "A non-file entry occupies the Claude context path.", entry);
-	if (entry.content.trim() === "@AGENTS.md") return baseEffect(order, target, "file", "NO-OP", "Thin import is already aligned.", entry, entry.content);
+	if (claudeContentAligned(entry.content, desired)) return baseEffect(order, target, "file", "NO-OP", "Thin import is already aligned.", entry, desired);
+	const normalized = entry.content.replaceAll("\r\n", "\n").trim();
+	const knownThinImport = normalized === "@AGENTS.md" || normalized === DOCUMENTATION_CONTEXT_FRAGMENTS.claude.trim();
+	if (knownThinImport) return baseEffect(order, target, "file", "UPDATE", "Update the generated thin canonical import.", entry, desired);
 	return baseEffect(order, target, "file", "BLOCKING_CONFLICT", "A fat or conflicting Claude context requires reviewed migration.", entry);
 }
 
@@ -517,8 +537,8 @@ export function buildPlan(discovery, choices, originVerification) {
 		effects.push(managedFileEffect(31, "dev-docs/agents/triage-labels.md", TEMPLATE_CONTENT["dev-docs/agents/triage-labels.md"], discovery, false));
 		effects.push(managedFileEffect(32, "dev-docs/agents/domain.md", TEMPLATE_CONTENT["dev-docs/agents/domain.md"], discovery, false));
 		effects.push(contextEffect(40, discovery));
-		effects.push(managedFileEffect(50, "AGENTS.md", AGENT_SKILLS_BLOCK, discovery, true));
-		effects.push(claudeEffect(60, discovery));
+		effects.push(managedFileEffect(50, "AGENTS.md", desiredAgentSkillsBlock(config), discovery, true));
+		effects.push(claudeEffect(60, discovery, desiredClaudeImport(config)));
 		const disciplineReady = discovery.machine.sessionDiscipline || config.runtime.session_discipline !== "required";
 		effects.push(baseEffect(70, "runtime:session_discipline", "state", disciplineReady ? "NO-OP" : "BLOCKING_CONFLICT", disciplineReady ? "Active harness satisfies repository session policy." : "Active harness does not deliver required session discipline.", null));
 		const guardReady = discovery.machine.dangerousGitGuard || config.runtime.dangerous_git_guard !== "enabled";

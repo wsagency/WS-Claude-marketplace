@@ -11,6 +11,7 @@ import { runManifestTransaction } from "./manifest-contract.mjs";
 import { createMockReconfigureAdapters } from "./reconfigure.test-support.mjs";
 import { discoverLegacySetup } from "./migration.mjs";
 import { CANONICAL_CONFIG_YAML, discoverStandaloneRepository, RECOMMENDED_LOCAL_CHOICES } from "./transaction.mjs";
+import { FakeJiraAdapter } from "./test-support/fake-jira-adapter.mjs";
 
 const SKILL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_ROOT = path.join(SKILL_ROOT, "fixtures");
@@ -37,6 +38,39 @@ async function exists(target) {
 	} catch {
 		return false;
 	}
+}
+
+function createBackfillHarness({
+	localTickets = {},
+	syncState = { mappings: {}, pendingOperations: [] },
+	jiraTickets = {},
+	failReturnedIdentityOnce = false,
+} = {}) {
+	let durable = structuredClone(syncState);
+	let failReturnedIdentity = failReturnedIdentityOnce;
+	const jiraAdapter = new FakeJiraAdapter(jiraTickets);
+	const persistence = {
+		async persistSyncState(state) {
+			if (failReturnedIdentity && state.pendingOperations.some(operation => operation.returnedId)) {
+				failReturnedIdentity = false;
+				throw new Error("simulated crash before returned identity became durable");
+			}
+			durable = structuredClone(state);
+		},
+		async readSyncState() {
+			return structuredClone(durable);
+		},
+	};
+	return {
+		jiraAdapter,
+		snapshot: () => structuredClone(durable),
+		adapter: () => ({
+			localTickets: structuredClone(localTickets),
+			syncState: structuredClone(durable),
+			jiraAdapter,
+			persistence,
+		}),
+	};
 }
 
 async function initializeRepository(root) {
@@ -75,7 +109,24 @@ async function temporaryRepository(name) {
 }
 
 async function migrationRequest(root, extra = {}) {
-	return {
+	const mirroredTicket = await exists(path.join(root, "dev-docs/tickets/open/mirrored-ticket.md"));
+	const backfill = createBackfillHarness(mirroredTicket
+		? {
+			localTickets: {
+				"mirrored-ticket": {
+					title: "Preserve mirrored ticket",
+					description: "Keep the local source and its returned Jira key.",
+					status: "ready-for-agent",
+				},
+			},
+			syncState: {
+				mappings: { "mirrored-ticket": { jiraId: "WCM-17", fieldHashes: {} } },
+				pendingOperations: [],
+			},
+			jiraTickets: { "WCM-17": { id: "WCM-17", title: "Preserve mirrored ticket" } },
+		}
+		: {});
+	const request = {
 		mode: "migration",
 		root,
 		snapshot: {
@@ -89,7 +140,14 @@ async function migrationRequest(root, extra = {}) {
 				capabilities: { ghCli: true, glabCli: true },
 			},
 		},
+	};
+	return {
+		...request,
 		...extra,
+		adapters: {
+			jiraBackfill: backfill.adapter(),
+			...(extra.adapters ?? {}),
+		},
 	};
 }
 
@@ -346,11 +404,13 @@ test("all tracker modes plan and apply through the manifest facade", async t => 
 			try {
 				if (mode.origin) git(root, "remote", "add", "origin", mode.origin);
 				const choices = materializedSetupChoices(mode.configure);
+				const backfill = createBackfillHarness();
 				const request = {
 					mode: "setup",
 					root,
 					snapshot: await discoverStandaloneRepository(root, MACHINE),
 					choices,
+					adapters: { jiraBackfill: backfill.adapter() },
 				};
 				const planned = await runManifestTransaction(request);
 				assert.equal(planned.requiresAuthorization, true, planned.report);
@@ -365,6 +425,63 @@ test("all tracker modes plan and apply through the manifest facade", async t => 
 				await rm(parent, { recursive: true, force: true });
 			}
 		});
+	}
+});
+
+test("Local Jira backfill is authorized once and resumes a returned-key crash without duplicate creation", async () => {
+	const { parent, root } = await createStandaloneRepository("ws-manifest-backfill-");
+	const backfill = createBackfillHarness({
+		localTickets: {
+			"local-1": {
+				title: "Backfill me",
+				description: "Created from Local Markdown.",
+				status: "open",
+				priority: "medium",
+				type: "Task",
+			},
+		},
+		failReturnedIdentityOnce: true,
+	});
+	try {
+		const choices = materializedSetupChoices(config => {
+			config.jira = { project: "WCM", default_issue_type: "Task", sync: "all_local_tickets" };
+		});
+		const request = {
+			mode: "setup",
+			root,
+			snapshot: await discoverStandaloneRepository(root, MACHINE),
+			choices,
+			adapters: { jiraBackfill: backfill.adapter() },
+		};
+		const planned = await runManifestTransaction(request);
+		const backfillCreates = planned.manifest.categories.CREATE.filter(effect => effect.phase === "backfill");
+		assert.deepEqual(backfillCreates.map(effect => effect.target), ["jira:WCM:local-1"]);
+		assert.equal(backfill.jiraAdapter.getCallLog().filter(call => call.method === "createTicket").length, 0);
+
+		const interrupted = await runManifestTransaction({ ...request, authorization: planned.manifest.hash });
+		assert.equal(interrupted.applied, false);
+		assert.match(interrupted.failure.error, /returned identity became durable/);
+		assert.equal(backfill.jiraAdapter.getCallLog().filter(call => call.method === "createTicket").length, 1);
+		assert.equal(backfill.snapshot().pendingOperations[0].returnedId, undefined);
+
+		const resumedRequest = {
+			...request,
+			snapshot: await discoverStandaloneRepository(root, MACHINE),
+			adapters: { jiraBackfill: backfill.adapter() },
+		};
+		const resumedPlan = await runManifestTransaction(resumedRequest);
+		assert.equal(resumedPlan.requiresAuthorization, true);
+		const resumed = await runManifestTransaction({
+			...resumedRequest,
+			authorization: resumedPlan.manifest.hash,
+		});
+		assert.equal(resumed.applied, true);
+		assert.equal(resumed.readiness.jiraBackfillReady, true);
+		assert.equal(backfill.jiraAdapter.getCallLog().filter(call => call.method === "createTicket").length, 1);
+		assert.ok(backfill.snapshot().mappings["local-1"].jiraId);
+		assert.deepEqual(backfill.snapshot().pendingOperations, []);
+	} finally {
+		await rm(parent, { recursive: true, force: true });
 	}
 });
 
@@ -390,6 +507,14 @@ test("documentation failure preserves completed core work and a fresh manifest r
 		const firstDocumentationWrite = planned.manifest.categories.CREATE
 			.find(effect => effect.phase === "docs");
 		assert.ok(firstDocumentationWrite);
+		const agentsItem = planned.manifest.items.find(effect => effect.phase === "core" && effect.target === "AGENTS.md");
+		const claudeEffect = planned.manifest.delegated.core.effects.find(effect => effect.target === "CLAUDE.md");
+		assert.match(agentsItem.diff, /Documentation maintenance/);
+		assert.equal(
+			claudeEffect.after,
+			"<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n",
+		);
+		assert.equal(planned.manifest.items.filter(effect => effect.target === "AGENTS.md").length, 1);
 		const interrupted = await runManifestTransaction({
 			...request,
 			authorization: planned.manifest.hash,
@@ -405,6 +530,12 @@ test("documentation failure preserves completed core work and a fresh manifest r
 		assert.equal(resumed.applied, true);
 		assert.equal(await exists(path.join(root, "guides")), true);
 		assert.equal(await exists(path.join(root, "engineering")), true);
+		const agentsContent = await readFile(path.join(root, "AGENTS.md"), "utf8");
+		assert.equal([...agentsContent.matchAll(/^# Documentation maintenance$/gm)].length, 1);
+		assert.equal(
+			await readFile(path.join(root, "CLAUDE.md"), "utf8"),
+			"<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n",
+		);
 	} finally {
 		await rm(parent, { recursive: true, force: true });
 	}

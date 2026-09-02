@@ -37,15 +37,27 @@ for (const [file, primary, sync] of [
 	});
 }
 
-test("customized known tracker guidance is converted but preserved", () => {
+test("customized known tracker guidance requires an explicit adapter resolution", () => {
 	const content = "# Team issue tracker\n\nUse GitHub Issues. Preserve component metadata and escalation notes.\n";
 	const discovery = discoverEngineeringState({ "dev-docs/agents/issue-tracker.md": content });
-	const plan = planEngineeringMigration(discovery, canonical());
-	assert.equal(plan.patch.tracker.primary, "github");
-	assert.equal(plan.blockers.length, 0);
-	const adapter = plan.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md");
-	assert.equal(adapter.classification, "PRESERVE");
-	assert.equal(adapter.after, content);
+	const blocked = planEngineeringMigration(discovery, canonical());
+	assert.equal(blocked.patch.tracker.primary, "github");
+	assert.match(blocked.blockers.join("\n"), /explicit preserve or replace resolution/i);
+	assert.equal(blocked.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").classification, "PRESERVE");
+
+	const preserved = planEngineeringMigration(discovery, canonical(), { "adapter.tracker": "preserve" });
+	assert.equal(preserved.blockers.length, 0);
+	assert.equal(preserved.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").after, content);
+
+	const canonicalGitLab = { ...canonical(), tracker: { primary: "gitlab", pull_requests: "ignore" } };
+	const replaced = planEngineeringMigration(discovery, canonicalGitLab, { "adapter.tracker": "replace" });
+	assert.equal(replaced.blockers.length, 0);
+	assert.equal(replaced.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").classification, "UPDATE");
+	assert.equal(replaced.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").after, getAdapterContent("gitlab"));
+
+	const invalid = planEngineeringMigration(discovery, canonical(), { "adapter.tracker": "discard" });
+	assert.match(invalid.blockers.join("\n"), /invalid tracker adapter resolution/i);
+	assert.equal(invalid.effects.find(effect => effect.target === "dev-docs/agents/issue-tracker.md").classification, "PRESERVE");
 });
 
 test("unsupported custom tracker blocks before writes", () => {

@@ -101,6 +101,20 @@ describe("canonical capability inspection", () => {
 		assert.deepEqual(result.detectedLegacySources, []);
 	});
 
+	test("customized adapters remain legacy blockers even when callers report artifacts ready", () => {
+		const root = createRepository(baseConfig());
+		const adapterPath = path.join(root, "dev-docs/agents/issue-tracker.md");
+		writeFileSync(adapterPath, "# Team tracker\n\nUse Local Markdown with custom review rules.\n");
+		const result = inspectCanonicalCapability({
+			root,
+			capability: "tracker",
+			snapshot: { artifacts: { issueTracker: true, localTracker: true } },
+		});
+		assert.equal(result.ready, false);
+		assert.ok(result.detectedLegacySources.includes("dev-docs/agents/issue-tracker.md"));
+		assert.match(result.blockers.join("\n"), /operational adapter.*missing/i);
+	});
+
 	test("operational adapters without canonical policy remain legacy migration sources", () => {
 		const root = createRepository(null, { engineeringAdapters: true });
 		assert.deepEqual(detectRepositoryLegacyPolicy(root), [

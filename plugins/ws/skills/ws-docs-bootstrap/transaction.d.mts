@@ -26,6 +26,8 @@ export interface DocsContextFragments {
 	claude: string;
 }
 
+export const DOCUMENTATION_CONTEXT_FRAGMENTS: Readonly<DocsContextFragments>;
+
 export interface DocsPlan {
 	hash: string;
 	scope: { root: string; projectShape: ProjectShape };

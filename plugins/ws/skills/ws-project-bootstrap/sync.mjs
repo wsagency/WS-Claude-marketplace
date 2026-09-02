@@ -151,23 +151,23 @@ export async function runTrackerOperation({
 						fieldHashes: hashTicketFields(pending.payload)
 					};
 				} else if (pending.action === "update" || pending.action === "status") {
-					if (mapping) {
-						const jiraTicket = await adapter.getTicket(mapping.jiraId);
-						if (!jiraTicket) throw new Error(`Mapped Jira ticket ${mapping.jiraId} is unavailable`);
-						const resolved = resolveConflicts(pending, mapping, jiraTicket, true);
-						if (resolved.blocked) {
-							pendingToKeep.push(pending, ...operations.slice(index + 1));
-							result.nextSyncState.pendingOperations = pendingToKeep;
-							return { conflict: true, outage: false };
-						}
-						const changed = Object.entries(resolved.payload).some(([key, value]) => hashField(value) !== hashField(jiraTicket[key]));
-						if (changed) await adapter.updateTicket(mapping.jiraId, resolved.payload);
-						mapping.fieldHashes = {
-							...mapping.fieldHashes,
-							...hashTicketFields(resolved.payload)
-						};
+					if (!mapping) throw new Error(`Missing Jira mapping for Local ticket ${pending.localId}`);
+					const jiraTicket = await adapter.getTicket(mapping.jiraId);
+					if (!jiraTicket) throw new Error(`Mapped Jira ticket ${mapping.jiraId} is unavailable`);
+					const resolved = resolveConflicts(pending, mapping, jiraTicket, true);
+					if (resolved.blocked) {
+						pendingToKeep.push(pending, ...operations.slice(index + 1));
+						result.nextSyncState.pendingOperations = pendingToKeep;
+						return { conflict: true, outage: false };
 					}
-				} else if (pending.action === "comment" && mapping) {
+					const changed = Object.entries(resolved.payload).some(([key, value]) => hashField(value) !== hashField(jiraTicket[key]));
+					if (changed) await adapter.updateTicket(mapping.jiraId, resolved.payload);
+					mapping.fieldHashes = {
+						...mapping.fieldHashes,
+						...hashTicketFields(resolved.payload)
+					};
+				} else if (pending.action === "comment") {
+					if (!mapping) throw new Error(`Missing Jira mapping for Local ticket ${pending.localId}`);
 					await adapter.addComment(mapping.jiraId, pending.payload.text);
 				}
 			} catch {

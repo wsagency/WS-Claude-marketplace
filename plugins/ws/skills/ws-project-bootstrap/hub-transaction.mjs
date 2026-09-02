@@ -162,8 +162,9 @@ async function discoverSelectedRepository(hubRoot, repository, machine) {
 	const requestedRoot = path.resolve(hubRoot, repository.path);
 	const errors = [];
 	let resolvedRoot = requestedRoot;
-	if (path.isAbsolute(repository.path) || (requestedRoot !== hubRoot && !requestedRoot.startsWith(`${hubRoot}${path.sep}`))) {
-		errors.push(`Registered path escapes the hub root: ${repository.path}.`);
+	const hubParent = path.dirname(hubRoot);
+	if (path.isAbsolute(repository.path) || requestedRoot === hubParent || !requestedRoot.startsWith(`${hubParent}${path.sep}`)) {
+		errors.push(`Registered path escapes the hub workspace: ${repository.path}.`);
 	} else {
 		try {
 			const details = await fs.stat(requestedRoot);
@@ -171,7 +172,7 @@ async function discoverSelectedRepository(hubRoot, repository, machine) {
 			else {
 				await fs.access(requestedRoot, fsConstants.R_OK | fsConstants.W_OK | fsConstants.X_OK);
 				resolvedRoot = await fs.realpath(requestedRoot);
-				if (resolvedRoot !== hubRoot && !resolvedRoot.startsWith(`${hubRoot}${path.sep}`)) errors.push(`Registered path resolves outside the hub root: ${repository.path}.`);
+				if (resolvedRoot === hubParent || !resolvedRoot.startsWith(`${hubParent}${path.sep}`)) errors.push(`Registered path resolves outside the hub workspace: ${repository.path}.`);
 			}
 		} catch (error) {
 			errors.push(`Registered path is unavailable or inaccessible: ${repository.path} (${error.code || error.message}).`);
