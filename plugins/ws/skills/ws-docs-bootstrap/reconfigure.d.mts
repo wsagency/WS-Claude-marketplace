@@ -2,6 +2,7 @@ import type { CanonicalProjectConfig, DerivedSetupReadiness } from "../ws-projec
 import type {
 	ReconfigureAdapters as SharedReconfigureAdapters,
 	ReconfigureApplyResult,
+	ReconfigureConfig,
 	ReconfigureEffect,
 	ReconfigureInjection,
 	ReconfigurePlanResult,
@@ -24,11 +25,17 @@ export interface DocsPathTransition {
 	verificationSteps?: string[];
 }
 
+export interface ReconfigureDocsDiscovery extends DocsDiscovery {
+	repositoryDiscoveries?: Record<string, DocsDiscovery>;
+}
+
 export interface ReconfigureChoices {
 	domains: ReconfigureDomainSelection[];
 	fields?: string[];
 	values?: Record<string, unknown>;
 	repositories?: string[];
+	repositoryChoices?: Record<string, Partial<Omit<ReconfigureChoices, "repositories" | "repositoryChoices" | "byRepository">>>;
+	byRepository?: Record<string, Partial<Omit<ReconfigureChoices, "repositories" | "repositoryChoices" | "byRepository">>>;
 	enableDocs?: boolean;
 	disableDocs?: boolean;
 	cancelDependent?: boolean;
@@ -53,11 +60,11 @@ export type ReconfigureReadiness = DerivedSetupReadiness;
 export type ReconfigureResult = ReconfigureApplyResult;
 export type ReconfigureAdapters = SharedReconfigureAdapters;
 
-export function plan(config: CanonicalProjectConfig, discovery: DocsDiscovery, choices: ReconfigureChoices): ReconfigurePlan;
+export function plan(config: ReconfigureConfig, discovery: ReconfigureDocsDiscovery, choices: ReconfigureChoices): ReconfigurePlan;
 
 export function apply(
-	config: CanonicalProjectConfig,
-	discovery: DocsDiscovery,
+	config: ReconfigureConfig,
+	discovery: ReconfigureDocsDiscovery,
 	choices: ReconfigureChoices,
 	planHash: string,
 	effects: ReconfigureEffect[],
@@ -66,16 +73,16 @@ export function apply(
 ): Promise<ReconfigureResult>;
 
 export function resume(
-	config: CanonicalProjectConfig,
-	discovery: DocsDiscovery,
+	config: ReconfigureConfig,
+	discovery: ReconfigureDocsDiscovery,
 	choices: ReconfigureChoices,
 	adapters: ReconfigureAdapters,
 	injection?: ReconfigureInjection,
 ): Promise<ReconfigureResult>;
 
 export function acceptPartial(
-	config: CanonicalProjectConfig,
-	discovery: DocsDiscovery,
+	config: ReconfigureConfig,
+	discovery: ReconfigureDocsDiscovery,
 	choices: ReconfigureChoices,
 	adapters: ReconfigureAdapters,
 ): Promise<ReconfigureResult>;

@@ -232,3 +232,35 @@ test("aligned triage and domain routing are no-op plans requiring no confirmatio
 	assert.equal(applied.success, true);
 	assert.deepEqual(adapters.getHistory(), []);
 });
+
+test("triage cleanup consumes the persisted verified post-add identity, version, and hash", async () => {
+	const selectedChoices = triageChoices();
+	const result = plan(CONFIG, TRIAGE_SNAPSHOT, {}, selectedChoices);
+	const remoteAdd = result.effects.find(effect => effect.target === "remote:ticket:101" && effect.payload?.operation === "add_semantic_label");
+	const remoteCleanup = result.effects.find(effect => effect.target === "remote:ticket:101" && effect.payload?.operation === "remove_old_semantic_label");
+	assert.ok(remoteAdd);
+	assert.ok(remoteCleanup);
+	let cleanupExpected;
+	let cleanupDependency;
+	const adapters = createMockReconfigureAdapters({
+		applyEffect: async (effect, context) => {
+			if (effect.id === remoteAdd.id) return { identity: { id: "101", version: 2, hash: "remote-101-after-add" } };
+			if (effect.id === remoteCleanup.id) cleanupDependency = context.dependencyResults[remoteAdd.id];
+			return { identity: { id: `result:${effect.id}`, version: 1 } };
+		},
+		refetchRemoteFingerprint: async effect => {
+			if (effect.id === remoteCleanup.id) cleanupExpected = effect.expectedFingerprint;
+			return effect.expectedFingerprint;
+		},
+	});
+	const applied = await apply(CONFIG, TRIAGE_SNAPSHOT, {}, selectedChoices, result.hash, result.effects, adapters);
+	assert.equal(applied.success, true);
+	assert.deepEqual(cleanupExpected, { id: "101", version: 2, hash: "remote-101-after-add" });
+	assert.equal(cleanupDependency.identity.id, "101");
+	assert.equal(cleanupDependency.version, 2);
+	assert.equal(cleanupDependency.hash, "remote-101-after-add");
+	assert.deepEqual(
+		adapters.getAudit().repositories.repo.verifiedResults[remoteAdd.id].fingerprint,
+		cleanupExpected,
+	);
+});

@@ -16,20 +16,77 @@ function safeRelativePath(value) {
 }
 
 function docsSnapshot(discovery) {
+	const repositoryStates = Object.fromEntries((discovery.repositories || []).map(repository => {
+		const repositoryDiscovery = discovery.repositoryDiscoveries?.[repository.id] || repository.discovery || repository;
+		return [repository.id, {
+			config: repository.config,
+			entries: repositoryDiscovery.entries || repository.entries || {},
+			machine: repository.machine || {},
+		}];
+	}));
 	return {
 		shape: discovery.projectShape,
 		repositoryId: discovery.root || "current",
 		entries: discovery.entries || {},
 		repositories: discovery.repositories,
+		repositoryStates,
 	};
 }
 
 function transitionField(config, choices, transition) {
+	const pathFields = new Set(["docs.user_track", "docs.dev_track", "changelog.path"]);
 	for (const field of choices.fields || []) {
+		if (!pathFields.has(field)) continue;
 		const before = field.split(".").reduce((current, key) => current?.[key], config);
 		if (before === transition.source && choices.values?.[field] === transition.destination) return field;
 	}
 	return null;
+}
+function repositoryDocsContexts(config, discovery, choices) {
+	if (discovery.projectShape !== "hub_root") return [{ repositoryId: discovery.root || "current", config, discovery, choices }];
+	const inventory = discovery.repositories || [];
+	const hub = inventory.find(repository => repository.type === "hub" && repository.present === true);
+	const scope = Array.isArray(choices.repositories) && choices.repositories.length > 0 ? [...new Set(choices.repositories)] : [hub?.id];
+	return scope.map(repositoryId => {
+		const repository = inventory.find(candidate => candidate.id === repositoryId);
+		const explicitDiscovery = discovery.repositoryDiscoveries?.[repositoryId]
+			|| repository?.discovery
+			|| (repository && Object.hasOwn(repository, "entries") ? {
+				projectShape: "standalone",
+				root: repositoryId,
+				entries: repository.entries,
+			} : null);
+		if (scope.length > 1 && !explicitDiscovery) {
+			throw Object.assign(
+				new Error(`Repository ${repositoryId} is missing repository-qualified documentation discovery.`),
+				{ code: "ERR_UNQUALIFIED_REPOSITORY_STATE" },
+			);
+		}
+		const repositoryDiscovery = explicitDiscovery || discovery;
+		const repositoryConfig = scope.length > 1
+			? config?.[repositoryId] || repository?.config
+			: config?.schema_version !== undefined ? config : config?.[repositoryId] || repository?.config;
+		if (!repositoryConfig) {
+			throw Object.assign(
+				new Error(`Repository ${repositoryId} is missing repository-qualified canonical configuration.`),
+				{ code: "ERR_MISSING_CONFIG" },
+			);
+		}
+		const specificChoices = choices.repositoryChoices?.[repositoryId] || choices.byRepository?.[repositoryId];
+		return {
+			repositoryId,
+			config: repositoryConfig,
+			discovery: repositoryDiscovery,
+			choices: specificChoices ? { ...choices, ...specificChoices, repositories: undefined } : choices,
+		};
+	});
+}
+
+function authorizedPreparedDestination(choices, destinationId, destinationPath, source, destination) {
+	const state = choices.__resumeState;
+	if (!state || destination.kind === "missing" || JSON.stringify(source.content) !== JSON.stringify(destination.content)) return false;
+	const qualifiedId = choices.__repositoryId ? `${choices.__repositoryId}::${destinationId}` : destinationId;
+	return state.verifiedIds?.includes(qualifiedId) && state.verifiedResults?.[qualifiedId]?.target === destinationPath;
 }
 
 function buildDocsContribution(config, discovery, choices) {
@@ -41,7 +98,18 @@ function buildDocsContribution(config, discovery, choices) {
 	const configSectionRemovals = [];
 
 	if (choices.enableDocs) {
+		if (!config.docs) {
+			const required = ["user_track", "dev_track", "default_audience", "default_scope", "adr_for_arch_changes"].map(leaf => `docs.${leaf}`);
+			const missing = required.filter(field => !(choices.fields || []).includes(field) || !Object.hasOwn(choices.values || {}, field));
+			if (missing.length > 0) {
+				throw Object.assign(
+					new Error(`Enabling absent docs policy requires explicit values for: ${missing.join(", ")}.`),
+					{ code: "ERR_INCOMPLETE_SECTION_ENABLEMENT" },
+				);
+			}
+		}
 		const bootstrap = planDocumentation(discovery);
+		const prepareIds = [];
 		for (const effect of bootstrap.effects) {
 			const classification = effect.classification === "CREATE" ? "CREATE"
 				: effect.classification === "BLOCKING_CONFLICT" ? "BLOCKING_CONFLICT" : "PRESERVE";
@@ -56,7 +124,16 @@ function buildDocsContribution(config, discovery, choices) {
 					: `Documentation enablement preserves existing authored state: ${effect.reason}`,
 			};
 			effects.push(planned);
+			if (classification === "CREATE") prepareIds.push(planned.id);
 			if (classification === "BLOCKING_CONFLICT") blockers.push({ id: planned.id, target: planned.target, reason: planned.reason });
+		}
+		for (const field of (choices.fields || []).filter(field => field.startsWith("docs."))) {
+			fieldDependencies[field] = [...prepareIds];
+			dependencyClosure.push({
+				field,
+				reason: "Documentation policy enablement depends on verified missing-only bootstrap artifacts.",
+				resolution: "selected",
+			});
 		}
 	}
 
@@ -91,13 +168,21 @@ function buildDocsContribution(config, discovery, choices) {
 		const source = discovery.entries?.[transition.source] || { kind: "missing", fingerprint: null };
 		const destination = discovery.entries?.[transition.destination] || { kind: "missing", fingerprint: null };
 		const field = transitionField(config, choices, transition);
+		if (transition.intent === "move" && !field) {
+			throw Object.assign(
+				new Error("A documentation or changelog move must be bound to a selected canonical path field."),
+				{ code: "ERR_UNBOUND_PATH_TRANSITION" },
+			);
+		}
 		const managedReferences = Array.isArray(transition.managedReferences) ? transition.managedReferences : [];
 		const verificationSteps = Array.isArray(transition.verificationSteps) ? transition.verificationSteps : [];
+		const destinationId = `prepare:docs-path:${transition.destination}:copy`;
+		const destinationPrepared = authorizedPreparedDestination(choices, destinationId, transition.destination, source, destination);
 		const manifest = {
 			source: transition.source,
 			destination: transition.destination,
 			intent: transition.intent,
-			collision: destination.kind === "missing" ? null : { kind: destination.kind, fingerprint: destination.fingerprint ?? null },
+			collision: destination.kind === "missing" || destinationPrepared ? null : { kind: destination.kind, fingerprint: destination.fingerprint ?? null },
 			managedReferences: managedReferences.map(reference => reference.target),
 			verificationSteps,
 			field,
@@ -120,7 +205,7 @@ function buildDocsContribution(config, discovery, choices) {
 			blockers.push({ id: effect.id, target: effect.target, reason: effect.reason });
 			continue;
 		}
-		if (destination.kind !== "missing") {
+		if (destination.kind !== "missing" && !destinationPrepared) {
 			const effect = {
 				id: `block:docs-path:${transition.destination}:collision`,
 				order: 1,
@@ -153,18 +238,22 @@ function buildDocsContribution(config, discovery, choices) {
 			continue;
 		}
 
-		const destinationId = `prepare:docs-path:${transition.destination}:copy`;
 		effects.push({
 			id: destinationId,
 			order: 5,
 			phase: "prepare",
 			target: transition.destination,
 			kind: source.kind,
-			classification: "CREATE",
-			reason: "Copy authored content to the reviewed destination and verify it before policy cutover.",
+			classification: destinationPrepared ? "NO-OP" : "CREATE",
+			reason: destinationPrepared
+				? "The authorized destination copy is already verified by the persisted journal."
+				: "Copy authored content to the reviewed destination and verify it before policy cutover.",
 			after: source.content,
-			diff: `${transition.intent} ${transition.source} -> ${transition.destination}`,
-			fingerprint: { source: source.fingerprint ?? null, destination: destination.fingerprint ?? null },
+			diff: destinationPrepared ? "verified destination retained" : `${transition.intent} ${transition.source} -> ${transition.destination}`,
+			fingerprint: {
+				source: source.fingerprint ?? null,
+				destination: destinationPrepared ? null : destination.fingerprint ?? null,
+			},
 			payload: { operation: "copy_docs_path", source: transition.source, destination: transition.destination, preserveAuthoredBytes: true, verificationSteps },
 		});
 		const referenceIds = [];
@@ -220,7 +309,24 @@ function buildDocsContribution(config, discovery, choices) {
 
 export function plan(config, discovery, choices) {
 	const normalizedChoices = { ...choices, fields: choices?.fields || [] };
-	const contribution = buildDocsContribution(config, discovery, normalizedChoices);
+	const contexts = repositoryDocsContexts(config, discovery, normalizedChoices);
+	if (contexts.length > 1) {
+		const repositoryContributions = {};
+		const contentManifest = [];
+		for (const context of contexts) {
+			const repositoryChoice = { ...context.choices, __repositoryId: context.repositoryId };
+			const contribution = buildDocsContribution(context.config, context.discovery, repositoryChoice);
+			repositoryContributions[context.repositoryId] = contribution;
+			contentManifest.push(...contribution.contentManifest.map(item => ({ ...item, repositoryId: context.repositoryId })));
+		}
+		const result = createReconfigurePlan(config, docsSnapshot(discovery), {}, normalizedChoices, { repositoryContributions });
+		return { ...result, contentManifest };
+	}
+	const context = contexts[0];
+	const contribution = buildDocsContribution(context.config, context.discovery, {
+		...context.choices,
+		...(discovery.projectShape === "hub_root" ? { __repositoryId: context.repositoryId } : {}),
+	});
 	const result = createReconfigurePlan(config, docsSnapshot(discovery), {}, normalizedChoices, contribution);
 	return { ...result, contentManifest: contribution.contentManifest };
 }
@@ -236,7 +342,11 @@ export async function apply(config, discovery, choices, planHash, effects, adapt
 }
 
 export async function resume(config, discovery, choices, adapters, injection = {}) {
-	const expected = plan(config, discovery, choices);
+	const readJournal = adapters.readJournal;
+	const record = typeof readJournal === "function" ? await readJournal.call(adapters) : null;
+	const state = record?.state || record || null;
+	const resumeChoices = state ? { ...choices, __resumeState: state } : choices;
+	const expected = plan(config, discovery, resumeChoices);
 	return resumeConfirmedPlan(expected, { config, discovery, choices }, adapters, injection);
 }
 

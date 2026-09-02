@@ -7,6 +7,10 @@ const MUTATION_CLASSIFICATIONS = new Set(["CREATE", "UPDATE", "DELETE"]);
 const CANONICAL_DOMAINS = Object.freeze(["tracker", "documentation", "runtime"]);
 const DOMAIN_VALUES = new Set([...CANONICAL_DOMAINS, "all"]);
 const TRACKER_FIELD_PREFIXES = Object.freeze(["tracker.", "jira.", "triage.", "domain.", "commit.jira.", "ui.session_start_dashboard"]);
+const ENABLEABLE_SECTION_REQUIRED_FIELDS = Object.freeze({
+	docs: Object.freeze(["user_track", "dev_track", "default_audience", "default_scope", "adr_for_arch_changes"]),
+	jira: Object.freeze(["project", "default_issue_type", "sync"]),
+});
 
 export class ReconfigureError extends Error {
 	constructor(message, code) {
@@ -38,7 +42,10 @@ function valueAtPath(value, fieldPath) {
 function setValueAtPath(value, fieldPath, proposed) {
 	const keys = fieldPath.split(".");
 	const leaf = keys.pop();
-	const parent = keys.reduce((current, key) => current[key], value);
+	const parent = keys.reduce((current, key) => {
+		if (!current[key] || typeof current[key] !== "object" || Array.isArray(current[key])) current[key] = {};
+		return current[key];
+	}, value);
 	parent[leaf] = structuredClone(proposed);
 }
 
@@ -228,6 +235,7 @@ function normalizedDependencyClosure(config, choices, contribution) {
 function effectAuthorizationView(effect) {
 	return {
 		id: effect.id,
+		repositoryId: effect.repositoryId ?? null,
 		target: effect.target,
 		kind: effect.kind,
 		classification: effect.classification,
@@ -261,7 +269,7 @@ function isRemoteEffect(effect) {
 	return effect.remoteFingerprint !== undefined || effect.target.startsWith("remote:") || effect.payload?.external === true;
 }
 
-export function createReconfigurePlan(config, snapshot, machine, choices, contribution = {}) {
+function createSingleReconfigurePlan(config, snapshot, machine, choices, contribution = {}) {
 	const error = validationError(config);
 	if (error) throw error;
 	if (!snapshot || !["standalone", "hub_root", "hub_subrepository"].includes(snapshot.shape)) {
@@ -273,6 +281,19 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 	const domains = normalizeDomains(choices);
 	const scope = selectedRepositories(snapshot, choices);
 	const selectedFields = [...new Set(choices.fields)].sort();
+	for (const [section, requiredLeaves] of Object.entries(ENABLEABLE_SECTION_REQUIRED_FIELDS)) {
+		const selectedSectionFields = selectedFields.filter(field => field.startsWith(`${section}.`));
+		if (Object.hasOwn(config, section) || selectedSectionFields.length === 0) continue;
+		const missing = requiredLeaves
+			.map(leaf => `${section}.${leaf}`)
+			.filter(field => !selectedFields.includes(field));
+		if (missing.length > 0) {
+			throw new ReconfigureError(
+				`Enabling absent ${section} policy requires every required leaf in one validated change: ${missing.join(", ")}.`,
+				"ERR_INCOMPLETE_SECTION_ENABLEMENT",
+			);
+		}
+	}
 	const configSectionRemovals = new Map();
 	for (const removal of contribution.configSectionRemovals || []) {
 		if (!removal || typeof removal.section !== "string" || !/^[a-z][a-z0-9_]*$/.test(removal.section) || removal.section === "schema_version") {
@@ -287,9 +308,6 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 		throw new ReconfigureError("Every selected field must belong to at least one selected domain.", "ERR_FIELD_OUTSIDE_DOMAINS");
 	}
 	const knownFields = new Set(leafPaths(config));
-	if (selectedFields.some(field => !knownFields.has(field))) {
-		throw new ReconfigureError("Selected field is not present in the strict-valid baseline.", "ERR_UNKNOWN_FIELD");
-	}
 	for (const field of selectedFields) {
 		if (!Object.hasOwn(choices.values ?? {}, field)) {
 			throw new ReconfigureError(`A proposed value is required for ${field}.`, "ERR_MISSING_PROPOSED_VALUE");
@@ -301,7 +319,11 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 	const proposedValidation = validateCanonicalConfigObject(proposedConfig);
 	if (proposedValidation.status !== "valid") {
 		const details = (proposedValidation.errors || []).map(issue => issue.message).filter(Boolean).join(" ");
-		throw new ReconfigureError(`Proposed canonical configuration is invalid.${details ? ` ${details}` : ""}`, "ERR_INVALID_PROPOSED_CONFIG");
+		const selectedUnknown = (proposedValidation.errors || []).some(issue => issue.code === "unknown_key" && selectedFields.some(field => issue.path === `$.${field}` || field.startsWith(`${issue.path.slice(2)}.`)));
+		throw new ReconfigureError(
+			`Proposed canonical configuration is invalid.${details ? ` ${details}` : ""}`,
+			selectedUnknown ? "ERR_UNKNOWN_FIELD" : "ERR_INVALID_PROPOSED_CONFIG",
+		);
 	}
 
 	const effects = [];
@@ -328,8 +350,7 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 			},
 		});
 	}
-
-	for (const field of [...knownFields].sort()) {
+	for (const field of [...new Set([...knownFields, ...selectedFields])].sort()) {
 		if (configSectionRemovals.has(field.split(".")[0])) continue;
 		const target = `config:${field}`;
 		const current = valueAtPath(config, field);
@@ -407,6 +428,7 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 	return {
 		effects: normalizedEffects,
 		hash,
+		authorizationPayload,
 		choicesHash: sha256(JSON.stringify({ domains, fields: selectedFields, values: selectedValues, repositories: scope })),
 		requiresConfirmation: blockers.length === 0 && changed,
 		dependencyClosure,
@@ -415,6 +437,175 @@ export function createReconfigurePlan(config, snapshot, machine, choices, contri
 		fingerprints: collectFingerprints(normalizedEffects),
 		itemIds: normalizedEffects.map(effect => effect.id),
 		correlationTokens: normalizedEffects.map(effect => effect.payload?.correlationToken || effect.correlationToken).filter(Boolean),
+		blockers,
+		configDigest: sha256(JSON.stringify(config)),
+		proposedConfigDigest: sha256(JSON.stringify(proposedConfig)),
+		report: blockers.length > 0 ? "Reconfiguration is blocked before confirmation." : changed ? "Plan created. Requires confirmation." : "Aligned reconfiguration. No changes required.",
+	};
+}
+
+function repositoryRecord(snapshot, repositoryId) {
+	return snapshot.repositoryStates?.[repositoryId]
+		|| snapshot.targets?.[repositoryId]
+		|| snapshot.repositories?.find(repository => repository.id === repositoryId)
+		|| null;
+}
+
+function repositoryConfig(config, snapshot, repositoryId, multiple) {
+	if (!multiple) return config;
+	return config?.[repositoryId]
+		|| config?.repositories?.[repositoryId]
+		|| snapshot.configs?.[repositoryId]
+		|| repositoryRecord(snapshot, repositoryId)?.config
+		|| null;
+}
+
+function repositoryMachine(machine, snapshot, repositoryId, multiple) {
+	if (!multiple && machine && !machine.repositories && !machine[repositoryId]) return machine;
+	return machine?.[repositoryId]
+		|| machine?.repositories?.[repositoryId]
+		|| repositoryRecord(snapshot, repositoryId)?.machine
+		|| {};
+}
+
+function repositoryChoices(choices, repositoryId) {
+	const specific = choices.repositoryChoices?.[repositoryId] || choices.byRepository?.[repositoryId];
+	if (!specific) return choices;
+	const { repositoryChoices: _repositoryChoices, byRepository: _byRepository, ...shared } = choices;
+	return { ...shared, ...specific, repositories: undefined };
+}
+
+function repositorySnapshot(snapshot, repositoryId, multiple) {
+	if (!multiple) return snapshot;
+	const record = repositoryRecord(snapshot, repositoryId);
+	const entries = record && Object.hasOwn(record, "entries") ? record.entries
+		: Object.hasOwn(snapshot.repositoryEntries || {}, repositoryId) ? snapshot.repositoryEntries[repositoryId]
+			: Object.hasOwn(snapshot.entriesByRepository || {}, repositoryId) ? snapshot.entriesByRepository[repositoryId]
+				: null;
+	if (!entries) {
+		throw new ReconfigureError(
+			`Repository ${repositoryId} is missing a repository-qualified discovery snapshot.`,
+			"ERR_UNQUALIFIED_REPOSITORY_STATE",
+		);
+	}
+	return { shape: "standalone", repositoryId, entries };
+}
+
+function repositoryContexts(config, snapshot, machine, choices) {
+	const scope = selectedRepositories(snapshot, choices);
+	const hubId = snapshot.repositories?.find(repository => repository.type === "hub" && repository.present === true)?.id;
+	const qualified = snapshot.shape === "hub_root" && (
+		scope.length > 1
+		|| scope[0] !== hubId
+		|| config?.schema_version === undefined
+	);
+	if (!qualified) {
+		return [{
+			repositoryId: scope[0],
+			config,
+			snapshot,
+			machine: repositoryMachine(machine, snapshot, scope[0], false),
+			choices,
+		}];
+	}
+	return scope.map(repositoryId => ({
+		repositoryId,
+		config: repositoryConfig(config, snapshot, repositoryId, true),
+		snapshot: repositorySnapshot(snapshot, repositoryId, true),
+		machine: repositoryMachine(machine, snapshot, repositoryId, true),
+		choices: repositoryChoices(choices, repositoryId),
+	}));
+}
+
+function qualifyRepositoryPlan(repositoryId, result) {
+	const qualify = id => `${repositoryId}::${id}`;
+	const effects = result.effects.map(effect => ({
+		...effect,
+		id: qualify(effect.id),
+		repositoryId,
+		dependencies: (effect.dependencies || []).map(qualify),
+	}));
+	return {
+		...result,
+		effects,
+		dependencyClosure: result.dependencyClosure.map(dependency => ({
+			...dependency,
+			repositoryId,
+			...(dependency.effectId ? { effectId: qualify(dependency.effectId) } : {}),
+		})),
+		blockers: result.blockers.map(blocker => ({ ...blocker, id: qualify(blocker.id), repositoryId })),
+	};
+}
+
+export function createReconfigurePlan(config, snapshot, machine, choices, contribution = {}) {
+	if (!snapshot || !["standalone", "hub_root", "hub_subrepository"].includes(snapshot.shape)) {
+		throw new ReconfigureError("A validated repository scope is required.", "ERR_INVALID_SCOPE");
+	}
+	const contexts = repositoryContexts(config, snapshot, machine, choices);
+	if (contexts.length === 1) {
+		return createSingleReconfigurePlan(
+			contexts[0].config,
+			contexts[0].snapshot,
+			contexts[0].machine,
+			contexts[0].choices,
+			contribution,
+		);
+	}
+	const repositoryPlans = {};
+	for (const context of contexts) {
+		const repositoryContribution = contribution.repositoryContributions?.[context.repositoryId]
+			|| contribution.byRepository?.[context.repositoryId]
+			|| {};
+		repositoryPlans[context.repositoryId] = qualifyRepositoryPlan(
+			context.repositoryId,
+			createSingleReconfigurePlan(context.config, context.snapshot, context.machine, context.choices, repositoryContribution),
+		);
+	}
+	const effects = contexts.flatMap(context => repositoryPlans[context.repositoryId].effects);
+	effects.sort((left, right) => phaseOrder(left.phase) - phaseOrder(right.phase) || left.order - right.order || left.id.localeCompare(right.id));
+	const dependencyClosure = contexts.flatMap(context => repositoryPlans[context.repositoryId].dependencyClosure);
+	const blockers = contexts.flatMap(context => repositoryPlans[context.repositoryId].blockers);
+	const domains = CANONICAL_DOMAINS.filter(domain => contexts.some(context => repositoryPlans[context.repositoryId].domains.includes(domain)));
+	const scope = contexts.map(context => context.repositoryId);
+	const authorizationPayload = {
+		scope,
+		domains,
+		repositories: Object.fromEntries(contexts.map(context => {
+			const result = repositoryPlans[context.repositoryId];
+			return [context.repositoryId, {
+				choicesHash: result.choicesHash,
+				configDigest: result.configDigest,
+				proposedConfigDigest: result.proposedConfigDigest,
+			}];
+		})),
+		dependencyClosure,
+		effects: effects.map(effectAuthorizationView),
+	};
+	const hash = sha256(JSON.stringify(authorizationPayload));
+	const choicesHash = sha256(JSON.stringify({
+		scope,
+		repositories: Object.fromEntries(contexts.map(context => [context.repositoryId, repositoryPlans[context.repositoryId].choicesHash])),
+	}));
+	const fingerprintsByRepository = Object.fromEntries(contexts.map(context => [
+		context.repositoryId,
+		collectFingerprints(repositoryPlans[context.repositoryId].effects),
+	]));
+	const changed = effects.some(isMutation);
+	return {
+		effects,
+		hash,
+		authorizationPayload,
+		choicesHash,
+		requiresConfirmation: blockers.length === 0 && changed,
+		dependencyClosure,
+		scope,
+		domains,
+		fingerprints: collectFingerprints(effects),
+		fingerprintsByRepository,
+		repositoryConfigs: authorizationPayload.repositories,
+		repositoryPlans,
+		itemIds: effects.map(effect => effect.id),
+		correlationTokens: effects.map(effect => effect.payload?.correlationToken || effect.correlationToken).filter(Boolean),
 		blockers,
 		report: blockers.length > 0 ? "Reconfiguration is blocked before confirmation." : changed ? "Plan created. Requires confirmation." : "Aligned reconfiguration. No changes required.",
 	};
@@ -438,9 +629,30 @@ function mergeContributions(contributions) {
 }
 
 export function plan(config, snapshot, machine, choices) {
+	const contexts = repositoryContexts(config, snapshot, machine, choices);
+	if (contexts.length > 1) {
+		const repositoryContributions = {};
+		const affectedItems = [];
+		const collisions = [];
+		for (const context of contexts) {
+			const contributions = [];
+			if (context.choices?.triageMappings) contributions.push(planTriage(context.config, context.snapshot, context.machine, context.choices));
+			if (context.choices?.contextMap || context.choices?.artifactRoutes) contributions.push(planDomain(context.config, context.snapshot, context.machine, context.choices));
+			const merged = mergeContributions(contributions);
+			repositoryContributions[context.repositoryId] = merged;
+			affectedItems.push(...merged.affectedItems.map(item => ({ ...item, repositoryId: context.repositoryId })));
+			collisions.push(...merged.collisions.map(item => ({ ...item, repositoryId: context.repositoryId })));
+		}
+		return {
+			...createReconfigurePlan(config, snapshot, machine, choices, { repositoryContributions }),
+			...(affectedItems.length > 0 ? { affectedItems } : {}),
+			...(collisions.length > 0 ? { collisions } : {}),
+		};
+	}
+	const context = contexts[0];
 	const contributions = [];
-	if (choices?.triageMappings) contributions.push(planTriage(config, snapshot, machine, choices));
-	if (choices?.contextMap || choices?.artifactRoutes) contributions.push(planDomain(config, snapshot, machine, choices));
+	if (context.choices?.triageMappings) contributions.push(planTriage(context.config, context.snapshot, context.machine, context.choices));
+	if (context.choices?.contextMap || context.choices?.artifactRoutes) contributions.push(planDomain(context.config, context.snapshot, context.machine, context.choices));
 	const contribution = mergeContributions(contributions);
 	return {
 		...createReconfigurePlan(config, snapshot, machine, choices, contribution),
@@ -458,14 +670,18 @@ function requiredAdapter(adapters, names, code) {
 function journalOperation(effect) {
 	return {
 		id: effect.id,
+		repositoryId: effect.repositoryId ?? null,
 		target: effect.target,
 		kind: effect.kind,
 		classification: effect.classification,
 		phase: effect.phase,
+		operation: effect.operation || effect.payload?.operation || null,
 		dependencies: [...(effect.dependencies || [])],
 		correlationToken: effect.payload?.correlationToken || effect.correlationToken || null,
+		fingerprint: effect.fingerprint ?? null,
 		remoteFingerprint: effect.remoteFingerprint ?? null,
 		destructive: effect.destructive === true || effect.classification === "DELETE",
+		authorizationDigest: sha256(JSON.stringify(effectAuthorizationView(effect))),
 	};
 }
 
@@ -482,20 +698,35 @@ function assertSecretFreeJournal(state) {
 }
 
 function initialJournalState(planResult, now) {
+	const authorizedPlan = structuredClone(planResult.authorizationPayload);
+	const operations = planResult.effects.filter(isMutation).map(journalOperation);
 	const state = {
-		schemaVersion: 2,
+		schemaVersion: 3,
 		planHash: planResult.hash,
 		choicesHash: planResult.choicesHash,
 		scope: [...planResult.scope],
 		domains: [...planResult.domains],
 		phase: "prepare",
 		status: "in_progress",
-		operations: planResult.effects.filter(isMutation).map(journalOperation),
+		authorizedPlan,
+		authorizedPlanDigest: sha256(JSON.stringify(authorizedPlan)),
+		authorizedRemainder: operations.map(operation => operation.id),
+		repositoryConfigs: planResult.repositoryConfigs || {
+			[planResult.scope[0]]: {
+				configDigest: planResult.configDigest,
+				proposedConfigDigest: planResult.proposedConfigDigest,
+			},
+		},
+		operations,
 		appliedIds: [],
 		verifiedIds: [],
 		returnedIdentities: {},
+		verifiedResults: {},
 		correlationTokens: [...planResult.correlationTokens],
 		fingerprints: planResult.fingerprints,
+		fingerprintsByRepository: planResult.fingerprintsByRepository || {
+			[planResult.scope[0]]: planResult.fingerprints,
+		},
 		failed: null,
 		startedAt: now(),
 	};
@@ -504,9 +735,126 @@ function initialJournalState(planResult, now) {
 }
 
 async function persistJournal(adapters, state) {
+	state.authorizedRemainder = state.operations
+		.filter(operation => !state.verifiedIds.includes(operation.id))
+		.map(operation => operation.id);
 	assertSecretFreeJournal(state);
 	const writeJournal = requiredAdapter(adapters, ["writeJournal"], "ERR_JOURNAL_ADAPTER_REQUIRED");
 	await writeJournal(state.planHash, structuredClone(state));
+}
+function safeReturnedIdentity(identity) {
+	if (identity === null || identity === undefined) return identity;
+	if (typeof identity !== "object") return identity;
+	const allowed = ["id", "key", "url", "version", "updatedAt", "hash", "digest"];
+	return Object.fromEntries(allowed.filter(key => Object.hasOwn(identity, key)).map(key => [key, identity[key]]));
+}
+
+function verifiedResult(effect, outcome, verification) {
+	const reported = verification && typeof verification === "object" ? verification : {};
+	const identity = safeReturnedIdentity(reported.identity ?? outcome?.identity);
+	const fingerprint = reported.fingerprint ?? outcome?.fingerprint ?? identity ?? null;
+	const version = reported.version ?? identity?.version ?? null;
+	const hash = reported.hash ?? identity?.hash ?? sha256(JSON.stringify(fingerprint));
+	return { repositoryId: effect.repositoryId ?? null, target: effect.target, identity, version, hash, fingerprint };
+}
+
+function postMutationFingerprint(effect, state) {
+	for (const dependencyId of effect.dependencies || []) {
+		const dependency = state.operations.find(operation => operation.id === dependencyId);
+		const result = state.verifiedResults[dependencyId];
+		if (dependency?.target === effect.target && result) return result.fingerprint ?? result.identity ?? null;
+	}
+	return undefined;
+}
+
+async function revalidateLocalOrMachine(effect, expected, planResult, adapters, dependency = false) {
+	const category = effect.target.startsWith("machine:") ? "machine" : "local";
+	const validate = category === "machine"
+		? adapters.revalidateMachineFingerprints || adapters.revalidateFingerprints
+		: adapters.revalidateLocalFingerprints || adapters.revalidateFingerprints;
+	if (typeof validate !== "function" || await validate.call(adapters, { [effect.id]: expected }, planResult, effect) !== true) {
+		const label = category === "machine" ? "Machine" : "Local";
+		throw new ReconfigureError(
+			dependency
+				? `${label} drift detected for source ${effect.target}; fresh authorization is required.`
+				: `${label} fingerprint drift detected for ${effect.target}; fresh authorization is required.`,
+			category === "machine" ? "ERR_MACHINE_DRIFT" : "ERR_LOCAL_DRIFT",
+		);
+	}
+}
+
+async function revalidateRemoteEffect(effect, adapters, expectedOverride) {
+	if (!isRemoteEffect(effect)) return;
+	const refetch = requiredAdapter(adapters, ["refetchRemoteFingerprint"], "ERR_REMOTE_REFETCH_REQUIRED");
+	const expected = expectedOverride !== undefined
+		? expectedOverride
+		: Object.hasOwn(effect, "remoteFingerprint") ? effect.remoteFingerprint : effect.fingerprint ?? null;
+	const fresh = await refetch({ ...effect, remoteFingerprint: expected, expectedFingerprint: expected });
+	if (!sameValue(fresh, expected)) {
+		throw new ReconfigureError(`Remote drift detected for ${effect.target}; fresh authorization is required.`, "ERR_REMOTE_DRIFT");
+	}
+}
+
+async function revalidateEffect(effect, state, planResult, adapters) {
+	const expected = postMutationFingerprint(effect, state)
+		?? (isRemoteEffect(effect) && Object.hasOwn(effect, "remoteFingerprint") ? effect.remoteFingerprint : effect.fingerprint ?? null);
+	if (isRemoteEffect(effect)) await revalidateRemoteEffect(effect, adapters, expected);
+	else await revalidateLocalOrMachine(effect, expected, planResult, adapters);
+	for (const dependencyId of effect.dependencies || []) {
+		const dependency = planResult.effects.find(candidate => candidate.id === dependencyId);
+		if (!dependency || dependency.classification !== "PRESERVE") continue;
+		if (isRemoteEffect(dependency)) await revalidateRemoteEffect(dependency, adapters);
+		else await revalidateLocalOrMachine(dependency, dependency.fingerprint ?? null, planResult, adapters, true);
+	}
+}
+
+async function revalidateInitialFingerprints(planResult, state, adapters) {
+	if (state.appliedIds.length > 0) return;
+	for (const [category, entries] of Object.entries({
+		local: planResult.fingerprints.local || {},
+		machine: planResult.fingerprints.machine || {},
+	})) {
+		if (Object.keys(entries).length === 0) continue;
+		const validate = category === "machine"
+			? adapters.revalidateMachineFingerprints || adapters.revalidateFingerprints
+			: adapters.revalidateLocalFingerprints || adapters.revalidateFingerprints;
+		if (typeof validate !== "function" || await validate.call(adapters, entries, planResult) !== true) {
+			throw new ReconfigureError(
+				`${category === "machine" ? "Machine" : "Local"} fingerprint drift requires a fresh authorization.`,
+				category === "machine" ? "ERR_MACHINE_DRIFT" : "ERR_LOCAL_DRIFT",
+			);
+		}
+	}
+}
+function operationReport(planResult, state) {
+	const verified = new Set(state.verifiedIds);
+	const failedId = state.failed?.effectId || null;
+	const authorizedEffects = state.authorizedPlan?.effects || planResult.effects;
+	const report = {
+		completed: state.operations.filter(operation => verified.has(operation.id)).map(operation => operation.id),
+		preserved: authorizedEffects.filter(effect => effect.classification === "PRESERVE").map(effect => effect.id),
+		skipped: authorizedEffects.filter(effect => effect.classification === "SKIP").map(effect => effect.id),
+		noOp: authorizedEffects.filter(effect => effect.classification === "NO-OP").map(effect => effect.id),
+		pending: state.operations.filter(operation => !verified.has(operation.id) && operation.id !== failedId).map(operation => operation.id),
+		failed: failedId ? [failedId] : [],
+	};
+	report.byRepository = Object.fromEntries(state.scope.map(repositoryId => {
+		const belongs = id => {
+			const operation = state.operations.find(candidate => candidate.id === id);
+			if (operation) return (operation.repositoryId ?? state.scope[0]) === repositoryId;
+			const effect = authorizedEffects.find(candidate => candidate.id === id);
+			return (effect?.repositoryId ?? state.scope[0]) === repositoryId;
+		};
+		return [repositoryId, Object.fromEntries(
+			["completed", "preserved", "skipped", "noOp", "pending", "failed"].map(key => [key, report[key].filter(belongs)]),
+		)];
+	}));
+	return report;
+}
+
+async function derivedReadiness(adapters, state, planResult, fallbackReady) {
+	if (typeof adapters.deriveReadiness === "function") return await adapters.deriveReadiness(state, planResult);
+	return { configValid: fallbackReady, engineeringReady: fallbackReady, trackerReady: fallbackReady, docsReady: fallbackReady, runtimeReady: fallbackReady };
 }
 
 function actionableByPhase(planResult, state, phase) {
@@ -514,54 +862,21 @@ function actionableByPhase(planResult, state, phase) {
 	return planResult.effects.filter(effect => isMutation(effect) && effect.phase === phase && !verified.has(effect.id));
 }
 
-function pendingFingerprints(planResult, state, category) {
-	const applied = new Set(state.appliedIds);
-	return Object.fromEntries(Object.entries(planResult.fingerprints[category] || {}).filter(([id]) => !applied.has(id)));
-}
-
-async function revalidateConfirmedFingerprints(planResult, state, adapters) {
-	const local = pendingFingerprints(planResult, state, "local");
-	const machine = pendingFingerprints(planResult, state, "machine");
-	if (Object.keys(local).length > 0) {
-		const validate = adapters.revalidateLocalFingerprints || adapters.revalidateFingerprints;
-		if (typeof validate !== "function" || await validate.call(adapters, local, planResult) !== true) {
-			throw new ReconfigureError("Local fingerprint drift requires a fresh authorization.", "ERR_LOCAL_DRIFT");
-		}
-	}
-	if (Object.keys(machine).length > 0) {
-		const validate = adapters.revalidateMachineFingerprints || adapters.revalidateFingerprints;
-		if (typeof validate !== "function" || await validate.call(adapters, machine, planResult) !== true) {
-			throw new ReconfigureError("Machine fingerprint drift requires a fresh authorization.", "ERR_MACHINE_DRIFT");
-		}
-	}
-}
-
-async function revalidateRemoteEffect(effect, adapters) {
-	if (!isRemoteEffect(effect)) return;
-	const refetch = requiredAdapter(adapters, ["refetchRemoteFingerprint"], "ERR_REMOTE_REFETCH_REQUIRED");
-	const fresh = await refetch(effect);
-	const expected = Object.hasOwn(effect, "remoteFingerprint") ? effect.remoteFingerprint : effect.fingerprint ?? null;
-	if (!sameValue(fresh, expected)) {
-		throw new ReconfigureError(`Remote drift detected for ${effect.target}; fresh authorization is required.`, "ERR_REMOTE_DRIFT");
-	}
-}
-
-function operationReport(planResult, state) {
-	const verified = new Set(state.verifiedIds);
-	const failedId = state.failed?.effectId || null;
-	return {
-		completed: state.operations.filter(operation => verified.has(operation.id)).map(operation => operation.id),
-		preserved: planResult.effects.filter(effect => effect.classification === "PRESERVE").map(effect => effect.id),
-		skipped: planResult.effects.filter(effect => effect.classification === "SKIP").map(effect => effect.id),
-		noOp: planResult.effects.filter(effect => effect.classification === "NO-OP").map(effect => effect.id),
-		pending: state.operations.filter(operation => !verified.has(operation.id) && operation.id !== failedId).map(operation => operation.id),
-		failed: failedId ? [failedId] : [],
-	};
-}
-
-async function derivedReadiness(adapters, state, planResult, fallbackReady) {
-	if (typeof adapters.deriveReadiness === "function") return await adapters.deriveReadiness(state, planResult);
-	return { configValid: fallbackReady, engineeringReady: fallbackReady, trackerReady: fallbackReady, docsReady: fallbackReady, runtimeReady: fallbackReady };
+async function recoverRemoteOutcome(effect, state, planResult, context, adapters, enabled) {
+	const correlationToken = effect.payload?.correlationToken || effect.correlationToken;
+	if (!enabled || !isRemoteEffect(effect) || !correlationToken) return { recovered: false, outcome: undefined };
+	const recover = adapters.recoverRemoteResultByCorrelation
+		|| adapters.findRemoteResultByCorrelation
+		|| adapters.resolveCorrelationToken;
+	if (typeof recover !== "function") return { recovered: false, outcome: undefined };
+	const outcome = await recover.call(adapters, correlationToken, effect, {
+		state: structuredClone(state),
+		plan: planResult,
+		context,
+	});
+	return outcome === null || outcome === undefined
+		? { recovered: false, outcome: undefined }
+		: { recovered: true, outcome: outcome.outcome ?? outcome };
 }
 
 async function executeConfirmedPlan(planResult, context, adapters, injection, state) {
@@ -570,7 +885,8 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 	const now = adapters.now ? adapters.now.bind(adapters) : Date.now;
 	let currentEffect = null;
 	try {
-		await revalidateConfirmedFingerprints(planResult, state, adapters);
+		const correlationRecoveryEnabled = state.status === "failed" || state.appliedIds.length > 0;
+		await revalidateInitialFingerprints(planResult, state, adapters);
 		let appliedIndex = state.appliedIds.length;
 		for (const phase of PHASES.slice(PHASES.indexOf(state.phase))) {
 			state.phase = phase;
@@ -578,8 +894,13 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 			state.failed = null;
 			await persistJournal(adapters, state);
 			if (injection.failAtPhase === phase) throw new Error(`Injected failure at phase ${phase}`);
-			if (phase === "cleanup" && typeof adapters.verifyCutover === "function" && await adapters.verifyCutover(state, planResult) !== true) {
-				throw new ReconfigureError("Cutover ownership, mappings, adapters, or active references did not verify before cleanup.", "ERR_CUTOVER_NOT_VERIFIED");
+			if (phase === "cleanup") {
+				if (typeof adapters.verifyCutover === "function" && await adapters.verifyCutover(state, planResult) !== true) {
+					throw new ReconfigureError("Cutover ownership, mappings, adapters, or active references did not verify before cleanup.", "ERR_CUTOVER_NOT_VERIFIED");
+				}
+				for (const effect of actionableByPhase(planResult, state, phase).filter(effect => effect.destructive === true || effect.classification === "DELETE")) {
+					await revalidateEffect(effect, state, planResult, adapters);
+				}
 			}
 			for (const effect of actionableByPhase(planResult, state, phase)) {
 				currentEffect = effect;
@@ -600,39 +921,44 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 					if (injection.failAtEffectIndex === appliedIndex || injection.failAtEffectId === effect.id) {
 						throw new Error(`Injected failure at effect ${effect.id}`);
 					}
-					await revalidateRemoteEffect(effect, adapters);
-					if (isRemoteEffect(effect)) {
-						for (const depId of (effect.dependencies || [])) {
-							const source = planResult.effects.find(e => e.id === depId);
-							if (source && source.classification === "PRESERVE") {
-								if (isRemoteEffect(source)) {
-									await revalidateRemoteEffect(source, adapters);
-								} else if (source.target.startsWith("machine:")) {
-									const validate = adapters.revalidateMachineFingerprints || adapters.revalidateFingerprints;
-									if (typeof validate !== "function" || await validate.call(adapters, { [source.id]: source.fingerprint ?? null }, planResult) !== true) {
-										throw new ReconfigureError(`Machine drift detected for source ${source.target}; fresh authorization is required.`, "ERR_MACHINE_DRIFT");
-									}
-								} else {
-									const validate = adapters.revalidateLocalFingerprints || adapters.revalidateFingerprints;
-									if (typeof validate !== "function" || await validate.call(adapters, { [source.id]: source.fingerprint ?? null }, planResult) !== true) {
-										throw new ReconfigureError(`Local drift detected for source ${source.target}; fresh authorization is required.`, "ERR_LOCAL_DRIFT");
-									}
-								}
-							}
+					const recovery = await recoverRemoteOutcome(effect, state, planResult, context, adapters, correlationRecoveryEnabled);
+					if (recovery.recovered) {
+						outcome = recovery.outcome;
+					} else {
+						await revalidateEffect(effect, state, planResult, adapters);
+						outcome = await applyEffect(effect, {
+							state: structuredClone(state),
+							context,
+							dependencyResults: Object.fromEntries((effect.dependencies || [])
+								.filter(id => Object.hasOwn(state.verifiedResults, id))
+								.map(id => [id, state.verifiedResults[id]])),
+						});
+						if (
+							injection.failAfterApplyBeforeJournalAtEffectIndex === appliedIndex
+							|| injection.failAfterApplyBeforeJournalAtEffectId === effect.id
+						) {
+							throw new Error(`Injected crash after applying effect ${effect.id} before journal persistence`);
 						}
 					}
-					outcome = await applyEffect(effect, { state: structuredClone(state), context });
 					state.appliedIds.push(effect.id);
-					if (outcome?.identity !== undefined) state.returnedIdentities[effect.id] = outcome.identity;
+					if (outcome?.identity !== undefined) state.returnedIdentities[effect.id] = safeReturnedIdentity(outcome.identity);
 					await persistJournal(adapters, state);
 					if (injection.failAfterApplyAtEffectIndex === appliedIndex || injection.failAfterApplyAtEffectId === effect.id) {
 						throw new Error(`Injected failure after applying effect ${effect.id}`);
 					}
 					appliedIndex += 1;
 				}
-				if (await verifyEffect(effect, outcome, { state: structuredClone(state), context }) !== true) {
+				const verification = await verifyEffect(effect, outcome, {
+					state: structuredClone(state),
+					context,
+					dependencyResults: Object.fromEntries((effect.dependencies || [])
+						.filter(id => Object.hasOwn(state.verifiedResults, id))
+						.map(id => [id, state.verifiedResults[id]])),
+				});
+				if (verification !== true && verification?.verified !== true && verification?.valid !== true) {
 					throw new ReconfigureError(`Verification failed for ${effect.target}.`, "ERR_EFFECT_VERIFICATION");
 				}
+				state.verifiedResults[effect.id] = verifiedResult(effect, outcome, verification);
 				state.verifiedIds.push(effect.id);
 				await persistJournal(adapters, state);
 			}
@@ -648,9 +974,14 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 		}
 	} catch (error) {
 		state.status = "failed";
-		state.failed = { effectId: currentEffect?.id || null, phase: state.phase, code: error.code || "ERR_RECONFIGURE_FAILED", message: error.message };
+		const journalMessage = error instanceof ReconfigureError ? error.message : "An adapter operation failed.";
+		state.failed = { effectId: currentEffect?.id || null, phase: state.phase, code: error.code || "ERR_RECONFIGURE_FAILED", message: journalMessage };
 		await persistJournal(adapters, state);
 		const report = operationReport(planResult, state);
+		const ownershipReport = Object.fromEntries(state.scope.map(repositoryId => [
+			repositoryId,
+			state.operations.some(operation => (operation.repositoryId ?? state.scope[0]) === repositoryId) ? "incomplete" : "aligned",
+		]));
 		return {
 			success: false,
 			phase: state.phase,
@@ -659,7 +990,7 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 			readiness: await derivedReadiness(adapters, state, planResult, false),
 			report: `Failed during ${state.phase}: ${error.message}. No rollback was performed.`,
 			operationReport: report,
-			ownershipReport: Object.fromEntries(state.scope.map(repository => [repository, "incomplete"])),
+			ownershipReport,
 		};
 	}
 
@@ -668,9 +999,12 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 	state.failed = null;
 	const report = operationReport(planResult, state);
 	const readiness = await derivedReadiness(adapters, state, planResult, true);
-	const ownershipReport = Object.fromEntries(state.scope.map(repository => [repository, "owned"]));
+	const ownershipReport = Object.fromEntries(state.scope.map(repositoryId => [
+		repositoryId,
+		state.operations.some(operation => (operation.repositoryId ?? state.scope[0]) === repositoryId) ? "owned" : "aligned",
+	]));
 	const audit = {
-		schemaVersion: 1,
+		schemaVersion: 2,
 		planHash: state.planHash,
 		scope: state.scope,
 		domains: state.domains,
@@ -682,6 +1016,14 @@ async function executeConfirmedPlan(planResult, context, adapters, injection, st
 		noOp: report.noOp,
 		pending: report.pending,
 		failed: report.failed,
+		repositories: Object.fromEntries(state.scope.map(repositoryId => [repositoryId, {
+			...report.byRepository[repositoryId],
+			config: state.repositoryConfigs[repositoryId],
+			ownership: ownershipReport[repositoryId],
+			verifiedResults: Object.fromEntries(Object.entries(state.verifiedResults)
+				.filter(([id]) => state.operations.find(operation => operation.id === id)?.repositoryId === repositoryId
+					|| (state.scope.length === 1 && state.scope[0] === repositoryId))),
+		}])),
 		ownershipReport,
 		noRollback: true,
 		timestamp: now(),
@@ -707,19 +1049,77 @@ function journalState(record) {
 	return record?.state || record || null;
 }
 
+function immutableEffectView(effect) {
+	const view = effectAuthorizationView(effect);
+	const { fingerprint: _fingerprint, remoteFingerprint: _remoteFingerprint, ...immutable } = view;
+	return {
+		...immutable,
+		afterDigest: effect.afterDigest ?? immutable.afterDigest,
+		payloadDigest: effect.payloadDigest ?? immutable.payloadDigest,
+	};
+}
+
 function assertPlanMatchesJournal(planResult, state) {
-	if (state.schemaVersion !== 2 || !Array.isArray(state.appliedIds) || !Array.isArray(state.verifiedIds)) {
+	if (
+		state.schemaVersion !== 3
+		|| !Array.isArray(state.appliedIds)
+		|| !Array.isArray(state.verifiedIds)
+		|| !state.authorizedPlan
+		|| !Array.isArray(state.authorizedRemainder)
+	) {
 		throw new ReconfigureError("The interrupted journal uses an unsupported state schema.", "ERR_JOURNAL_SCHEMA");
 	}
-	if (state.planHash !== planResult.hash || state.choicesHash !== planResult.choicesHash || !sameValue(state.scope, planResult.scope) || !sameValue(state.domains, planResult.domains)) {
+	const authorizedDigest = sha256(JSON.stringify(state.authorizedPlan));
+	if (state.authorizedPlanDigest !== authorizedDigest || state.planHash !== authorizedDigest) {
+		throw new ReconfigureError("The persisted authorized plan failed its integrity check.", "ERR_JOURNAL_INTEGRITY");
+	}
+	if (state.choicesHash !== planResult.choicesHash || !sameValue(state.scope, planResult.scope) || !sameValue(state.domains, planResult.domains)) {
 		throw new ReconfigureError("The confirmed journal does not match the requested scope and choices.", "ERR_PLAN_MISMATCH");
 	}
-	const plannedIds = new Set(planResult.effects.filter(isMutation).map(effect => effect.id));
-	const unknownApplied = state.appliedIds.filter(id => !plannedIds.has(id));
-	const missingPending = state.operations.filter(operation => !state.verifiedIds.includes(operation.id) && !plannedIds.has(operation.id));
-	if (unknownApplied.length > 0 || missingPending.length > 0) {
+	const authorizedById = new Map(state.authorizedPlan.effects.map(effect => [effect.id, effect]));
+	const plannedById = new Map(planResult.effects.map(effect => [effect.id, effect]));
+	const authorizedMutationIds = new Set(state.operations.map(operation => operation.id));
+	const expectedRemainder = state.operations
+		.filter(operation => !state.verifiedIds.includes(operation.id))
+		.map(operation => operation.id);
+	const invalidOperations = state.operations.filter(operation => {
+		const authorized = authorizedById.get(operation.id);
+		return !authorized || operation.authorizationDigest !== sha256(JSON.stringify(authorized));
+	});
+	const invalidProgress = new Set(state.appliedIds).size !== state.appliedIds.length
+		|| new Set(state.verifiedIds).size !== state.verifiedIds.length
+		|| state.verifiedIds.some(id => !state.appliedIds.includes(id))
+		|| !sameValue(state.authorizedRemainder, expectedRemainder);
+	if (invalidOperations.length > 0 || invalidProgress) {
+		throw new ReconfigureError("The persisted authorized remainder failed its integrity check.", "ERR_JOURNAL_INTEGRITY");
+	}
+	const unknownApplied = state.appliedIds.filter(id => !authorizedMutationIds.has(id));
+	const missingPending = state.operations.filter(operation => {
+		if (state.verifiedIds.includes(operation.id)) return false;
+		const current = plannedById.get(operation.id);
+		const authorized = authorizedById.get(operation.id);
+		return !current || !authorized || !sameValue(immutableEffectView(current), immutableEffectView(authorized));
+	});
+	const unexpectedMutations = planResult.effects.filter(effect => isMutation(effect) && !authorizedMutationIds.has(effect.id));
+	if (unknownApplied.length > 0 || missingPending.length > 0 || unexpectedMutations.length > 0) {
 		throw new ReconfigureError("The confirmed remainder cannot be reconstructed safely.", "ERR_PLAN_MISMATCH");
 	}
+	const operations = new Map(state.operations.map(operation => [operation.id, operation]));
+	return {
+		...planResult,
+		hash: state.planHash,
+		authorizationPayload: state.authorizedPlan,
+		effects: planResult.effects.map(effect => {
+			const operation = operations.get(effect.id);
+			if (!operation || state.verifiedIds.includes(effect.id)) return effect;
+			return {
+				...effect,
+				classification: operation.classification,
+				fingerprint: operation.fingerprint,
+				...(isRemoteEffect(effect) ? { remoteFingerprint: operation.remoteFingerprint } : {}),
+			};
+		}),
+	};
 }
 
 export async function applyConfirmedPlan(planResult, context, adapters, injection = {}) {
@@ -756,18 +1156,21 @@ export async function resumeConfirmedPlan(planResult, context, adapters, injecti
 	const state = journalState(await readJournal());
 	if (!state) throw new ReconfigureError("No interrupted work found to resume.", "ERR_NO_JOURNAL");
 	assertSecretFreeJournal(state);
-	assertPlanMatchesJournal(planResult, state);
-	return executeConfirmedPlan(planResult, context, adapters, injection, state);
+	const confirmedRemainder = assertPlanMatchesJournal(planResult, state);
+	return executeConfirmedPlan(confirmedRemainder, context, adapters, injection, state);
 }
 
 export async function acceptConfirmedPartial(config, planResult, context, adapters) {
-	const error = validationError(config);
-	if (error) throw error;
+	if (config?.schema_version !== undefined) {
+		const error = validationError(config);
+		if (error) throw error;
+	}
 	const readJournal = requiredAdapter(adapters, ["readJournal"], "ERR_JOURNAL_ADAPTER_REQUIRED");
 	const state = journalState(await readJournal());
 	if (!state) throw new ReconfigureError("No interrupted work found to accept.", "ERR_NO_JOURNAL");
 	assertSecretFreeJournal(state);
-	assertPlanMatchesJournal(planResult, state);
+	const confirmedRemainder = assertPlanMatchesJournal(planResult, state);
+	planResult = confirmedRemainder;
 	const cutoverCompleted = state.operations.some(operation => operation.phase === "cutover" && state.verifiedIds.includes(operation.id));
 	const destructiveCompleted = state.operations.some(operation => operation.destructive && state.appliedIds.includes(operation.id));
 	if (!cutoverCompleted || destructiveCompleted) {
@@ -782,7 +1185,7 @@ export async function acceptConfirmedPartial(config, planResult, context, adapte
 	const report = operationReport(planResult, state);
 	const ownershipReport = validation.ownershipReport || Object.fromEntries(state.scope.map(repository => [repository, "partial"]));
 	const audit = {
-		schemaVersion: 1,
+		schemaVersion: 2,
 		planHash: state.planHash,
 		scope: state.scope,
 		domains: state.domains,
@@ -794,6 +1197,14 @@ export async function acceptConfirmedPartial(config, planResult, context, adapte
 		noOp: report.noOp,
 		pending: report.pending,
 		failed: report.failed,
+		repositories: Object.fromEntries(state.scope.map(repositoryId => [repositoryId, {
+			...report.byRepository[repositoryId],
+			config: state.repositoryConfigs[repositoryId],
+			ownership: ownershipReport[repositoryId],
+			verifiedResults: Object.fromEntries(Object.entries(state.verifiedResults)
+				.filter(([id]) => state.operations.find(operation => operation.id === id)?.repositoryId === repositoryId
+					|| (state.scope.length === 1 && state.scope[0] === repositoryId))),
+		}])),
 		ownershipReport,
 		noRollback: true,
 		timestamp: now(),

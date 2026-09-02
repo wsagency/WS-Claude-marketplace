@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { acceptPartial, apply, plan, resume, createReconfigurePlan, applyConfirmedPlan } from "./reconfigure.mjs";
+import {
+	acceptPartial,
+	apply,
+	plan,
+	resume,
+	createReconfigurePlan,
+	applyConfirmedPlan,
+	resumeConfirmedPlan,
+} from "./reconfigure.mjs";
 import { createMockReconfigureAdapters, RECONFIGURE_NOW_FIXTURE } from "./reconfigure.test-support.mjs";
 
 const BASE_CONFIG = Object.freeze({
@@ -143,7 +151,23 @@ test("standalone and hub sub-repository stay current while hub root defaults to 
 	assert.deepEqual(plan(BASE_CONFIG, { shape: "standalone", repositoryId: "repo-1" }, {}, choices).scope, ["repo-1"]);
 	assert.deepEqual(plan(BASE_CONFIG, { shape: "hub_subrepository", repositoryId: "repo-2" }, {}, choices).scope, ["repo-2"]);
 	assert.deepEqual(plan(BASE_CONFIG, HUB_SNAPSHOT, {}, choices).scope, ["hub"]);
-	assert.deepEqual(plan(BASE_CONFIG, HUB_SNAPSHOT, {}, runtimeChoices({ repositories: ["hub", "repo-1", "repo-1"] })).scope, ["hub", "repo-1"]);
+	const qualifiedSnapshot = {
+		...HUB_SNAPSHOT,
+		repositoryStates: { hub: { entries: {} }, "repo-1": { entries: {} } },
+	};
+	assert.deepEqual(
+		plan(
+			{ hub: BASE_CONFIG, "repo-1": BASE_CONFIG },
+			qualifiedSnapshot,
+			{},
+			runtimeChoices({ repositories: ["hub", "repo-1", "repo-1"] }),
+		).scope,
+		["hub", "repo-1"],
+	);
+	assert.throws(
+		() => plan(BASE_CONFIG, HUB_SNAPSHOT, {}, runtimeChoices({ repositories: ["hub", "repo-1"] })),
+		error => ["ERR_UNQUALIFIED_REPOSITORY_STATE", "ERR_MISSING_CONFIG"].includes(error.code),
+	);
 });
 
 test("hub scope rejects unknown, input, output, absent, and undiscovered repository targets before effects", () => {
@@ -320,7 +344,7 @@ test("resume re-verifies an applied effect before any dependent execution", asyn
 	);
 	assert.equal(interrupted.success, false);
 	const state = adapters.getJournal().state;
-	assert.equal(state.schemaVersion, 2);
+	assert.equal(state.schemaVersion, 3);
 	assert.equal(state.planHash, planned.hash);
 	assert.deepEqual(state.appliedIds, [prepare.id]);
 	assert.deepEqual(state.verifiedIds, []);
@@ -497,4 +521,192 @@ test("dependent external effects revalidate their preserved remote sources immed
 	assert.equal(failure.success, false);
 	assert.equal(adapters.getApplied().includes("remote:effect:2"), false);
 	assert.match(failure.report, /Remote drift detected/);
+});
+
+test("two-repository hub plans keep configs, effects, fingerprints, resume state, and audits repository-qualified", async () => {
+	const configs = {
+		hub: { schema_version: 1, runtime: { session_discipline: "required", dangerous_git_guard: "enabled" } },
+		"repo-1": { schema_version: 1, runtime: { session_discipline: "required", dangerous_git_guard: "disabled" } },
+	};
+	const snapshot = {
+		...HUB_SNAPSHOT,
+		repositoryStates: {
+			hub: { entries: { "config:runtime.dangerous_git_guard": { fingerprint: "hub-config-v1" } } },
+			"repo-1": { entries: { "config:runtime.dangerous_git_guard": { fingerprint: "repo-config-v7" } } },
+		},
+	};
+	const choices = runtimeChoices({
+		repositories: ["hub", "repo-1"],
+		repositoryChoices: {
+			hub: { values: { "runtime.dangerous_git_guard": "disabled" } },
+			"repo-1": { values: { "runtime.dangerous_git_guard": "enabled" } },
+		},
+	});
+	const planned = plan(configs, snapshot, {}, choices);
+	const hubEffect = planned.effects.find(effect => effect.repositoryId === "hub" && effect.target === "config:runtime.dangerous_git_guard");
+	const repositoryEffect = planned.effects.find(effect => effect.repositoryId === "repo-1" && effect.target === "config:runtime.dangerous_git_guard");
+	assert.match(hubEffect.diff, /"enabled" -> "disabled"/);
+	assert.match(repositoryEffect.diff, /"disabled" -> "enabled"/);
+	assert.notEqual(planned.repositoryConfigs.hub.configDigest, planned.repositoryConfigs["repo-1"].configDigest);
+	assert.deepEqual(planned.fingerprintsByRepository.hub.local[hubEffect.id], "hub-config-v1");
+	assert.deepEqual(planned.fingerprintsByRepository["repo-1"].local[repositoryEffect.id], "repo-config-v7");
+
+	const adapters = createMockReconfigureAdapters();
+	const interrupted = await apply(configs, snapshot, {}, choices, planned.hash, planned.effects, adapters, { failAtPhase: "cutover" });
+	assert.equal(interrupted.success, false);
+	assert.deepEqual(Object.keys(adapters.getJournal().state.repositoryConfigs).sort(), ["hub", "repo-1"]);
+	const resumed = await resume(configs, snapshot, {}, choices, adapters);
+	assert.equal(resumed.success, true);
+	assert.ok(adapters.getAudit().repositories.hub.completed.includes(hubEffect.id));
+	assert.ok(adapters.getAudit().repositories["repo-1"].completed.includes(repositoryEffect.id));
+	assert.equal(resumed.ownershipReport.hub, "owned");
+	assert.equal(resumed.ownershipReport["repo-1"], "owned");
+});
+
+test("absent Jira sections and optional leaves are selectable only through a complete valid proposal", () => {
+	const config = {
+		schema_version: 1,
+		tracker: { primary: "local", pull_requests: "ignore" },
+	};
+	const snapshot = { shape: "standalone", repositoryId: "repo", entries: {} };
+	const choices = {
+		domains: ["tracker"],
+		fields: ["jira.project", "jira.default_issue_type", "jira.sync"],
+		values: {
+			"jira.project": "WS",
+			"jira.default_issue_type": "Task",
+			"jira.sync": "disabled",
+		},
+	};
+	const enabled = plan(config, snapshot, {}, choices);
+	assert.ok(choices.fields.every(field => enabled.effects.some(effect => effect.target === `config:${field}` && effect.classification === "UPDATE")));
+	assert.throws(
+		() => plan(config, snapshot, {}, {
+			...choices,
+			fields: ["jira.project"],
+			values: { "jira.project": "WS" },
+		}),
+		error => error.code === "ERR_INCOMPLETE_SECTION_ENABLEMENT",
+	);
+	const withJira = {
+		...config,
+		jira: { project: "WS", default_issue_type: "Task", sync: "disabled" },
+	};
+	const optionalLeaf = plan(withJira, snapshot, {}, {
+		domains: ["tracker"],
+		fields: ["jira.board"],
+		values: { "jira.board": 42 },
+	});
+	assert.equal(optionalLeaf.effects.find(effect => effect.target === "config:jira.board").classification, "UPDATE");
+});
+
+test("local drift introduced between phases stops immediately before the next local mutation", async () => {
+	const choices = runtimeChoices({ values: { "runtime.dangerous_git_guard": "enabled" } });
+	const contribution = {
+		effects: [
+			{
+				id: "prepare:local:first",
+				target: "local:first",
+				kind: "state",
+				classification: "CREATE",
+				phase: "prepare",
+				reason: "Prepare local state.",
+				diff: "created",
+				fingerprint: null,
+			},
+			{
+				id: "cutover:local:second",
+				target: "local:second",
+				kind: "state",
+				classification: "UPDATE",
+				phase: "cutover",
+				reason: "Cut over local state.",
+				diff: "updated",
+				fingerprint: "second-v1",
+				dependencies: ["prepare:local:first"],
+			},
+		],
+	};
+	const planned = createReconfigurePlan(BASE_CONFIG, PHASED_SNAPSHOT, {}, choices, contribution);
+	const adapters = createMockReconfigureAdapters({
+		revalidateLocalFingerprints: async (_expected, _plan, effect) => !effect || effect.id !== "cutover:local:second",
+	});
+	const result = await applyConfirmedPlan(planned, {}, adapters);
+	assert.equal(result.success, false);
+	assert.ok(adapters.getApplied().includes("prepare:local:first"));
+	assert.equal(adapters.getApplied().includes("cutover:local:second"), false);
+	assert.match(result.report, /Local fingerprint drift/);
+});
+
+test("fresh post-failure discovery resumes the persisted authorized remainder", async () => {
+	const choices = phasedChoices();
+	const planned = plan(BASE_CONFIG, PHASED_SNAPSHOT, phasedMachine(), choices);
+	const adapters = createMockReconfigureAdapters();
+	const interrupted = await apply(
+		BASE_CONFIG,
+		PHASED_SNAPSHOT,
+		phasedMachine(),
+		choices,
+		planned.hash,
+		planned.effects,
+		adapters,
+		{ failAtPhase: "cleanup" },
+	);
+	assert.equal(interrupted.success, false);
+	const freshConfig = {
+		schema_version: 1,
+		runtime: { session_discipline: "required", dangerous_git_guard: "disabled" },
+	};
+	const freshSnapshot = {
+		...PHASED_SNAPSHOT,
+		entries: {
+			...PHASED_SNAPSHOT.entries,
+			"config:runtime.dangerous_git_guard": { fingerprint: "config-v2" },
+		},
+	};
+	const freshMachine = { ...phasedMachine(), sessionDisciplineDelivered: true };
+	const resumed = await resume(freshConfig, freshSnapshot, freshMachine, choices, adapters);
+	assert.equal(resumed.success, true);
+	assert.equal(resumed.hash, planned.hash);
+	assert.equal(adapters.getAudit().planHash, planned.hash);
+});
+
+test("an unjournaled remote create is recovered by correlation before retry", async () => {
+	const choices = runtimeChoices({ values: { "runtime.dangerous_git_guard": "enabled" } });
+	const remoteEffect = {
+		id: "prepare:remote:copy",
+		target: "remote:jira:copy:1",
+		kind: "state",
+		classification: "CREATE",
+		phase: "prepare",
+		reason: "Create a correlated copy.",
+		diff: "created",
+		fingerprint: null,
+		remoteFingerprint: null,
+		correlationToken: "correlation-1",
+		payload: { operation: "create_copy", external: true, correlationToken: "correlation-1" },
+	};
+	const planned = createReconfigurePlan(BASE_CONFIG, PHASED_SNAPSHOT, {}, choices, { effects: [remoteEffect] });
+	let remoteCreates = 0;
+	let recoveries = 0;
+	const adapters = createMockReconfigureAdapters({
+		applyEffect: async effect => {
+			if (effect.id === remoteEffect.id) remoteCreates++;
+			return { identity: { id: "WS-101", version: 3, hash: "copy-hash" } };
+		},
+		recoverRemoteResultByCorrelation: async token => {
+			recoveries++;
+			assert.equal(token, "correlation-1");
+			return { identity: { id: "WS-101", version: 3, hash: "copy-hash" } };
+		},
+	});
+	const interrupted = await applyConfirmedPlan(planned, {}, adapters, { failAfterApplyBeforeJournalAtEffectId: remoteEffect.id });
+	assert.equal(interrupted.success, false);
+	assert.equal(remoteCreates, 1);
+	assert.equal(adapters.getJournal().state.appliedIds.includes(remoteEffect.id), false);
+	const resumed = await resumeConfirmedPlan(planned, {}, adapters);
+	assert.equal(resumed.success, true);
+	assert.equal(remoteCreates, 1);
+	assert.equal(recoveries, 1);
+	assert.equal(adapters.getAudit().repositories.repo.verifiedResults[remoteEffect.id].identity.id, "WS-101");
 });

@@ -240,3 +240,52 @@ test("aligned documentation policy is prompt-free and writes nothing", async () 
 	assert.equal(applied.report, "Aligned reconfiguration. No changes required.");
 	assert.deepEqual(adapters.getHistory(), []);
 });
+
+test("absent docs policy is enabled only with every explicit required leaf and verified bootstrap dependencies", () => {
+	const config = { schema_version: 1 };
+	const choices = {
+		domains: ["documentation"],
+		fields: [
+			"docs.user_track",
+			"docs.dev_track",
+			"docs.default_audience",
+			"docs.default_scope",
+			"docs.adr_for_arch_changes",
+		],
+		values: {
+			"docs.user_track": "docs",
+			"docs.dev_track": "dev-docs",
+			"docs.default_audience": "ask",
+			"docs.default_scope": "repo",
+			"docs.adr_for_arch_changes": true,
+		},
+		enableDocs: true,
+	};
+	const enabled = plan(config, DISCOVERY, choices);
+	const bootstrapIds = enabled.effects.filter(effect => effect.id.startsWith("prepare:docs-bootstrap:")).map(effect => effect.id);
+	assert.ok(bootstrapIds.length > 0);
+	for (const field of choices.fields) {
+		const effect = enabled.effects.find(candidate => candidate.target === `config:${field}`);
+		assert.deepEqual(new Set(effect.dependencies), new Set(bootstrapIds));
+	}
+	assert.throws(
+		() => plan(config, DISCOVERY, {
+			...choices,
+			fields: ["docs.user_track"],
+			values: { "docs.user_track": "docs" },
+		}),
+		error => error.code === "ERR_INCOMPLETE_SECTION_ENABLEMENT",
+	);
+});
+
+test("documentation and changelog moves reject manifests not bound to a selected canonical path field", () => {
+	assert.throws(
+		() => plan(BASE_CONFIG, DISCOVERY, {
+			domains: ["documentation"],
+			fields: [],
+			values: {},
+			pathTransitions: changelogMove().pathTransitions,
+		}),
+		error => error.code === "ERR_UNBOUND_PATH_TRANSITION",
+	);
+});

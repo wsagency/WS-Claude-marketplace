@@ -137,9 +137,15 @@ export function planTriage(config, snapshot, machine, choices) {
 				reason: `Remove the old label from this affected item only after the new mapping is active.`,
 				diff: `${mapping.oldLabel} removed`,
 				fingerprint: item.entry.fingerprint ?? null,
-				...(isRemote ? { remoteFingerprint: item.entry.remoteFingerprintAfterCutover ?? null } : {}),
 				dependencies: [addId, configId],
-				payload: { operation: "remove_old_semantic_label", external: isRemote, role: mapping.role, oldLabel: mapping.oldLabel, newLabel: mapping.newLabel },
+				payload: {
+					operation: "remove_old_semantic_label",
+					external: isRemote,
+					role: mapping.role,
+					oldLabel: mapping.oldLabel,
+					newLabel: mapping.newLabel,
+					verifiedPostAddEffectId: addId,
+				},
 			});
 		}
 	}

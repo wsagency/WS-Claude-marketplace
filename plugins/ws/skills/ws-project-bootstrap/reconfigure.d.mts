@@ -7,7 +7,7 @@ export type ReconfigurePhase = "prepare" | "cutover" | "cleanup" | "done";
 export type ReconfigureClassification = "CREATE" | "UPDATE" | "DELETE" | "PRESERVE" | "SKIP" | "NO-OP" | "BLOCKING_CONFLICT";
 export type TriageRole = "needs_triage" | "needs_info" | "ready_for_agent" | "ready_for_human" | "wontfix";
 
-export type ReconfigureConfig = CanonicalProjectConfig;
+export type ReconfigureConfig = CanonicalProjectConfig | Record<string, CanonicalProjectConfig>;
 
 export interface ReconfigureMachineCapabilities {
 	canWriteSharedGuards?: boolean;
@@ -33,6 +33,14 @@ export interface ReconfigureRepositoryTarget {
 	id: string;
 	type: "hub" | "working" | "input" | "output";
 	present: boolean;
+	config?: CanonicalProjectConfig;
+	entries?: Record<string, ReconfigureSnapshotEntry>;
+	machine?: ReconfigureMachineCapabilities;
+}
+export interface ReconfigureRepositoryState {
+	config?: CanonicalProjectConfig;
+	entries?: Record<string, ReconfigureSnapshotEntry>;
+	machine?: ReconfigureMachineCapabilities;
 }
 export interface ReconfigureTargetSnapshot {
 	isRepository?: boolean;
@@ -40,6 +48,10 @@ export interface ReconfigureTargetSnapshot {
 	repositoryId?: string;
 	entries?: Record<string, ReconfigureSnapshotEntry>;
 	repositories?: ReconfigureRepositoryTarget[];
+	repositoryStates?: Record<string, ReconfigureRepositoryState>;
+	repositoryEntries?: Record<string, Record<string, ReconfigureSnapshotEntry>>;
+	entriesByRepository?: Record<string, Record<string, ReconfigureSnapshotEntry>>;
+	configs?: Record<string, CanonicalProjectConfig>;
 }
 
 export interface DomainArtifactRoute {
@@ -56,6 +68,8 @@ export interface ReconfigureChoices {
 	fields: string[];
 	values?: Record<string, unknown>;
 	repositories?: string[];
+	repositoryChoices?: Record<string, Partial<Omit<ReconfigureChoices, "repositories" | "repositoryChoices" | "byRepository">>>;
+	byRepository?: Record<string, Partial<Omit<ReconfigureChoices, "repositories" | "repositoryChoices" | "byRepository">>>;
 	cancelDependent?: boolean;
 	authorizeOwnedCleanup?: boolean;
 	triageMappings?: Partial<Record<TriageRole, string | { newLabel: string }>>;
@@ -66,6 +80,7 @@ export interface ReconfigureChoices {
 
 export interface ReconfigureEffect {
 	id: string;
+	repositoryId?: string;
 	order: number;
 	phase: Exclude<ReconfigurePhase, "done">;
 	target: string;
@@ -116,17 +131,25 @@ export interface ReconfigurePlanContribution {
 	dependencyClosure?: Array<string | ReconfigureDependency>;
 	fieldDependencies?: Record<string, string[]>;
 	configSectionRemovals?: ReconfigureConfigSectionRemoval[];
+	repositoryContributions?: Record<string, ReconfigurePlanContribution>;
+	byRepository?: Record<string, ReconfigurePlanContribution>;
 }
 
 export interface ReconfigurePlanResult {
 	effects: ReconfigureEffect[];
 	hash: string;
+	authorizationPayload: Record<string, unknown> & { effects: Array<Record<string, unknown>> };
 	choicesHash: string;
 	requiresConfirmation: boolean;
 	dependencyClosure: ReconfigureDependency[];
 	scope: string[];
 	domains: ReconfigureDomain[];
 	fingerprints: ReconfigureFingerprints;
+	fingerprintsByRepository?: Record<string, ReconfigureFingerprints>;
+	repositoryConfigs?: Record<string, { configDigest: string; proposedConfigDigest: string; choicesHash?: string }>;
+	repositoryPlans?: Record<string, ReconfigurePlanResult>;
+	configDigest?: string;
+	proposedConfigDigest?: string;
 	itemIds: string[];
 	correlationTokens: string[];
 	blockers: ReconfigureBlocker[];
@@ -137,30 +160,49 @@ export interface ReconfigurePlanResult {
 
 export interface ReconfigureJournalOperation {
 	id: string;
+	repositoryId: string | null;
 	target: string;
 	kind: ReconfigureEffect["kind"];
 	classification: ReconfigureClassification;
 	phase: Exclude<ReconfigurePhase, "done">;
+	operation: string | null;
 	dependencies: string[];
 	correlationToken: string | null;
+	fingerprint: unknown;
 	remoteFingerprint: unknown;
 	destructive: boolean;
+	authorizationDigest: string;
+}
+
+export interface ReconfigureVerifiedResult {
+	repositoryId: string | null;
+	target: string;
+	identity: unknown;
+	version: unknown;
+	hash: string;
+	fingerprint: unknown;
 }
 
 export interface ReconfigureJournalState {
-	schemaVersion: 2;
+	schemaVersion: 3;
 	planHash: string;
 	choicesHash: string;
 	scope: string[];
 	domains: ReconfigureDomain[];
 	phase: ReconfigurePhase;
 	status: "in_progress" | "failed" | "completed";
+	authorizedPlan: ReconfigurePlanResult["authorizationPayload"];
+	authorizedPlanDigest: string;
+	authorizedRemainder: string[];
+	repositoryConfigs: Record<string, { configDigest: string; proposedConfigDigest: string; choicesHash?: string }>;
 	operations: ReconfigureJournalOperation[];
 	appliedIds: string[];
 	verifiedIds: string[];
 	returnedIdentities: Record<string, unknown>;
+	verifiedResults: Record<string, ReconfigureVerifiedResult>;
 	correlationTokens: string[];
 	fingerprints: ReconfigureFingerprints;
+	fingerprintsByRepository: Record<string, ReconfigureFingerprints>;
 	failed: { effectId: string | null; phase: ReconfigurePhase; code: string; message: string } | null;
 	startedAt: number;
 }
@@ -172,6 +214,7 @@ export interface ReconfigureOperationReport {
 	noOp: string[];
 	pending: string[];
 	failed: string[];
+	byRepository?: Record<string, Omit<ReconfigureOperationReport, "byRepository">>;
 }
 
 export interface ReconfigureAdapters {
@@ -180,12 +223,19 @@ export interface ReconfigureAdapters {
 	removeJournal: () => Promise<void>;
 	appendAudit?: (record: Record<string, unknown>) => Promise<void>;
 	writeAudit?: (record: Record<string, unknown>) => Promise<void>;
-	applyEffect: (effect: ReconfigureEffect, context: unknown) => Promise<{ identity?: unknown } | void>;
-	verifyEffect: (effect: ReconfigureEffect, outcome: unknown, context: unknown) => Promise<boolean>;
-	revalidateLocalFingerprints?: (fingerprints: Record<string, unknown>, plan: ReconfigurePlanResult) => Promise<boolean>;
-	revalidateMachineFingerprints?: (fingerprints: Record<string, unknown>, plan: ReconfigurePlanResult) => Promise<boolean>;
-	revalidateFingerprints?: (fingerprints: Record<string, unknown>, plan: ReconfigurePlanResult) => Promise<boolean>;
-	refetchRemoteFingerprint?: (effect: ReconfigureEffect) => Promise<unknown>;
+	applyEffect: (effect: ReconfigureEffect, context: unknown) => Promise<{ identity?: unknown; fingerprint?: unknown } | void>;
+	verifyEffect: (
+		effect: ReconfigureEffect,
+		outcome: unknown,
+		context: unknown,
+	) => Promise<boolean | { verified?: boolean; valid?: boolean; identity?: unknown; fingerprint?: unknown; version?: unknown; hash?: string }>;
+	recoverRemoteResultByCorrelation?: (correlationToken: string, effect: ReconfigureEffect, context: unknown) => Promise<unknown>;
+	findRemoteResultByCorrelation?: (correlationToken: string, effect: ReconfigureEffect, context: unknown) => Promise<unknown>;
+	resolveCorrelationToken?: (correlationToken: string, effect: ReconfigureEffect, context: unknown) => Promise<unknown>;
+	revalidateLocalFingerprints?: (fingerprints: Record<string, unknown>, plan: ReconfigurePlanResult, effect?: ReconfigureEffect) => Promise<boolean>;
+	revalidateMachineFingerprints?: (fingerprints: Record<string, unknown>, plan: ReconfigurePlanResult, effect?: ReconfigureEffect) => Promise<boolean>;
+	revalidateFingerprints?: (fingerprints: Record<string, unknown>, plan: ReconfigurePlanResult, effect?: ReconfigureEffect) => Promise<boolean>;
+	refetchRemoteFingerprint?: (effect: ReconfigureEffect & { expectedFingerprint?: unknown }) => Promise<unknown>;
 	verifyCutover?: (state: ReconfigureJournalState, plan: ReconfigurePlanResult) => Promise<boolean>;
 	verifyPhase?: (phase: Exclude<ReconfigurePhase, "done">, state: ReconfigureJournalState, plan: ReconfigurePlanResult) => Promise<boolean>;
 	verifyCompletion?: (state: ReconfigureJournalState, plan: ReconfigurePlanResult) => Promise<boolean>;
@@ -200,6 +250,8 @@ export interface ReconfigureInjection {
 	failAtEffectId?: string;
 	failAfterApplyAtEffectIndex?: number;
 	failAfterApplyAtEffectId?: string;
+	failAfterApplyBeforeJournalAtEffectIndex?: number;
+	failAfterApplyBeforeJournalAtEffectId?: string;
 }
 
 export interface ReconfigureApplyResult {
