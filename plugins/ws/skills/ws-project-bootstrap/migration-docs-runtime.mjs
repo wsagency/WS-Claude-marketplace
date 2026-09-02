@@ -158,11 +158,14 @@ export function planDocsRuntimeMigration(discovery, currentCanonical = {}, resol
 
 	const docs = discovery.docs;
 	const project = discovery.project;
-	setIfAbsent(patch, "docs.user_track", resolutions["docs.user_track"] ?? valueAt(docs, "docs.user_track"), changes, DOCS_CONFIG);
-	setIfAbsent(patch, "docs.dev_track", resolutions["docs.dev_track"] ?? valueAt(docs, "docs.dev_track"), changes, DOCS_CONFIG);
-	setIfAbsent(patch, "docs.default_audience", resolutions["docs.default_audience"] ?? valueAt(docs, "docs.default_audience"), changes, DOCS_CONFIG);
-	setIfAbsent(patch, "docs.default_scope", resolutions["docs.default_scope"] ?? valueAt(docs, "docs.default_scope") ?? "repo", changes, DOCS_CONFIG);
-	setIfAbsent(patch, "docs.adr_for_arch_changes", resolutions["docs.adr_for_arch_changes"] ?? valueAt(docs, "docs.auto.adr_for_arch_changes", "auto.adr_for_arch_changes"), changes, DOCS_CONFIG);
+	const hasDocsPolicy = Object.keys(flatten(docs)).length > 0 || Object.keys(resolutions).some(field => field.startsWith("docs."));
+	if (hasDocsPolicy) {
+		setIfAbsent(patch, "docs.user_track", resolutions["docs.user_track"] ?? valueAt(docs, "docs.user_track") ?? "docs", changes, DOCS_CONFIG);
+		setIfAbsent(patch, "docs.dev_track", resolutions["docs.dev_track"] ?? valueAt(docs, "docs.dev_track") ?? "dev-docs", changes, DOCS_CONFIG);
+		setIfAbsent(patch, "docs.default_audience", resolutions["docs.default_audience"] ?? valueAt(docs, "docs.default_audience") ?? "ask", changes, DOCS_CONFIG);
+		setIfAbsent(patch, "docs.default_scope", resolutions["docs.default_scope"] ?? valueAt(docs, "docs.default_scope") ?? "repo", changes, DOCS_CONFIG);
+		setIfAbsent(patch, "docs.adr_for_arch_changes", resolutions["docs.adr_for_arch_changes"] ?? valueAt(docs, "docs.auto.adr_for_arch_changes", "auto.adr_for_arch_changes") ?? true, changes, DOCS_CONFIG);
+	}
 	setIfAbsent(patch, "changelog.path", resolutions["changelog.path"] ?? valueAt(project, "changelog.path") ?? "CHANGELOG.md", changes, PROJECT_CONFIG);
 	const projectSkip = valueAt(project, "changelog.skip_types");
 	const docsSkip = valueAt(docs, "docs.changelog.skip_types");
