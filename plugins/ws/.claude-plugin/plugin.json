@@ -1,6 +1,5 @@
 {
   "name": "ws",
-  "version": "5.0.0",
   "description": "The WS Agency engineering suite in one plugin: canonical project policy and migration via /ws-setup, ws-matt graph-engineered skills (grill, spec, tickets, implement, TDD, review — Matt Pocock's skills MIT-vendored), Jira-aware git flows via jira-cli, dual-track docs via /ws-docs, and multi-repo project hubs via /ws-hub",
   "author": {
     "name": "WS Agency AI suite",
