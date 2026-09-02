@@ -10,6 +10,7 @@ import { FakeJiraAdapter } from "./test-support/fake-jira-adapter.mjs";
 import {
 	detectRepositoryLegacyPolicy,
 	inspectCanonicalCapability,
+	parseReconfiguringDomains,
 	runCanonicalSynchronizedTrackerOperation,
 } from "./consumer.mjs";
 
@@ -73,6 +74,20 @@ function createRepository(config, options = {}) {
 	}
 	return root;
 }
+function reconfigureJournal(domains = ["tracker"], stateOverrides = {}) {
+	const state = {
+		schemaVersion: 3,
+		planHash: "plan-hash",
+		choicesHash: "choices-hash",
+		scope: ["repository"],
+		domains,
+		phase: "prepare",
+		status: "in_progress",
+		...stateOverrides,
+	};
+	return JSON.stringify({ hash: state.planHash, state });
+}
+
 
 function jiraConfig(primary = "jira", sync = "disabled") {
 	return {
@@ -272,6 +287,49 @@ describe("canonical capability inspection", () => {
 		assert.deepEqual(dashboard.operation, { enabled: false, mode: "disabled" });
 		assert.equal(dashboard.ready, true);
 		assert.equal(engineering.ready, true);
+	});
+	test("blocks only capabilities affected by a valid active reconfiguration journal", () => {
+		const root = createRepository(baseConfig("local"));
+		const journalPath = path.join(root, ".wsagency/reconfigure-state.yaml");
+		writeFileSync(journalPath, reconfigureJournal(["tracker"]));
+
+		const tracker = inspectCanonicalCapability({ root, capability: "tracker" });
+		assert.equal(tracker.ready, false);
+		assert.match(tracker.blockers[0], /Active reconfiguration in progress/);
+
+		const changelog = inspectCanonicalCapability({ root, capability: "changelog" });
+		assert.equal(changelog.blockers.some(blocker => blocker.includes("Active reconfiguration in progress")), false);
+
+		const engineering = inspectCanonicalCapability({ root, capability: "engineering" });
+		assert.match(engineering.blockers[0], /Active reconfiguration in progress/);
+
+		const config = inspectCanonicalCapability({ root, capability: "config" });
+		assert.equal(config.blockers.some(blocker => blocker.includes("Active reconfiguration in progress")), false);
+	});
+
+	test("malformed reconfiguration journals fail closed for every affected domain", () => {
+		const malformed = [
+			"{ malformed",
+			JSON.stringify({ state: {} }),
+			JSON.stringify({ hash: "plan-hash", state: { schemaVersion: 3 } }),
+			reconfigureJournal([]),
+			reconfigureJournal(["tracker"], { scope: [] }),
+			reconfigureJournal(["unknown"]),
+			reconfigureJournal(["tracker"], { choicesHash: "" }),
+			reconfigureJournal(["tracker"], { phase: "unknown" }),
+			reconfigureJournal(["tracker"], { status: "unknown" }),
+		];
+		for (const source of malformed) {
+			assert.deepEqual(parseReconfiguringDomains(source), ["all"]);
+		}
+
+		const root = createRepository(baseConfig("local"));
+		const journalPath = path.join(root, ".wsagency/reconfigure-state.yaml");
+		writeFileSync(journalPath, malformed[0]);
+		for (const capability of ["tracker", "changelog", "engineering"]) {
+			const result = inspectCanonicalCapability({ root, capability });
+			assert.match(result.blockers[0], /Active reconfiguration in progress/);
+		}
 	});
 });
 

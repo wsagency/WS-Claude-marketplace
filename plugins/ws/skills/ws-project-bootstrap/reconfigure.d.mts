@@ -268,6 +268,8 @@ export interface ReconfigureApplyResult {
 export class ReconfigureError extends Error {
 	readonly code: string;
 }
+export type OperationalReconfigureAdapters = Omit<ReconfigureAdapters, "writeJournal" | "readJournal" | "removeJournal" | "now">;
+export function createReconfigureFilesystemAdapters(root: string, operationalAdapters: OperationalReconfigureAdapters): ReconfigureAdapters;
 
 export function createReconfigurePlan(
 	config: ReconfigureConfig,

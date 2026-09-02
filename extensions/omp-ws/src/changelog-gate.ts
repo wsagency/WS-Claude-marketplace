@@ -144,7 +144,7 @@ export function registerChangelogGate(pi: ExtensionAPI): void {
 			const target = resolveCommitCwd(command, cwd);
 			const repoRoot = await resolveRepoRoot(target);
 			const state = await loadRepositoryPolicyFromRoot(repoRoot);
-			const policyProblem = repositoryPolicyProblem(state, "ws-changelog-gate");
+			const policyProblem = repositoryPolicyProblem(state, "ws-changelog-gate", ["documentation"]);
 			if (policyProblem !== undefined) return { block: true, reason: policyProblem };
 			if (state.status !== "valid") return;
 			if (!state.config?.changelog) {

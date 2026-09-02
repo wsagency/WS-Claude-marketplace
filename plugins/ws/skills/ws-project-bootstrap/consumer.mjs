@@ -203,6 +203,41 @@ function inspectDashboard(result, config, snapshot) {
 	}
 }
 
+export function parseReconfiguringDomains(source) {
+	try {
+		const parsed = JSON.parse(source);
+		if (!parsed || typeof parsed !== "object" || !parsed.hash || !parsed.state) return ["all"];
+		const state = parsed.state;
+		if (
+			state.schemaVersion !== 3 ||
+			typeof state.planHash !== "string" || state.planHash === "" ||
+			typeof state.choicesHash !== "string" || state.choicesHash === "" ||
+			!Array.isArray(state.scope) || state.scope.length === 0 || !state.scope.every(s => typeof s === "string" && s !== "") ||
+			!Array.isArray(state.domains) || state.domains.length === 0 || !state.domains.every(d => typeof d === "string") ||
+			!["prepare", "cutover", "cleanup", "done"].includes(state.phase) ||
+			!["in_progress", "failed", "completed"].includes(state.status)
+		) {
+			return ["all"];
+		}
+		
+		const validDomains = new Set(["tracker", "documentation", "runtime"]);
+		if (state.domains.some(d => !validDomains.has(d))) return ["all"];
+		if (state.planHash !== parsed.hash) return ["all"];
+		
+		return state.domains;
+	} catch {
+		return ["all"];
+	}
+}
+
+function capabilityToReconfigureDomain(capability) {
+	if (["tracker", "triage", "jira_commit", "dashboard", "pull_requests", "domain", "commit"].includes(capability)) return ["tracker"];
+	if (capability === "changelog") return ["documentation"];
+	if (capability === "engineering") return ["tracker", "documentation", "runtime"];
+	if (capability === "config") return [];
+	return ["runtime"];
+}
+
 /**
  * Read one named runtime capability from the sole canonical project policy.
  * The optional snapshot contains only capability facts already observed by the
@@ -226,6 +261,25 @@ export function inspectCanonicalCapability({ root = process.cwd(), capability, s
 		blockers: [],
 		warnings: [],
 	};
+
+	const journalPath = path.join(resolvedRoot, ".wsagency/reconfigure-state.yaml");
+	if (exists(resolvedRoot, ".wsagency/reconfigure-state.yaml")) {
+		let reconfiguringDomains = ["all"];
+		try {
+			const source = readFileSync(journalPath, "utf8");
+			reconfiguringDomains = parseReconfiguringDomains(source);
+		} catch {
+			reconfiguringDomains = ["all"];
+		}
+		const requiredDomains = capabilityToReconfigureDomain(capability);
+		const affected = requiredDomains.length > 0
+			&& (reconfiguringDomains.includes("all") || requiredDomains.some(domain => reconfiguringDomains.includes(domain)));
+		if (affected) {
+			result.blockers.push(`Active reconfiguration in progress for this domain. Run /ws-setup reconfigure.`);
+			return result;
+		}
+	}
+
 	const absoluteConfigPath = path.join(resolvedRoot, CANONICAL_POLICY_PATH);
 	if (!isFile(resolvedRoot, CANONICAL_POLICY_PATH)) {
 		result.blockers.push(`Canonical project policy is missing: ${CANONICAL_POLICY_PATH}. ${legacyDirective(detectedLegacySources)}`);

@@ -53,7 +53,7 @@ export function registerCompaction(pi: ExtensionAPI): void {
 	pi.on("session.compacting", async (_event, ctx) => {
 		try {
 			const state = await loadRepositoryPolicy(ctx.cwd);
-			const policyProblem = repositoryPolicyProblem(state, "ws-compaction");
+			const policyProblem = repositoryPolicyProblem(state, "ws-compaction", ["runtime"]);
 			if (policyProblem !== undefined) return { context: [policyProblem] };
 			if (state.status !== "valid") return;
 			if (!state.config?.tracker || !state.config.changelog) {

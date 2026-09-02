@@ -66,7 +66,7 @@ export function registerAdrTool(pi: ExtensionAPI): void {
 		approval: "write",
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const policy = await loadRepositoryPolicy(ctx.cwd);
-			const policyProblem = repositoryWritePolicyProblem(policy, "ws_adr");
+			const policyProblem = repositoryWritePolicyProblem(policy, "ws_adr", ["documentation"]);
 			if (policyProblem !== undefined) return textResult(policyProblem, true);
 			if (policy.status !== "valid" || !policy.config?.docs) {
 				return textResult(missingPolicyCapability("ws_adr", "docs.dev_track"), true);

@@ -1,6 +1,71 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { validateCanonicalConfigObject } from "./config.mjs";
 import { planDomain, planTriage } from "./routing.mjs";
+
+export function createReconfigureFilesystemAdapters(root, operationalAdapters) {
+	const journalPath = path.join(root, ".wsagency/reconfigure-state.yaml");
+	return {
+		...operationalAdapters,
+		writeJournal: async (hash, state) => {
+			if (hash !== state.planHash) {
+				throw new ReconfigureError("Hash mismatch.", "ERR_JOURNAL_INTEGRITY");
+			}
+			const content = JSON.stringify({ hash, state }, null, 2) + "\n";
+			const tempPath = `${journalPath}.tmp.${randomUUID()}`;
+			try {
+				await mkdir(path.dirname(journalPath), { recursive: true });
+				await writeFile(tempPath, content, "utf8");
+				await rename(tempPath, journalPath);
+			} catch (error) {
+				await rm(tempPath, { force: true }).catch(() => {});
+				throw error;
+			}
+		},
+		readJournal: async () => {
+			try {
+				const source = await readFile(journalPath, "utf8");
+				const parsed = JSON.parse(source);
+				if (!parsed || typeof parsed !== "object" || !parsed.hash || !parsed.state) {
+					throw new ReconfigureError("Active reconfiguration journal is malformed.", "ERR_MALFORMED_JOURNAL");
+				}
+				const state = parsed.state;
+				if (
+					state.schemaVersion !== 3 ||
+					typeof state.planHash !== "string" || state.planHash === "" ||
+					typeof state.choicesHash !== "string" || state.choicesHash === "" ||
+					!Array.isArray(state.scope) || state.scope.length === 0 || !state.scope.every(s => typeof s === "string" && s !== "") ||
+					!Array.isArray(state.domains) || state.domains.length === 0 || !state.domains.every(d => typeof d === "string") ||
+					!["prepare", "cutover", "cleanup", "done"].includes(state.phase) ||
+					!["in_progress", "failed", "completed"].includes(state.status)
+				) {
+					throw new ReconfigureError("Active reconfiguration journal is malformed.", "ERR_MALFORMED_JOURNAL");
+				}
+				const validDomains = new Set(["tracker", "documentation", "runtime"]);
+				if (state.domains.some(d => !validDomains.has(d))) {
+					throw new ReconfigureError("Active reconfiguration journal is malformed.", "ERR_MALFORMED_JOURNAL");
+				}
+				if (state.planHash !== parsed.hash) {
+					throw new ReconfigureError("The persisted authorized plan failed its integrity check.", "ERR_JOURNAL_INTEGRITY");
+				}
+				return parsed;
+			} catch (error) {
+				if (error.code === "ENOENT") return null;
+				if (error instanceof ReconfigureError) throw error;
+				throw new ReconfigureError("Active reconfiguration journal is malformed.", "ERR_MALFORMED_JOURNAL");
+			}
+		},
+		removeJournal: async () => {
+			try {
+				await rm(journalPath);
+			} catch (error) {
+				if (error.code !== "ENOENT") throw error;
+			}
+		},
+		now: () => Date.now(),
+	};
+}
 
 const PHASES = Object.freeze(["prepare", "cutover", "cleanup"]);
 const MUTATION_CLASSIFICATIONS = new Set(["CREATE", "UPDATE", "DELETE"]);

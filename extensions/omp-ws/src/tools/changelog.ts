@@ -136,7 +136,7 @@ export function registerChangelogTool(pi: ExtensionAPI): void {
 		approval: "write",
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const state = await loadRepositoryPolicy(ctx.cwd);
-			const policyProblem = repositoryPolicyProblem(state, "ws_changelog");
+			const policyProblem = repositoryPolicyProblem(state, "ws_changelog", ["documentation"]);
 			if (policyProblem !== undefined) return textResult(policyProblem, true);
 			if (state.status !== "valid" || !state.config?.changelog) {
 				return textResult(missingPolicyCapability("ws_changelog", "changelog policy"), true);

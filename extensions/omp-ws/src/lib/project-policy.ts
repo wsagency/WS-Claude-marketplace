@@ -5,7 +5,10 @@ import {
 	type CanonicalProjectConfig,
 	type ConfigValidationIssue,
 } from "../../../../plugins/ws/skills/ws-project-bootstrap/config.mjs";
-import { detectRepositoryLegacyPolicy } from "../../../../plugins/ws/skills/ws-project-bootstrap/consumer.mjs";
+import {
+	detectRepositoryLegacyPolicy,
+	parseReconfiguringDomains,
+} from "../../../../plugins/ws/skills/ws-project-bootstrap/consumer.mjs";
 import { run } from "./exec";
 
 export const CANONICAL_POLICY_PATH = ".wsagency/config.yaml";
@@ -18,6 +21,7 @@ export interface RepositoryPolicyState {
 	config: CanonicalProjectConfig | null;
 	errors: ConfigValidationIssue[];
 	legacySources: string[];
+	reconfiguringDomains: string[];
 }
 
 export interface NativeRuntimeCapabilities {
@@ -64,6 +68,16 @@ export async function resolveRepositoryRoot(cwd: string): Promise<string> {
 }
 
 export async function loadRepositoryPolicyFromRoot(root: string): Promise<RepositoryPolicyState> {
+	let reconfiguringDomains: string[] = [];
+	const journalSource = await readIfExists(path.join(root, ".wsagency/reconfigure-state.yaml"));
+	if (journalSource !== undefined) {
+		try {
+			reconfiguringDomains = parseReconfiguringDomains(journalSource);
+		} catch {
+			reconfiguringDomains = ["all"];
+		}
+	}
+
 	const source = await readIfExists(path.join(root, CANONICAL_POLICY_PATH));
 	if (source === undefined) {
 		return {
@@ -72,6 +86,7 @@ export async function loadRepositoryPolicyFromRoot(root: string): Promise<Reposi
 			config: null,
 			errors: [],
 			legacySources: detectRepositoryLegacyPolicy(root),
+			reconfiguringDomains,
 		};
 	}
 
@@ -82,6 +97,7 @@ export async function loadRepositoryPolicyFromRoot(root: string): Promise<Reposi
 		config: validation.status === "valid" ? validation.config : null,
 		errors: validation.errors,
 		legacySources: [],
+		reconfiguringDomains,
 	};
 }
 
@@ -89,7 +105,11 @@ export async function loadRepositoryPolicy(cwd: string): Promise<RepositoryPolic
 	return loadRepositoryPolicyFromRoot(await resolveRepositoryRoot(cwd));
 }
 
-export function repositoryPolicyProblem(state: RepositoryPolicyState, helper: string): string | undefined {
+export function repositoryPolicyProblem(state: RepositoryPolicyState, helper: string, requiredDomains?: string[]): string | undefined {
+	if (state.reconfiguringDomains.length > 0) {
+		const affected = state.reconfiguringDomains.includes("all") || !requiredDomains || requiredDomains.some(d => state.reconfiguringDomains.includes(d));
+		if (affected) return `${helper}: Active reconfiguration in progress; run /ws-setup reconfigure.`;
+	}
 	if (state.status === "valid") return undefined;
 	if (state.status === "missing") {
 		if (state.legacySources.length === 0) return undefined;
@@ -104,11 +124,15 @@ export function repositoryPolicyProblem(state: RepositoryPolicyState, helper: st
 	const detail = state.errors[0]?.message;
 	return `${helper}: ${CANONICAL_POLICY_PATH} is invalid${detail ? ` (${detail})` : ""}; run /ws-setup to repair it.`;
 }
-export function repositoryWritePolicyProblem(state: RepositoryPolicyState, helper: string): string | undefined {
+export function repositoryWritePolicyProblem(state: RepositoryPolicyState, helper: string, requiredDomains?: string[]): string | undefined {
+	if (state.reconfiguringDomains.length > 0) {
+		const affected = state.reconfiguringDomains.includes("all") || !requiredDomains || requiredDomains.some(d => state.reconfiguringDomains.includes(d));
+		if (affected) return `${helper}: Active reconfiguration in progress; run /ws-setup reconfigure.`;
+	}
 	if (state.status === "missing" && state.legacySources.length === 0) {
 		return `${helper}: ${CANONICAL_POLICY_PATH} is missing; run /ws-setup before continuing.`;
 	}
-	return repositoryPolicyProblem(state, helper);
+	return repositoryPolicyProblem(state, helper, requiredDomains);
 }
 
 

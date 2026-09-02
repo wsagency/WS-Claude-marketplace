@@ -56,7 +56,7 @@ export function registerStopNudge(pi: ExtensionAPI): void {
 		if (event.stop_hook_active) return;
 		try {
 			const state = await loadRepositoryPolicy(ctx.cwd);
-			const policyProblem = repositoryPolicyProblem(state, "ws-stop-nudge");
+			const policyProblem = repositoryPolicyProblem(state, "ws-stop-nudge", ["documentation"]);
 			const missingCapability = state.status === "valid" && !state.config?.changelog
 				? missingPolicyCapability("ws-stop-nudge", "changelog policy")
 				: undefined;

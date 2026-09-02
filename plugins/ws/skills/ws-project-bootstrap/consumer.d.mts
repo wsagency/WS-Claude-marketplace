@@ -37,6 +37,7 @@ export interface InspectCanonicalCapabilityOptions {
 export const CANONICAL_POLICY_PATH: ".wsagency/config.yaml";
 export const REPOSITORY_LEGACY_POLICY_SOURCES: readonly string[];
 export function detectRepositoryLegacyPolicy(root: string): string[];
+export function parseReconfiguringDomains(source: string): string[];
 export function inspectCanonicalCapability(options: InspectCanonicalCapabilityOptions): CanonicalCapabilityResult;
 export function requireCanonicalCapability(options: InspectCanonicalCapabilityOptions): CanonicalCapabilityResult;
 

@@ -277,7 +277,7 @@ export function registerGuard(pi: ExtensionAPI): void {
 			if (verdict === undefined) return;
 
 			const state = await loadRepositoryPolicy(resolveGuardPolicyCwd(command, cwd));
-			const policyProblem = repositoryPolicyProblem(state, "ws-guard");
+			const policyProblem = repositoryPolicyProblem(state, "ws-guard", ["runtime"]);
 			if (policyProblem !== undefined) return { block: true, reason: policyProblem };
 
 			const sharedProtection = hasExplicitMachineGuardProtection();

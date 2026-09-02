@@ -63,7 +63,7 @@ export function registerDashboard(pi: ExtensionAPI): void {
 			if (!ctx.hasUI) return;
 
 			const state = await loadRepositoryPolicy(ctx.cwd);
-			const policyProblem = repositoryPolicyProblem(state, "ws-dashboard");
+			const policyProblem = repositoryPolicyProblem(state, "ws-dashboard", ["tracker"]);
 			if (policyProblem !== undefined) {
 				ctx.ui.notify(policyProblem, "warning");
 				return;

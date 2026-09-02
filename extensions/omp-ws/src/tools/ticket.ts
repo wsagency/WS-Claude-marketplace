@@ -120,7 +120,7 @@ export function registerTicketTool(pi: ExtensionAPI, dependencies: TicketToolDep
 		approval: "write",
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const policy = await loadRepositoryPolicy(ctx.cwd);
-			const policyProblem = repositoryWritePolicyProblem(policy, "ws_ticket");
+			const policyProblem = repositoryWritePolicyProblem(policy, "ws_ticket", ["tracker"]);
 			if (policyProblem !== undefined) return textResult(policyProblem, true);
 			if (policy.status !== "valid" || !policy.config?.tracker) {
 				return textResult(missingPolicyCapability("ws_ticket", "tracker.primary"), true);
