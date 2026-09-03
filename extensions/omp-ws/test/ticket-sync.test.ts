@@ -305,8 +305,7 @@ describe("Jira CLI adapter", () => {
 				],
 			},
 		}));
-		const commentCorrelation = testCommentCorrelationEnvelope("repositorya");
-		const adapter = createJiraAdapter(root, CONFIG, jira.run, commentCorrelation);
+		const adapter = createJiraAdapter(root, CONFIG, jira.run);
 
 		const initial = await adapter.getTicket("WCM-1");
 		expect(initial).toMatchObject({
@@ -342,8 +341,12 @@ describe("Jira CLI adapter", () => {
 		const move = jira.calls.find(call => call.args[1] === "move");
 		expect(move?.args).toEqual(["issue", "move", "WCM-1", "Done"]);
 
-		const sourceCommentCorrelation = "comment-operation";
-		const scopedCommentCorrelation = await commentCorrelation.resolve(sourceCommentCorrelation);
+		const sourceCommentCorrelation = "c".repeat(64);
+		const scopedCommentCorrelation = createJiraCorrelation(
+			resolveRepositoryIdentity({ root }),
+			"WCM",
+			sourceCommentCorrelation,
+		).marker;
 		const comment = await adapter.addComment("WCM-1", "Durable comment", sourceCommentCorrelation);
 		expect(comment.id).toBe("10001");
 		expect(comment.version).toBe(jira.issue!.fields.updated);

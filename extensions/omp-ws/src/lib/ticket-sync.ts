@@ -623,6 +623,45 @@ export interface JiraCommentCorrelationEnvelope {
 	parse(text: string, commentId: string): { text: string; correlationId?: string };
 }
 
+function defaultJiraCommentCorrelationEnvelope(
+	repositoryIdentity: string,
+	project: string,
+): JiraCommentCorrelationEnvelope {
+	return {
+		resolve(sourceCorrelationId) {
+			return resolveJiraCorrelation(repositoryIdentity, project, sourceCorrelationId).id;
+		},
+		format(text, correlationId) {
+			if (text.includes(CORRELATION_PREFIX)) {
+				throw new Error("Jira comment text contains the reserved WS correlation marker prefix.");
+			}
+			const correlation = resolveJiraCorrelation(repositoryIdentity, project, correlationId);
+			return `${text.trim()}\n\n${correlation.marker}`;
+		},
+		parse(text, commentId) {
+			const lines = text.split("\n");
+			const markerIndexes = lines.flatMap((line, index) =>
+				line.includes(CORRELATION_PREFIX) ? [index] : []
+			);
+			if (markerIndexes.length === 0) return { text };
+			if (markerIndexes.length !== 1) {
+				throw new Error(`Jira comment ${commentId} has ambiguous correlation marker ownership.`);
+			}
+			const markerIndex = markerIndexes[0]!;
+			const correlation = parseJiraCorrelationMarker(lines[markerIndex]!.trim());
+			if (!correlation) {
+				throw new Error(`Jira comment ${commentId} has a malformed WS correlation marker.`);
+			}
+			resolveJiraCorrelation(repositoryIdentity, project, correlation.id);
+			lines.splice(markerIndex, 1);
+			return {
+				text: lines.join("\n").replace(/\n{3,}/g, "\n\n").trim(),
+				correlationId: correlation.id,
+			};
+		},
+	};
+}
+
 export function createJiraAdapter(
 	root: string,
 	config: CanonicalProjectConfig,
@@ -636,6 +675,8 @@ export function createJiraAdapter(
 		verifiedOrigin: repositoryOrigin(root),
 		persistedIdentity: persistedRepositoryIdentity(root),
 	});
+	const effectiveCommentCorrelation = commentCorrelation
+		?? defaultJiraCommentCorrelationEnvelope(repositoryIdentity, project);
 	const invoke = async (args: string[], action: string): Promise<RunResult> => {
 		const result = await runExec("jira", args, { cwd: root, timeout: JIRA_TIMEOUT_MS });
 		if (result.code !== 0) throw jiraFailure(action, result);
@@ -643,7 +684,7 @@ export function createJiraAdapter(
 	};
 	const getParsed = async (id: string): Promise<ParsedIssue> => {
 		const result = await invoke(["issue", "view", id, "--raw", "--comments", "100"], `Jira view ${id}`);
-		return parseIssue(parseJsonOutput(`Jira view ${id}`, result.stdout), commentCorrelation);
+		return parseIssue(parseJsonOutput(`Jira view ${id}`, result.stdout), effectiveCommentCorrelation);
 	};
 	const adapter: JiraAdapter = {
 		async getTicket(id) {
@@ -741,14 +782,11 @@ export function createJiraAdapter(
 			return (await getParsed(id)).ticket;
 		},
 		async addComment(id, text, sourceCorrelationId) {
-			if (!commentCorrelation) {
-				throw new Error("Scoped Jira comment correlation envelope is unavailable.");
-			}
-			const correlationId = await commentCorrelation.resolve(sourceCorrelationId);
+			const correlationId = await effectiveCommentCorrelation.resolve(sourceCorrelationId);
 			if (typeof correlationId !== "string" || correlationId === "") {
 				throw new Error("Scoped Jira comment correlation resolver returned no identity.");
 			}
-			const body = commentCorrelation.format(text, correlationId);
+			const body = effectiveCommentCorrelation.format(text, correlationId);
 			const before = await getParsed(id);
 			const existingId = before.commentCorrelations?.get(correlationId);
 			if (existingId) {

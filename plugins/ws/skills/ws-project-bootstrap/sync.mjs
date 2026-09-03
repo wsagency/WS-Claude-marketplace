@@ -39,6 +39,9 @@ function cloneLocalStore(store) {
 
 function cloneSyncState(state) {
 	return {
+		...(state?.repositoryIdentity !== undefined
+			? { repositoryIdentity: state.repositoryIdentity }
+			: {}),
 		mappings: Object.fromEntries(Object.entries(state?.mappings || {}).map(([localId, mapping]) => [
 			localId,
 			{ ...mapping, fieldHashes: { ...(mapping.fieldHashes || {}) } },

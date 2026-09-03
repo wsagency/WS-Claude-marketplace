@@ -95,6 +95,7 @@ test("reconciles before, performs the Local operation once, then reconciles afte
 		config: CONFIG,
 		localStore: { "local-2": { id: "local-2", title: "Current" } },
 		syncState: {
+			repositoryIdentity: "origin:github:github.com/wsagency/project",
 			mappings: {
 				"local-1": mapping("WCM-1", { title: "Before" }),
 				"local-2": mapping("WCM-2", { title: "Current" })
@@ -130,6 +131,7 @@ test("reconciles before, performs the Local operation once, then reconciles afte
 		"post:update:WCM-2"
 	]);
 	assert.equal(result.nextLocalStore["local-2"].title, "After");
+	assert.equal(result.nextSyncState.repositoryIdentity, "origin:github:github.com/wsagency/project");
 	assert.equal(result.nextSyncState.pendingOperations.length, 0);
 });
 
