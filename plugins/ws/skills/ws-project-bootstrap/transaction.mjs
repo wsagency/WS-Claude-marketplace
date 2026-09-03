@@ -103,7 +103,7 @@ Read the five semantic mappings under \`triage.labels\`; see \`dev-docs/agents/t
 
 ### Domain documentation
 
-Read \`domain.layout\`, then follow \`dev-docs/agents/domain.md\` and the applicable \`CONTEXT.md\` before changing domain behavior.
+Read \`domain.layout\`, then follow \`dev-docs/agents/domain.md\` and either root \`CONTEXT.md\` for \`single_context\` or root \`CONTEXT-MAP.md\` plus the relevant context file for \`multi_context\` before changing domain behavior.
 
 ### Runtime policy
 
