@@ -1,24 +1,31 @@
 import { describe, expect, test } from "bun:test";
 import { mergeDriftFiles, shouldNudge } from "../src/stop-nudge";
+import type { ChangelogPolicy } from "../src/lib/project-policy";
+
+const ENABLED: ChangelogPolicy = {
+	updateMode: "pull_request",
+	path: "CHANGELOG.md",
+	skipTypes: [],
+};
 
 describe("shouldNudge", () => {
 	test("nudges on code drift without changelog", () => {
-		expect(shouldNudge(true, true, ["src/app.ts"])).toBe(true);
+		expect(shouldNudge(ENABLED, ["src/app.ts"])).toBe(true);
 	});
-	test("silent when config absent", () => {
-		expect(shouldNudge(false, true, ["src/app.ts"])).toBe(false);
+	test("silent when changelog policy is absent", () => {
+		expect(shouldNudge(undefined, ["src/app.ts"])).toBe(false);
 	});
-	test("silent when enforcement disabled", () => {
-		expect(shouldNudge(true, false, ["src/app.ts"])).toBe(false);
+	test("silent when changelog updates are disabled", () => {
+		expect(shouldNudge({ ...ENABLED, updateMode: "disabled" }, ["src/app.ts"])).toBe(false);
 	});
 	test("silent when tree is clean", () => {
-		expect(shouldNudge(true, true, [])).toBe(false);
+		expect(shouldNudge(ENABLED, [])).toBe(false);
 	});
 	test("silent for docs-only drift", () => {
-		expect(shouldNudge(true, true, ["docs/a.md", "dev-docs/b.md", "README.md"])).toBe(false);
+		expect(shouldNudge(ENABLED, ["docs/a.md", "dev-docs/b.md", "README.md"])).toBe(false);
 	});
-	test("silent when CHANGELOG.md is part of the drift", () => {
-		expect(shouldNudge(true, true, ["src/app.ts", "CHANGELOG.md"])).toBe(false);
+	test("silent when the configured changelog is part of the drift", () => {
+		expect(shouldNudge(ENABLED, ["src/app.ts", "CHANGELOG.md"])).toBe(false);
 	});
 });
 
@@ -44,9 +51,11 @@ describe("shouldNudge: untracked + nested-changelog contract", () => {
 	test("nudges when only untracked new source files exist", () => {
 		// driftFiles now feeds untracked files in, so a brand-new code file with
 		// no tracked changes still triggers the reminder.
-		expect(shouldNudge(true, true, ["src/brand-new.ts"])).toBe(true);
+		expect(shouldNudge(ENABLED, ["src/brand-new.ts"])).toBe(true);
 	});
-	test("silent when a nested CHANGELOG.md (repo-root-relative path) is in the drift", () => {
-		expect(shouldNudge(true, true, ["src/app.ts", "packages/app/CHANGELOG.md"])).toBe(false);
+	test("uses the canonical nested changelog path", () => {
+		const nested = { ...ENABLED, path: "packages/app/CHANGELOG.md" };
+		expect(shouldNudge(nested, ["src/app.ts", nested.path])).toBe(false);
+		expect(shouldNudge(ENABLED, ["src/app.ts", nested.path])).toBe(true);
 	});
 });

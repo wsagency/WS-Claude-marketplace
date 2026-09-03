@@ -1,0 +1,6 @@
+changelog:
+  auto_update: false
+  path: HISTORY.md
+  skip_types: [docs, chore]
+hooks:
+  session_start_dashboard: false

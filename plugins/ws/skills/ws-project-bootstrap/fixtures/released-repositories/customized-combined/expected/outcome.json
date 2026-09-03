@@ -1,0 +1,21 @@
+{
+  "effects": [
+    { "phase": "migration", "target": ".wsagency/config.yaml", "classification": "CREATE" },
+    { "phase": "cleanup", "target": ".claude/ws-project.yaml", "classification": "UPDATE" },
+    { "phase": "cleanup", "target": ".claude/docs-config.yaml", "classification": "UPDATE" }
+  ],
+  "readiness": {
+    "configValid": true,
+    "semanticReadBack": true,
+    "engineeringReady": true,
+    "contextReady": true,
+    "runtimeReady": true,
+    "fingerprintsReady": true,
+    "docsReady": true,
+    "jiraReady": true
+  },
+  "reportIncludes": ["Legacy migration verified", "WS setup verified"],
+  "externalCalls": ["verifyMigrationReadiness"],
+  "preserved": ["handbook/custom-policy.md"],
+  "deleted": [".claude/ws-project.yaml", ".claude/docs-config.yaml"]
+}

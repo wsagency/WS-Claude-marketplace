@@ -94,10 +94,11 @@ The graph has two tiers:
 - **Entry nodes** (user-invoked orchestrators): [[ws-ask-matt]] (the router),
   [[ws-implement]], [[ws-to-spec]], [[ws-to-tickets]], [[ws-triage]],
   [[ws-grill-with-docs]], [[ws-improve-codebase-architecture]], [[ws-wayfinder]],
-  [[ws-setup-matt-pocock-skills]].
+  and `/ws-setup` (the project-configuration entry outside the ws-matt router).
 - **Worker nodes** (model-invoked disciplines): ws-tdd, ws-code-review, ws-research,
   ws-prototype, ws-diagnosing-bugs, ws-domain-modeling, ws-codebase-design,
-  ws-resolving-merge-conflicts, ws-grilling — plus the three worker agents.
+  ws-resolving-merge-conflicts, ws-grilling, and the internal project/docs
+  bootstrap workers — plus the three worker agents.
 
 **The rule: an entry node may invoke worker nodes, never another entry node.**
 Entry → entry chaining stacks orchestrators, doubles context, and loses the state
@@ -221,8 +222,8 @@ carries graph primitives directly (verified against omp docs, 2026-07):
   tiers — matches this skill's classify → workers → synthesize shape.
 - Task agents also support `spawns` chains and `autoloadSkills` (workers
   auto-load their paired discipline skill). Edge discipline is reinforced by
-  the installed `omp-edge-discipline` rule — `/ws-matt setup` copies it into
-  the project's `.omp/rules/`.
+  the `omp-edge-discipline` rule shipped with the WS distribution; `/ws-setup`
+  verifies that the selected runtime satisfies the canonical repository policy.
 
 **Codex** — skills follow the Agent Skills SKILL.md standard; the model orchestrates
 exactly as in Claude Code, minus Task-based workers (run workers inline, still

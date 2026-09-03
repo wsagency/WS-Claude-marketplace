@@ -1,0 +1,10 @@
+docs:
+  user_track: handbook
+  dev_track: internal
+  default_audience: user
+  default_scope: product
+  changelog:
+    skip_types: [docs, chore]
+  auto:
+    changelog_per_commit: false
+    adr_for_arch_changes: true

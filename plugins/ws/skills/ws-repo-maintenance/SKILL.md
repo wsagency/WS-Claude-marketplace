@@ -20,7 +20,7 @@ but say so in the log entry.
 
 ### ws-matt skills (orchestrated)
 
-The 18 paths named in `plugins/ws/UPSTREAM.md`'s rename map (17 engineering
+The 17 paths named in `plugins/ws/UPSTREAM.md`'s rename map (16 engineering
 skills plus `ws-grilling`) are vendored from `mattpocock/skills`. `UPSTREAM.md` is the durable
 contract — it holds the pinned commit/date, the rename map, the cross-reference
 rewrite rules, the manual-only-key mechanism, the full WS-local preserve
@@ -69,7 +69,7 @@ per vendored skill.
 
 **Gate 5 — Graph & reference gates.** If inventory, edges, or skill behaviour
 changed: every skill named in `UPSTREAM.md`'s rename map keeps exactly one
-`## Graph node`; entry tier still matches the 9 user-invoked engineering skills; the worker
+`## Graph node`; entry tier still matches the 8 user-invoked engineering skills; the worker
 tier and `ws-graph-engineering` match `plugins/ws/docs/graph.md`; a
 boundary-aware grep finds no bare upstream skill refs outside `UPSTREAM.md`'s
 rename map; run
@@ -81,7 +81,7 @@ printed counts) and rerun tests. No `plugins/ws/` change → skip and say so.
 
 **Gate 7 — Verification.** Run the re-verify checklist in `UPSTREAM.md`: one
 graph section per skill; rename map ↔ directories agree; manual-only keys on
-exactly 9 skills; `LICENSE` byte-identical; bare-ref grep; graph lint. Any
+exactly 8 skills; `LICENSE` byte-identical; bare-ref grep; graph lint. Any
 unexpected drift outside the known adaptations stops the run for a decision.
 
 **Gate 8 — Outcome logging + pin.** Record the ws-matt outcome in the run's
@@ -114,7 +114,7 @@ Herdr panes.
 
 | Tool | Latest check | Our claims to re-verify |
 |---|---|---|
-| jira-cli | `jira version` vs GitHub releases (ankitpokhrel/jira-cli) | `issue view --raw`, `issue list -q --plain --paginate`, `worklog add --no-input`, `issue move`, `comment add --no-input` (ws-commit, ws-status, ws-init) |
+| jira-cli | `jira version` vs GitHub releases (ankitpokhrel/jira-cli) | `issue view --raw`, `issue list -q --plain --paginate`, `worklog add --no-input`, `issue move`, `comment add --no-input` (ws-setup, ws-commit, ws-status) |
 | tea | `tea --version` vs gitea/tea releases | `tea pr create --title --description --base` (ws-commit pr) |
 | omp | `omp --version` vs omp.sh releases | plugin dir conventions, ExtensionAPI events, `/marketplace`/`plugin upgrade` verbs (docs/how-to/omp-setup.md, use-with-omp.md, extensions/omp-ws) |
 | herdr | `herdr --version` vs herdr.dev | skill + workspace commands (hub init 5b, herdr skill) |

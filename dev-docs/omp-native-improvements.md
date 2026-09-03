@@ -35,20 +35,21 @@ extension warns at session start; omp users run ONLY the npm package.
 
 Churn risk: LOW — no experimental markers in `src/extensibility`; the
 17.1.3→17.1.5 delta touched no extensibility surface, and the 17.2.4 re-audit
-confirmed the package's discovery, settings-store, and ExtensionAPI contracts.
+confirmed the package's discovery, plugin-path, and ExtensionAPI contracts.
 
 ## Principle: one source, two complete artifacts
 
-The Claude plugin and the omp package are independent, complete
-distributions GENERATED from the same source. Hand-maintained copies remain
-forbidden — the generator is the only bridge.
+The Claude plugin and the omp package are independent, complete consumer
+distributions generated from the same source. The repository-maintenance skill
+remains source-checkout-only. Hand-maintained copies are forbidden — the
+generator is the only bridge.
 
 | Surface | Today in omp | Native gain |
 |---|---|---|
-| 7 commands, 30 skills, 14 agents | generated natively at build time from `plugins/ws/` (ADR 0004) | native discovery, no compat layer; hand-maintained copies stay forbidden — the generator is the only bridge |
+| 7 commands, 30 consumer skills, 14 agents | generated natively at build time from `plugins/ws/` (ADR 0004); the source-checkout-only maintenance skill is excluded | native discovery, no compat layer; hand-maintained copies stay forbidden — the generator is the only bridge |
 | Shell hooks (SessionStart dashboard, PreToolUse changelog, Stop docs-drift) | DEAD (omp ignores Claude shell-hook JSON) | full parity via ExtensionAPI |
 | Per-project `.omp/` preset (rules, freshness TS hook, config) | works, but must be re-installed per hub | one global extension covers every repo |
-| Dangerous-git protection | TTSR rule (in-stream, advisory-strength) | `tool_call` block — fail-closed, cannot be talked past |
+| Dangerous-git protection | TTSR rule (in-stream, advisory-strength) | canonical `tool_call` block with fail-open internal-error handling and optional explicit `OMP_WS_GUARD` machine strengthening |
 | Structured ticket/changelog writes | free-form file edits | `registerTool` with schema validation |
 
 ## Tier 1 — `@wsagency/omp-ws` extension (parity + guard)
@@ -59,19 +60,19 @@ carries no TS); versions are tagged to match the marketplace repo release.
 
 1. **ws-guard** — `tool_call` hook on bash: block `git push --force*` (allow
    `--force-with-lease` behind a confirm), `git reset --hard origin/*`,
-   `git clean -fd`, `rm -rf` outside the repo. Fail-closed (verified omp
-   semantics: hook error ⇒ blocked). Config: `.omp/config.yml` `wsGuard:`
-   block, default on with a per-project off switch. Replaces the
-   advisory-only half of the `ws-guard-git` TTSR rule (the rule stays as
-   in-stream guidance; the hook is the enforcement).
-2. **Changelog enforcement port** — `tool_call` on `git commit`: when
-   `.claude/docs-config.yaml` sets `changelog_per_commit: true`, verify the
-   staged set touches CHANGELOG.md for non-skip types (same logic as
-   `hooks/enforce-changelog.sh`). Opt-in, exactly like Claude Code.
-3. **Jira session dashboard** — `session_start` + `ui.setWidget`: assigned
-   tickets via jira-cli (same content as `session-start-dashboard.sh`),
-   rendered as a persistent widget instead of injected text. Degrades
-   silently when jira-cli is absent.
+   `git clean -fd`, `rm -rf` outside the repo. The hook fails open on internal
+   errors, but invalid or legacy-only repository policy blocks dangerous
+   commands with a `/ws-setup` migration directive. Canonical
+   `runtime.dangerous_git_guard` owns repository behavior; only explicit
+   `OMP_WS_GUARD=on|required` may strengthen it machine-wide.
+2. **Changelog enforcement port** — `tool_call` on `git commit`: canonical
+   `changelog.update_mode: commit` verifies the staged set touches the
+   configured changelog path for non-skip types. Missing policy is a no-op;
+   legacy-only policy directs `/ws-setup`.
+3. **Jira session dashboard** — `session_start` + `ui.setWidget`: canonical
+   `ui.session_start_dashboard: jira_assignments` plus an explicit Jira binding
+   renders assigned tickets from jira-cli. Missing machine integration degrades
+   silently.
 4. **Docs-drift stop nudge** — `session_stop` + `additionalContext` (capped):
    port of `enforce-stop.sh` — uncommitted CHANGELOG drift, ADR candidates.
 5. **OpenWiki freshness, global** — promote the per-hub
@@ -105,11 +106,12 @@ not speculative).
 
 ## Adopted omp-specific improvements (current through the 17.2.4 source audit)
 
-1. **Plugin `settings` schema** (`PluginManifest`): typed settings with env
-   fallback and secret masking (Jira project binding, guard/dashboard
-   toggles). Only `settings` shipped — the `features` half (bracket installs
-   `ws[guard,jira]`) was dropped: feature gating is verified dead for the
-   directory-convention surface (commands/skills/agents/rules).
+1. **Canonical repository policy contract** — the native package declares no
+   settings schema and never reads package/project settings as policy.
+   `.wsagency/config.yaml` is the sole repository input; the only machine-wide
+   policy strengthening is explicit `OMP_WS_GUARD=on|required`. Generic
+   profile/XDG plugin-path resolution remains solely for both-installed
+   registry detection.
 2. **TTSR rules shipped by the package** — the guardrails run BOTH as
    in-stream rules (interrupt while the model is typing) and as the
    fail-safe `tool_call` hook (blocks execution) — defense in depth Claude

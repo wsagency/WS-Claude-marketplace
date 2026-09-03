@@ -981,13 +981,17 @@ Be conservative — only overwrite a `description` if the new one is clearly bet
 
 ### verb = docs
 
-Produce or refresh the hub's cross-repo documentation with a parallel gather
-wave followed by one `hub-architect` synthesis.
+Produce or refresh hub-owned cross-repository documentation with a parallel
+gather wave followed by one `hub-architect` synthesis.
 
-1. The project-shape dispatch above has already handled sub-repo and standalone
-   invocations. Continue only at a hub root: read `./project.yaml`; if it
-   disappeared after dispatch, abort without suggesting another hub.
-
+1. Continue only at a hub root. Read `./project.yaml`, then call
+   `requirePolicyCapability(hubRoot, "hub_documentation")` from
+   `skills/ws-docs-bootstrap/policy.mjs`. Use only the hub root's
+   `.wsagency/config.yaml`; never read a working child's config for product
+   artifacts. Legacy `.claude/docs-config.yaml` or
+   `.claude/ws-project.yaml` is detected only as a named fail-closed blocker
+   directing `/ws-setup`. Set `HUB_DEV_TRACK = config.docs.dev_track`.
+   Missing/invalid docs policy blocks this verb specifically.
 2. Resolve every accessible **`type: working`** repo (legacy: neither `type` nor
    `role`). Exclude `type: input` and `type: output` per ADR 0006.
 
@@ -1012,27 +1016,20 @@ wave followed by one `hub-architect` synthesis.
 4. Spawn one `hub-architect` agent via Task (omp: unprefixed
    `agent: hub-architect`, with `effort: hi` when exposed) from the hub
    directory. Pass the repo inventory artifact paths and any focus the user
-   asked for (for example, "just refresh deployment"). **Hand it a scratch
-   output directory** (e.g. `<hub>/.cache/ws-hub-docs/`) and instruct it to
-   write its synthesis THERE and return the written file paths — NOT straight
-   into `dev-docs/` (see hub-architect's "Output location" contract: with a
-   caller-named output dir it writes there and returns the paths; without one
-   it writes to `dev-docs/` directly). It synthesizes `architecture.md`, plus
-   `contracts.md` only when shared contracts exist and `deployment.md` only
-   when deployment files are found. It reads covered repos again only to
-   resolve a concrete gap.
+   asked for. Hand it a scratch output directory such as
+   `<hub>/.cache/ws-hub-docs/` and the resolved final destination
+   `<hub>/<HUB_DEV_TRACK>`. It writes synthesis only to scratch and returns
+   paths. It must not write the final destination before confirmation.
+   Synthesis includes `architecture.md`, `contracts.md` only when shared
+   contracts exist, and `deployment.md` only when deployment evidence exists.
+   It reads a covered repository again only to resolve a concrete gap.
 
-5. **Confirm before overwriting `architecture.md`.**
-   `dev-docs/architecture.md` is curated authored truth (see the skill's "Hub
-   dev-docs"). Because step 4 wrote to the scratch directory, this gate is now
-   REACHABLE before anything in `dev-docs/` changes: show a diff of
-   `<scratch>/architecture.md` vs the current `dev-docs/architecture.md` (if it
-   exists) and AskUserQuestion: **proceed | cancel** — the same gate
-   `/ws-docs architecture` applies. On **proceed**, copy the scratch files into
-   `dev-docs/` (overwriting the prior `architecture.md`); on **cancel**, discard
-   the scratch files and leave `dev-docs/` untouched, and say so.
-   (`contracts.md` / `deployment.md` are regenerated in full when their trigger
-   exists — they copy on proceed too.)
+5. **Confirm before overwriting architecture.** Show a diff of
+   `<scratch>/architecture.md` against
+   `<hub>/<HUB_DEV_TRACK>/architecture.md` and ask **proceed | cancel**.
+   On proceed, copy the scratch files into the configured hub contributor
+   track; on cancel, delete scratch output and leave authored product docs
+   unchanged. `contracts.md` and `deployment.md` copy only when produced.
 
 6. Relay the agent's report to the user: files written, key cross-repo findings,
    and anything flagged for human attention.
@@ -1049,9 +1046,11 @@ stale before major cross-repo work (`openwiki/.last-update.json` vs recent
 sub-repo commits), and after any significant dev-docs change — not only after
 doc-generation runs.
 
-Docs placement note: outputs ALWAYS go to the hub's own `dev-docs/` — the product knowledge root beside `openwiki/` (ADR 0006). Never into a sub-repo (the `purpose: docs` repo is an output, not a destination for internal docs), and never a hub `docs/` (hubs must not have one).
-
-Scope note: this verb owns the cross-repo SYNTHESIS layer in the hub's `dev-docs/architecture.md` (and the optional `contracts.md` / `deployment.md`). Per-repo docs maintenance across the whole hub (status, catchup, repair — one subagent per sub-repo) is `/ws-docs` invoked at the hub root (hub sweep); `/ws-docs architecture` at the hub root edits the same `architecture.md` through the same diff+confirm gate (step 5), so the two commands no longer overlap ungated.
+Product-internal outputs always use the hub policy's configured `dev_track`.
+They never go into a working repository, the product docs output, or a hub
+user track. This synthesis layer is distinct from `/ws-docs` repository
+sweeps, whose workers use materialized child policy; both architecture verbs
+share this scratch/diff/confirmation gate.
 
 ### verb = explained
 

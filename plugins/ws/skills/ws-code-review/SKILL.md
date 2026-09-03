@@ -17,7 +17,16 @@ runs; Spec runs when a spec exists. At two axes, fan-out is the default.
 > write the full write-up to the per-run scratch directory named in your prompt,
 > and return `DONE|{path}` to the caller.
 
-The issue tracker workflow should have been provided to you. If `dev-docs/agents/issue-tracker.md` is missing, tell the user to run `/ws-setup-matt-pocock-skills` and continue with the spec sources in step 2.
+When an issue or PR is needed as the spec source, resolve the installed ws
+plugin root and call
+`skills/ws-project-bootstrap/consumer.mjs#inspectCanonicalCapability` for the
+`tracker` capability. Follow the returned
+`dev-docs/agents/issue-tracker.md` operational adapter only after readiness
+succeeds. A blocked tracker lookup reports the returned canonical ownership
+line and exact blocker (including the detected repository-local legacy source
+and `/ws-setup` route) and then continues to non-tracker spec sources; it never
+reads legacy policy or guesses a tracker. Reviews whose spec is already a path
+do not probe tracker integrations.
 
 ## Process
 
@@ -38,9 +47,9 @@ Before going further, confirm the fixed point resolves (`git rev-parse <fixed-po
 
 Look for the originating spec, in this order:
 
-1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) — fetch via the workflow in `dev-docs/agents/issue-tracker.md`.
+1. Issue references in the commit messages (`#123`, `Closes #45`, GitLab `!67`, etc.) — when tracker readiness succeeds, fetch through its canonical operational adapter.
 2. A path the user passed as an argument.
-3. A PRD/spec file under `docs/`, `specs/`, `dev-docs/tickets/`, or legacy `.scratch/` matching the branch name or feature.
+3. A PRD/spec file under `docs/`, `specs/`, or `dev-docs/tickets/` matching the branch name or feature.
 4. If nothing is found, ask the user where the spec is. If they say there isn't one, the **Spec** sub-agent will skip and report "no spec available".
 
 ### 3. Identify the standards sources
@@ -119,7 +128,7 @@ Reporting them separately stops one axis from masking the other.
 ## Graph node
 
 - **Tier:** model-invoked (worker)
-- **Reads:** the diff — `git diff <fixed-point>...HEAD` when the change is committed, or `git add -N -- .` then `git diff $(git merge-base <fixed-point> HEAD)` when it is still in the working tree — and its commit list; the spec source (issue / PRD / spec file); the repo's standards sources plus the built-in Fowler smell baseline
+- **Reads:** the diff — `git diff <fixed-point>...HEAD` when the change is committed, or `git add -N -- .` then `git diff $(git merge-base <fixed-point> HEAD)` when it is still in the working tree — and its commit list; the spec source (canonical tracker operation / PRD / spec file); the repo's standards sources plus the built-in Fowler smell baseline
 - **Emits:** two side-by-side reports — `## Standards` and `## Spec` — plus a one-line per-axis summary; findings are never merged or reranked across axes
 - **Edges:**
   - fan-out (default): one `ws-reviewer` per axis, in parallel — one Standards, one Spec (schema: findings per file/hunk, under 400 words, hard violations distinguished from judgement calls)

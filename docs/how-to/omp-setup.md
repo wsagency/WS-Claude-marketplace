@@ -1,6 +1,6 @@
 # Set up omp for the WS stack
 
-One-time machine setup for the full omp experience with the WS marketplace.
+One-time machine setup for the full omp experience with the WS native package.
 Verified against the omp 17.2.4 source (2026-08-01). Everything here is copy-paste.
 
 ## Install & auth
@@ -45,13 +45,9 @@ bash:
     - { match: "rm -rf *", approval: prompt }
 ```
 
-Personal standing rules: create `~/.omp/agent/RULES.md` (e.g. "Never commit or
-push unless asked"). Project rules live in `.omp/rules/`, and the ws plugin
-populates that directory one command at a time: `/ws-matt setup` installs
-`omp-edge-discipline.md` — the WS **session policy** rule. `/ws-hub init`
-installs the WS TTSR pack (`ws-guard-git`, `ws-commit-format`,
-`ws-generated-files`); its OpenWiki flow additionally installs
-`openwiki-freshness`.
+Personal standing rules belong in `~/.omp/agent/RULES.md` (for example, “Never commit or push unless asked”). The native `@wsagency/omp-ws` package auto-discovers `omp-edge-discipline.md`, so every WS session receives the graph and artifact policy without a project-local installer. `/ws-setup` verifies this active runtime capability against the repository's `.wsagency/config.yaml`.
+
+`/ws-hub init` installs the hub-specific TTSR pack (`ws-guard-git`, `ws-commit-format`, and `ws-generated-files`). Its OpenWiki flow also installs `openwiki-freshness`. These hub rules remain project-local because they depend on hub shape.
 
 ## Features worth switching on (one-liners)
 
@@ -94,30 +90,23 @@ in English regardless of the conversation language.
 ## WS stack wiring
 
 ```bash
-omp plugin marketplace add git@github.com:wsagency/WS-Claude-marketplace.git
-omp plugin install ws@ws-marketplace
-# or: plugins installed via Claude Code are auto-visible in omp
+omp plugin install @wsagency/omp-ws@0.7.0
 ```
 
 MCP: existing `.claude`/`.mcp.json` configs are discovered automatically.
 Context files: `~/.claude/CLAUDE.md` is read — do NOT also create
 `~/.omp/agent/AGENTS.md` (it would shadow it).
 
-### Native package — `@wsagency/omp-ws` (the complete suite, recommended)
+### Native package — `@wsagency/omp-ws` (the complete consumer suite)
 
-Since 0.2.0 (ADR 0004) the native package carries the **entire ws plugin surface** —
-all 7 commands, 30 skills, 14 agents (generated from the same source as the
-Claude plugin), TTSR rules, PLUS what only a native package can do:
+Since 0.2.0 (ADR 0004) the native package carries the **entire consumer-facing
+ws plugin surface** — all 7 commands, 30 skills, 14 agents (generated from the
+same source as the Claude plugin; only the source-checkout maintenance workflow
+is excluded), TTSR rules, PLUS what only a native package can do:
 fail-safe git guard, opt-in changelog gate, Jira dashboard widget,
 docs-drift nudge, OpenWiki freshness, compaction preservation, and the
-`ws_ticket`/`ws_changelog`/`ws_adr` tools. On omp you install ONLY this —
-no marketplace needed:
-
-```bash
-git clone git@github.com:wsagency/WS-Claude-marketplace.git
-cd WS-Claude-marketplace/extensions/omp-ws && bun install && bun run build
-omp plugin link .
-```
+`ws_ticket`/`ws_changelog`/`ws_adr` tools. This is the only WS plugin you
+install in omp; the Claude marketplace plugin is a separate distribution.
 
 Do NOT also run the marketplace `ws` plugin in omp — everything would load
 twice; the package warns at session start with the exact remedy

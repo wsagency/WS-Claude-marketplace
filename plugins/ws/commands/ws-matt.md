@@ -1,7 +1,7 @@
 ---
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Task, AskUserQuestion
-description: Entry point for the ws-matt skill graph — graph status, entry-node routing, and per-project setup
-argument-hint: "[ask | implement | spec | tickets | triage | grill | architecture | wayfinder | setup] [input...]"
+description: Entry point for the ws-matt skill graph — graph status and entry-node routing
+argument-hint: "[ask | implement | spec | tickets | triage | grill | architecture | wayfinder] [input...]"
 ---
 
 ## Your task
@@ -13,16 +13,14 @@ $ARGUMENTS
 
 This command is hub-independent: graph status and entry routing never read
 `project.yaml`, so they run identically in a standalone repo, a hub sub-repo,
-or at the hub root. The `setup` verb is the exception — it detects project
-shape (walks up for `project.yaml` to tell a hub sub-repo from a standalone
-repo) so it places ADRs in the right `dev-docs/decisions/`.
+or at the hub root. Project setup is a separate public surface owned only by
+`/ws-setup`.
 
 ### No arguments — graph status
 
 1. List the nodes by tier:
    - **Entry (user-invoked):** ws-ask-matt, ws-implement, ws-to-spec, ws-to-tickets,
-     ws-triage, ws-grill-with-docs, ws-improve-codebase-architecture, ws-wayfinder,
-     ws-setup-matt-pocock-skills
+     ws-triage, ws-grill-with-docs, ws-improve-codebase-architecture, ws-wayfinder
    - **Worker (model-invoked):** ws-tdd, ws-code-review, ws-research, ws-prototype,
      ws-diagnosing-bugs, ws-domain-modeling, ws-codebase-design,
      ws-resolving-merge-conflicts, ws-grilling
@@ -35,7 +33,7 @@ repo) so it places ADRs in the right `dev-docs/decisions/`.
    ```mermaid
    flowchart LR
      U([user]) --> R[ws-ask-matt]
-    R -. user-mediated .-> E[8 more entry nodes]
+    R -. user-mediated .-> E[7 more entry nodes]
      E --> W[9 worker skills]
     W --> A[[3 worker agents]]
    ```
@@ -62,27 +60,9 @@ equivalent to invoking the skill directly — the command just makes it discover
 | grill | ws-grill-with-docs |
 | architecture | ws-improve-codebase-architecture |
 | wayfinder | ws-wayfinder |
-| setup | ws-setup-matt-pocock-skills (see below) |
 
 Everything after the entry word is the skill's input. Unknown entry → show this
 table plus the graph status.
-
-### `/ws-matt setup` — per-project bootstrap
-
-1. Load the **ws-setup-matt-pocock-skills** skill and run its content.
-2. Check for omp: run `ls -d .omp` at the project root. If `.omp/` exists — or the
-   user says they use omp (ask when unsure) — install **the WS session policy**
-   (the rule file carries its edge-discipline clauses — entry→worker topology,
-   state-delta workers, `DONE|{path}` handoffs, layer ownership and the
-   English-artifact rule):
-   - `mkdir -p .omp/rules`
-   - copy `${CLAUDE_PLUGIN_ROOT}/rules/omp-edge-discipline.md` (if
-     CLAUDE_PLUGIN_ROOT is unset — e.g. in omp — use the plugin's install
-     directory: the plugin root containing this command file) to
-     `.omp/rules/omp-edge-discipline.md`
-   - If `.omp/rules/omp-edge-discipline.md` already exists, confirm before
-     overwriting.
-3. Report that the WS session policy was installed and where.
 
 ### Session policy (all verbs)
 

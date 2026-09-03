@@ -1,12 +1,13 @@
 import * as path from "node:path";
 import { describe, expect, test } from "bun:test";
 import { evaluateChangelogGate, extractCommitType, isGitCommitCommand, resolveCommitCwd } from "../src/changelog-gate";
-import { parseDocsConfig, DEFAULT_SKIP_TYPES, touchesChangelog, type DocsConfig } from "../src/lib/docs-config";
+import { touchesChangelog } from "../src/lib/changelog-files";
+import type { ChangelogPolicy } from "../src/lib/project-policy";
 
-const ENFORCING: DocsConfig = {
-	exists: true,
-	enforceViaHooks: true,
-	changelogPerCommit: true,
+const DEFAULT_SKIP_TYPES = ["docs", "chore", "test", "style", "build", "ci"];
+const ENFORCING: ChangelogPolicy = {
+	updateMode: "commit",
+	path: "CHANGELOG.md",
 	skipTypes: DEFAULT_SKIP_TYPES,
 };
 
@@ -73,57 +74,15 @@ describe("evaluateChangelogGate", () => {
 		expect(evaluateChangelogGate("git commit", ENFORCING, CODE_STAGED)).toBeUndefined();
 		expect(evaluateChangelogGate("git commit -F msg.txt", ENFORCING, CODE_STAGED)).toBeUndefined();
 	});
-	test("passes when per-commit enforcement off", () => {
-		expect(evaluateChangelogGate('git commit -m "feat: x"', { ...ENFORCING, changelogPerCommit: false }, CODE_STAGED)).toBeUndefined();
-	});
-	test("passes when enforce_via_hooks false", () => {
-		expect(evaluateChangelogGate('git commit -m "feat: x"', { ...ENFORCING, enforceViaHooks: false }, CODE_STAGED)).toBeUndefined();
+	test("passes when canonical mode is pull-request or disabled", () => {
+		expect(evaluateChangelogGate('git commit -m "feat: x"', { ...ENFORCING, updateMode: "pull_request" }, CODE_STAGED)).toBeUndefined();
+		expect(evaluateChangelogGate('git commit -m "feat: x"', { ...ENFORCING, updateMode: "disabled" }, CODE_STAGED)).toBeUndefined();
 	});
 	test("passes when nothing staged", () => {
 		expect(evaluateChangelogGate('git commit -m "feat: x"', ENFORCING, [])).toBeUndefined();
 	});
 });
 
-describe("parseDocsConfig against the real WS shape", () => {
-	const REAL_CONFIG = `docs:
-  initialized: 2026-05-29
-  version: 1
-  user_track: docs
-  dev_track: dev-docs
-  default_audience: ask
-  auto:
-    changelog_per_commit: true
-    adr_for_arch_changes: true
-    enforce_via_hooks: true
-  surface:
-    subagent_status: compact
-`;
-
-	test("reads nested auto keys like the shell awk does", () => {
-		const config = parseDocsConfig(REAL_CONFIG);
-		expect(config.changelogPerCommit).toBe(true);
-		expect(config.enforceViaHooks).toBe(true);
-		expect(config.skipTypes).toEqual(DEFAULT_SKIP_TYPES);
-	});
-
-	test("explicit false disables", () => {
-		const config = parseDocsConfig(REAL_CONFIG.replace("enforce_via_hooks: true", "enforce_via_hooks: false"));
-		expect(config.enforceViaHooks).toBe(false);
-	});
-
-	test("absent changelog_per_commit means off", () => {
-		const config = parseDocsConfig("docs:\n  auto:\n    enforce_via_hooks: true\n");
-		expect(config.changelogPerCommit).toBe(false);
-	});
-
-	test("custom skip_types flow list, with ws-project fallback", () => {
-		const config = parseDocsConfig('docs:\n  auto:\n    changelog_per_commit: true\nchangelog:\n  skip_types: [docs, "chore", wip]\n');
-		expect(config.skipTypes).toEqual(["docs", "chore", "wip"]);
-
-		const fallback = parseDocsConfig("docs:\n  auto:\n    changelog_per_commit: true\n", "changelog:\n  skip_types: [docs]\n");
-		expect(fallback.skipTypes).toEqual(["docs"]);
-	});
-});
 
 describe("extractCommitType: clustered short -m flags", () => {
 	test("extracts the type from -am (the combined add+message form)", () => {
@@ -188,40 +147,28 @@ describe("resolveCommitCwd: git -C target resolution", () => {
 	});
 });
 
-describe("touchesChangelog: nested-repo path suffix", () => {
-	test("matches CHANGELOG.md at the git root", () => {
-		expect(touchesChangelog(["src/app.ts", "CHANGELOG.md"])).toBe(true);
+describe("touchesChangelog: canonical repository-relative path", () => {
+	test("matches the configured path exactly", () => {
+		expect(touchesChangelog(["src/app.ts", "CHANGELOG.md"], "CHANGELOG.md")).toBe(true);
+		expect(touchesChangelog(["src/app.ts", "extensions/pkg/CHANGELOG.md"], "extensions/pkg/CHANGELOG.md")).toBe(true);
 	});
-	test("matches a package-scoped CHANGELOG.md (repo-root-relative path)", () => {
-		// git diff --cached --name-only prints paths relative to the GIT ROOT,
-		// so a dir below the root yields extensions/pkg/CHANGELOG.md.
-		expect(touchesChangelog(["src/app.ts", "extensions/pkg/CHANGELOG.md"])).toBe(true);
+	test("does not let an unrelated changelog satisfy policy", () => {
+		expect(touchesChangelog(["extensions/pkg/CHANGELOG.md"], "CHANGELOG.md")).toBe(false);
+		expect(touchesChangelog(["CHANGELOG.md"], "HISTORY.md")).toBe(false);
 	});
-	test("does not match unrelated markdown", () => {
-		expect(touchesChangelog(["src/app.ts", "docs/notes.md"])).toBe(false);
-	});
-	test("does not match a CHANGELOG.md embedded in a longer basename", () => {
-		// `notes/OLD-CHANGELOG.md` and `MY-CHANGELOG.md` carry the substring but
-		// the basename is not CHANGELOG.md — a bare endsWith/includes would match.
-		expect(touchesChangelog(["notes/OLD-CHANGELOG.md"])).toBe(false);
-		expect(touchesChangelog(["MY-CHANGELOG.md"])).toBe(false);
-	});
-	test("does not match CHANGELOG.md with a trailing extension", () => {
-		// CHANGELOG.md.bak carries the string but is not the changelog file.
-		expect(touchesChangelog(["CHANGELOG.md.bak"])).toBe(false);
-	});
-	test("is case-sensitive: docs/changelog.md does not satisfy the gate", () => {
-		// The contract matches CHANGELOG.md (and */CHANGELOG.md) exactly — a
-		// lowercase mirror is a different file and must not satisfy the gate.
-		expect(touchesChangelog(["docs/changelog.md"])).toBe(false);
+	test("does not match unrelated markdown or longer basenames", () => {
+		expect(touchesChangelog(["docs/notes.md"], "CHANGELOG.md")).toBe(false);
+		expect(touchesChangelog(["notes/OLD-CHANGELOG.md"], "CHANGELOG.md")).toBe(false);
+		expect(touchesChangelog(["CHANGELOG.md.bak"], "CHANGELOG.md")).toBe(false);
 	});
 });
 
-describe("evaluateChangelogGate: satisfiable in nested repos", () => {
+describe("evaluateChangelogGate: configured nested path", () => {
 	const CODE_STAGED = ["src/app.ts", "src/lib/util.ts"];
-	test("passes when a nested CHANGELOG.md path is staged", () => {
+	test("passes when the configured nested changelog is staged", () => {
+		const policy = { ...ENFORCING, path: "extensions/pkg/CHANGELOG.md" };
 		expect(
-			evaluateChangelogGate('git commit -m "feat: x"', ENFORCING, [...CODE_STAGED, "extensions/pkg/CHANGELOG.md"]),
+			evaluateChangelogGate('git commit -m "feat: x"', policy, [...CODE_STAGED, policy.path]),
 		).toBeUndefined();
 	});
 });

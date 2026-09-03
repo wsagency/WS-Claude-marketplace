@@ -1,0 +1,8 @@
+docs:
+  user_track: guides
+  dev_track: engineering
+  default_audience: dev
+  default_scope: product
+  auto:
+    changelog_per_commit: true
+    adr_for_arch_changes: false

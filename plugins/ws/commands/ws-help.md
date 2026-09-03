@@ -12,20 +12,30 @@ are at a hub root, inside a hub sub-repo, or standalone, then adapt the guide to
 what exists (`dev-docs/`, `.omp/`, `project.yaml`, `openwiki/`). Keep it under
 one screen. Base shape:
 
+Resolve the installed ws plugin root and call
+`skills/ws-project-bootstrap/consumer.mjs#inspectCanonicalCapability` for only
+the `config` capability. Probe no tracker integration. Start the guide with its
+canonical ownership line and either `Project policy: ready` plus the configured
+primary tracker, or `Project policy: blocked` plus the exact returned blocker.
+The blocker names detected repository-local legacy state and routes to
+`/ws-setup`; never read that state or user-global configuration as fallback.
+
+
 ```
 WS system — quick guide
 ──────────────────────────────────────────────
 START HERE
   /ws-matt              graph status + suggested entry point
   /ws-matt ask          router: "what should I pick up?"
-  /ws-init              optional — only if you use Jira: bind the project (ws-commit/status use it)
+  /ws-setup             configure, migrate, repair, or verify canonical project policy
+  Policy owner          .wsagency/config.yaml (capabilities are checked per operation)
   Typical flow: idea → /ws-matt grill → (spec → tickets) → implement
 
 DAILY WORK
   /ws-matt implement    execute one ticket (tdd → review)
-  /ws-commit pr         commit + changelog + PR + Jira (end of every branch)
-  /ws-status            your Jira assignments
-  Tickets live in dev-docs/tickets/open/ (done/ is archive)
+  /ws-commit pr         canonical commit/changelog policy + push + PR; Jira when ready
+  /ws-status            workload from the configured Local/GitHub/GitLab/Jira tracker
+  Tracker adapter       dev-docs/agents/issue-tracker.md (operations, never policy)
 
 DOCUMENTATION (writes itself as you work)
   Decisions → ADR in dev-docs/decisions/ (lightweight default; born in grill)

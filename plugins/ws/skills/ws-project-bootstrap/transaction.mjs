@@ -1,9 +1,48 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { access, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parseCanonicalConfigYaml, validateCanonicalConfig } from "./config.mjs";
+import { checkTrackerReadiness, getAdapterContent, parseOriginIdentity, planTrackerEffects } from "./trackers.mjs";
+import { DOCUMENTATION_CONTEXT_FRAGMENTS } from "../ws-docs-bootstrap/transaction.mjs";
+
+async function nearestExistingRealPath(target) {
+	let candidate = target;
+	while (true) {
+		try {
+			return await realpath(candidate);
+		} catch (error) {
+			if (error?.code !== "ENOENT") throw error;
+			const parent = path.dirname(candidate);
+			if (parent === candidate) throw error;
+			candidate = parent;
+		}
+	}
+}
+
+async function validateContainment(resolvedRoot, target) {
+	const absolute = path.resolve(resolvedRoot, target);
+	if (absolute !== resolvedRoot && !absolute.startsWith(`${resolvedRoot}${path.sep}`)) {
+		throw new Error(`Target escapes the repository: ${target}`);
+	}
+	let candidate = absolute;
+	while (candidate !== resolvedRoot) {
+		try {
+			if ((await lstat(candidate)).isSymbolicLink()) {
+				throw new Error(`Target uses symlinked ancestry: ${target}`);
+			}
+		} catch (error) {
+			if (error?.code !== "ENOENT") throw error;
+		}
+		candidate = path.dirname(candidate);
+	}
+	const nearest = await nearestExistingRealPath(absolute);
+	if (nearest !== resolvedRoot && !nearest.startsWith(`${resolvedRoot}${path.sep}`)) {
+		throw new Error(`Target ancestry escapes the repository: ${target}`);
+	}
+}
 
 const SKILL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 const MISSING_FINGERPRINT = null;
@@ -64,18 +103,35 @@ Read the five semantic mappings under \`triage.labels\`; see \`dev-docs/agents/t
 
 ### Domain documentation
 
-Read \`domain.layout\`, then follow \`dev-docs/agents/domain.md\` and the applicable \`CONTEXT.md\` before changing domain behavior.
+Read \`domain.layout\`, then follow \`dev-docs/agents/domain.md\` and either root \`CONTEXT.md\` for \`single_context\` or root \`CONTEXT-MAP.md\` plus the relevant context file for \`multi_context\` before changing domain behavior.
 
 ### Runtime policy
 
 The active harness must deliver the session discipline and dangerous-git guard required by \`runtime\` before reporting runtime readiness.
 ${AGENT_BLOCK_END}`;
 
+function desiredAgentSkillsBlock(config) {
+	if (!config?.docs) return AGENT_SKILLS_BLOCK;
+	return AGENT_SKILLS_BLOCK.replace(
+		AGENT_BLOCK_END,
+		`${DOCUMENTATION_CONTEXT_FRAGMENTS.agents}${AGENT_BLOCK_END}`,
+	);
+}
+
+function desiredClaudeImport() {
+	return DOCUMENTATION_CONTEXT_FRAGMENTS.claude;
+}
+
+function claudeContentAligned(content, desired) {
+	return content === desired;
+}
+
 const TEMPLATE_CONTENT = Object.freeze({
 	"dev-docs/agents/issue-tracker.md": readTemplate("issue-tracker.md"),
 	"dev-docs/agents/triage-labels.md": readTemplate("triage-labels.md"),
 	"dev-docs/agents/domain.md": readTemplate("domain.md"),
 	"CONTEXT.md": readTemplate("context.md"),
+	"CONTEXT-MAP.md": readTemplate("context-map.md"),
 });
 
 const DIRECTORY_TARGETS = Object.freeze(["dev-docs/tickets/open", "dev-docs/tickets/done"]);
@@ -85,6 +141,7 @@ const FILE_TARGETS = Object.freeze([
 	"dev-docs/agents/triage-labels.md",
 	"dev-docs/agents/domain.md",
 	"CONTEXT.md",
+	"CONTEXT-MAP.md",
 	"AGENTS.md",
 	"CLAUDE.md",
 ]);
@@ -106,12 +163,20 @@ function sha256(value) {
 
 function runGit(root, args) {
 	try {
-		return execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-	} catch {
+		return execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trimEnd();
+	} catch (error) {
+		if (error.status && error.status !== 0) throw error;
 		return null;
 	}
 }
 
+function safeRunGit(root, args) {
+	try {
+		return execFileSync("git", ["-C", root, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trimEnd();
+	} catch {
+		return null;
+	}
+}
 async function exists(filePath) {
 	try {
 		await access(filePath);
@@ -135,7 +200,10 @@ async function detectProjectShape(root, isRepository) {
 async function readSnapshotEntry(root, target, expectedKind) {
 	const absolute = path.join(root, target);
 	try {
-		const details = await stat(absolute);
+		const details = await lstat(absolute);
+		if (details.isSymbolicLink()) {
+			return { kind: "blocked", fingerprint: "blocked:symlink" };
+		}
 		if (expectedKind === "directory" && details.isDirectory()) {
 			return { kind: "directory", fingerprint: "directory" };
 		}
@@ -163,38 +231,67 @@ function managedRegionAligned(content, desired, start, end) {
 	const endIndex = content.indexOf(end, startIndex) + end.length;
 	return content.slice(startIndex, endIndex) === desired.trimEnd();
 }
+function parseTargetConfig(source) {
+	const validation = validateCanonicalConfig(source);
+	return validation.status === "valid" ? validation.config : null;
+}
 
-function discoveryIsAligned(discovery) {
-	if (discovery.projectShape !== "standalone") return false;
-	if (!discovery.machine.sessionDiscipline || !discovery.machine.dangerousGitGuard) return false;
-	if (discovery.entries[".wsagency/config.yaml"]?.content !== CANONICAL_CONFIG_YAML) return false;
-	for (const target of DIRECTORY_TARGETS) {
-		if (discovery.entries[target]?.kind !== "directory") return false;
+function runtimeCapabilitiesAligned(config, machine) {
+	if (config?.runtime?.session_discipline === "required" && !machine.sessionDiscipline) return false;
+	if (config?.runtime?.dangerous_git_guard === "enabled" && !machine.dangerousGitGuard) return false;
+	return true;
+}
+
+function domainContextTarget(config) {
+	return config?.domain?.layout === "multi_context" ? "CONTEXT-MAP.md" : "CONTEXT.md";
+}
+
+export function discoveryIsAligned(discovery, targetConfig = CANONICAL_CONFIG_YAML, choices = {}) {
+	if (discovery.projectShape !== "standalone" && discovery.projectShape !== "hub_root" && discovery.projectShape !== "hub_subrepository") return false;
+	const config = parseTargetConfig(targetConfig);
+	if (!config || !runtimeCapabilitiesAligned(config, discovery.machine)) return false;
+	if (discovery.entries[".wsagency/config.yaml"]?.content !== targetConfig) return false;
+	if (config.tracker?.primary === "local") {
+		for (const target of DIRECTORY_TARGETS) {
+			if (discovery.entries[target]?.kind !== "directory") return false;
+		}
 	}
-	for (const target of Object.keys(TEMPLATE_CONTENT).filter(target => target !== "CONTEXT.md")) {
+	const trackerEntry = discovery.entries["dev-docs/agents/issue-tracker.md"];
+	const trackerDesired = getAdapterContent(config.tracker?.primary ?? "local");
+	const trackerMarkers = MANAGED_MARKERS["dev-docs/agents/issue-tracker.md"];
+	if (!trackerEntry || trackerEntry.kind !== "file" || !managedRegionAligned(trackerEntry.content ?? "", trackerDesired, trackerMarkers[0], trackerMarkers[1])) return false;
+	for (const target of ["dev-docs/agents/triage-labels.md", "dev-docs/agents/domain.md"]) {
 		const entry = discovery.entries[target];
 		const markers = MANAGED_MARKERS[target];
-		if (!entry || entry.kind !== "file" || !markers) return false;
-		if (!managedRegionAligned(entry.content ?? "", TEMPLATE_CONTENT[target], markers[0], markers[1])) return false;
+		if (!entry || entry.kind !== "file" || !managedRegionAligned(entry.content ?? "", TEMPLATE_CONTENT[target], markers[0], markers[1])) return false;
 	}
-	if (discovery.entries["CONTEXT.md"]?.kind !== "file") return false;
+	if (discovery.entries[domainContextTarget(config)]?.kind !== "file") return false;
 	const agents = discovery.entries["AGENTS.md"];
-	if (!agents || agents.kind !== "file" || !managedRegionAligned(agents.content ?? "", AGENT_SKILLS_BLOCK, AGENT_BLOCK_START, AGENT_BLOCK_END)) {
-		return false;
-	}
-	return discovery.entries["CLAUDE.md"]?.content?.trim() === "@AGENTS.md";
+	const desiredAgents = desiredAgentSkillsBlock(config);
+	if (!agents || agents.kind !== "file" || !managedRegionAligned(agents.content ?? "", desiredAgents, AGENT_BLOCK_START, AGENT_BLOCK_END)) return false;
+	if (!claudeContentAligned(discovery.entries["CLAUDE.md"]?.content, desiredClaudeImport(config))) return false;
+	return checkTrackerReadiness(config, discovery, choices.jiraValidation, choices.capabilities).trackerReady;
 }
 
 /** Read-only discovery for the standalone Local transaction. */
 export async function discoverStandaloneRepository(root, machine) {
 	const resolvedRoot = await realpath(path.resolve(root));
-	const gitRoot = runGit(resolvedRoot, ["rev-parse", "--show-toplevel"]);
+	const gitRoot = safeRunGit(resolvedRoot, ["rev-parse", "--show-toplevel"]);
 	const resolvedGitRoot = gitRoot === null ? null : await realpath(path.resolve(gitRoot));
 	const isRepository = resolvedGitRoot === resolvedRoot;
 	const projectShape = await detectProjectShape(resolvedRoot, isRepository);
 	const entries = {};
 	for (const target of DIRECTORY_TARGETS) entries[target] = await readSnapshotEntry(resolvedRoot, target, "directory");
 	for (const target of FILE_TARGETS) entries[target] = await readSnapshotEntry(resolvedRoot, target, "file");
+	
+	const dirtyLines = isRepository ? safeRunGit(resolvedRoot, ["status", "--porcelain", "--untracked-files=all"])?.split("\n").filter(Boolean) ?? [] : [];
+	const dirty = dirtyLines.map(line => {
+		const rawPath = line.substring(3);
+		const pathMatch = rawPath.split(" -> ");
+		const targetPath = pathMatch.length > 1 ? pathMatch[1] : pathMatch[0];
+		return targetPath.replace(/\/$/, "");
+	});
+
 	const discovery = {
 		root: resolvedRoot,
 		projectShape,
@@ -202,24 +299,34 @@ export async function discoverStandaloneRepository(root, machine) {
 		git: {
 			isRepository,
 			root: resolvedGitRoot,
-			origin: isRepository ? runGit(resolvedRoot, ["config", "--get", "remote.origin.url"]) : null,
+			origin: isRepository ? safeRunGit(resolvedRoot, ["config", "--get", "remote.origin.url"]) : null,
+			head: isRepository ? safeRunGit(resolvedRoot, ["rev-parse", "HEAD"]) : null,
+			dirty,
 		},
 		machine: {
 			activeHarness: machine.activeHarness,
 			sessionDiscipline: machine.sessionDiscipline === true,
 			dangerousGitGuard: machine.dangerousGitGuard === true,
+			ghCli: machine.ghCli === true,
+			glabCli: machine.glabCli === true,
+			jiraCli: machine.jiraCli === true,
 		},
 		entries,
 	};
 	const config = entries[".wsagency/config.yaml"];
 	if (config.kind === "missing") discovery.setupState = "unconfigured";
-	else if (config.content !== CANONICAL_CONFIG_YAML) discovery.setupState = "conflicting";
-	else discovery.setupState = discoveryIsAligned(discovery) ? "aligned" : "drifted";
+	else if (config.kind !== "file") discovery.setupState = "conflicting";
+	else {
+		const validation = validateCanonicalConfig(config.content);
+		discovery.setupState = validation.status === "valid" && discoveryIsAligned(discovery, config.content, { capabilities: discovery.machine }) ? "aligned" : validation.status;
+		if (validation.status === "valid" && discovery.setupState !== "aligned") discovery.setupState = "drifted";
+	}
 	return discovery;
 }
 
 function renderDiff(target, before, after) {
 	if (before === after) return "";
+	if (typeof before !== "string" || typeof after !== "string") return "";
 	const beforeLines = before === "" ? [] : before.replace(/\n$/, "").split("\n");
 	const afterLines = after === "" ? [] : after.replace(/\n$/, "").split("\n");
 	let prefix = 0;
@@ -286,91 +393,237 @@ function managedFileEffect(order, target, desired, discovery, allowAppend) {
 	return baseEffect(order, target, "file", "BLOCKING_CONFLICT", "Existing unmanaged content requires a reviewed migration before setup can write.", entry);
 }
 
-function contextEffect(order, discovery) {
-	const target = "CONTEXT.md";
+function contextEffect(order, discovery, config) {
+	const target = domainContextTarget(config);
 	const entry = discovery.entries[target];
 	const desired = TEMPLATE_CONTENT[target];
-	if (entry.kind === "missing") return baseEffect(order, target, "file", "CREATE", "Create the single-context domain record.", entry, desired);
-	if (entry.kind !== "file") return baseEffect(order, target, "file", "BLOCKING_CONFLICT", "A non-file entry occupies the domain context path.", entry);
-	if (entry.content === desired) return baseEffect(order, target, "file", "NO-OP", "Domain context is already aligned.", entry, desired);
+	if (entry.kind === "missing") return baseEffect(order, target, "file", "CREATE", `Create the ${config.domain.layout === "multi_context" ? "multi-context map" : "single-context domain record"}.`, entry, desired);
+	if (entry.kind !== "file") return baseEffect(order, target, "file", "BLOCKING_CONFLICT", "A non-file entry occupies the selected domain context path.", entry);
+	if (entry.content === desired) return baseEffect(order, target, "file", "NO-OP", "Selected domain context artifact is already aligned.", entry, desired);
 	return baseEffect(order, target, "file", "PRESERVE", "Preserve existing authored domain context.", entry, entry.content);
 }
 
-function claudeEffect(order, discovery) {
+function claudeEffect(order, discovery, desired) {
 	const target = "CLAUDE.md";
 	const entry = discovery.entries[target];
-	const desired = "@AGENTS.md\n";
 	if (entry.kind === "missing") return baseEffect(order, target, "file", "CREATE", "Create the thin canonical import.", entry, desired);
 	if (entry.kind !== "file") return baseEffect(order, target, "file", "BLOCKING_CONFLICT", "A non-file entry occupies the Claude context path.", entry);
-	if (entry.content.trim() === "@AGENTS.md") return baseEffect(order, target, "file", "NO-OP", "Thin import is already aligned.", entry, entry.content);
+	if (claudeContentAligned(entry.content, desired)) return baseEffect(order, target, "file", "NO-OP", "Thin import is already aligned.", entry, desired);
+	const normalized = entry.content.replaceAll("\r\n", "\n").trim();
+	const knownThinImport = normalized === "@AGENTS.md" || normalized === DOCUMENTATION_CONTEXT_FRAGMENTS.claude.trim();
+	if (knownThinImport) return baseEffect(order, target, "file", "UPDATE", "Update the generated thin canonical import.", entry, desired);
 	return baseEffect(order, target, "file", "BLOCKING_CONFLICT", "A fat or conflicting Claude context requires reviewed migration.", entry);
 }
 
-function buildPlan(discovery, choices) {
+function parseExpectedOriginIdentity(origin) {
+	if (typeof origin !== "string" || origin.length === 0 || origin !== origin.trim()) return null;
+	if (/^git@[^:/\s]+:[^?#\s]+$/.test(origin)) return parseOriginIdentity(origin);
+	try {
+		const url = new URL(origin);
+		if (url.protocol === "https:" && !url.username && !url.password) return parseOriginIdentity(origin);
+		if (url.protocol === "ssh:" && url.username === "git" && !url.password) return parseOriginIdentity(origin);
+	} catch {
+		return null;
+	}
+	return null;
+}
+
+function normalizeVerifiedOriginIdentity(identity) {
+	if (!identity || typeof identity !== "object") return null;
+	const { provider, host, owner, repo } = identity;
+	if (![provider, host, owner, repo].every(value => typeof value === "string" && value.length > 0)) return null;
+	const normalized = parseOriginIdentity(`https://${host}/${owner}/${repo}.git`);
+	if (!normalized) return null;
+	if (provider !== normalized.provider || host !== normalized.host || owner !== normalized.owner || repo !== normalized.repo) return null;
+	return normalized;
+}
+
+function identityLabel(identity) {
+	return `${identity.provider}:${identity.host}/${identity.owner}/${identity.repo}`;
+}
+
+function validateOrigin(origin, verification) {
+	const expectedIdentity = parseExpectedOriginIdentity(origin);
+	if (!expectedIdentity) {
+		return { isValid: false, identity: null, reason: "Origin must be a GitHub or GitLab HTTPS/SSH URL" };
+	}
+	if (!verification) {
+		return { isValid: false, identity: null, reason: "Origin accessibility was not verified" };
+	}
+	if (verification.accessible !== true) {
+		return { isValid: false, identity: null, reason: verification.reason || "Origin is inaccessible" };
+	}
+	const verifiedIdentity = normalizeVerifiedOriginIdentity(verification.identity);
+	if (!verifiedIdentity) {
+		return { isValid: false, identity: null, reason: "Origin verification returned a malformed remote identity" };
+	}
+	if (verifiedIdentity.provider !== expectedIdentity.provider) {
+		return {
+			isValid: false,
+			identity: null,
+			reason: `Origin provider mismatch: expected ${expectedIdentity.provider}, received ${verifiedIdentity.provider}`,
+		};
+	}
+	if (identityLabel(verifiedIdentity) !== identityLabel(expectedIdentity)) {
+		return {
+			isValid: false,
+			identity: null,
+			reason: `Origin identity mismatch: expected ${identityLabel(expectedIdentity)}, received ${identityLabel(verifiedIdentity)}`,
+		};
+	}
+	return { isValid: true, identity: verifiedIdentity, reason: "" };
+}
+
+async function resolveOriginVerification(origin, verifier) {
+	const expectedIdentity = parseExpectedOriginIdentity(origin);
+	if (!expectedIdentity || typeof verifier !== "function") return null;
+	try {
+		return await verifier({ origin, expectedIdentity });
+	} catch (error) {
+		return {
+			accessible: false,
+			identity: null,
+			reason: `Origin verification failed: ${error instanceof Error ? error.message : String(error)}`,
+		};
+	}
+}
+
+export async function verifyOriginWithGit({ origin, expectedIdentity }) {
+	try {
+		execFileSync("git", ["ls-remote", origin], {
+			encoding: "utf8",
+			stdio: ["ignore", "ignore", "ignore"],
+			timeout: 15_000,
+		});
+		return { accessible: true, identity: expectedIdentity };
+	} catch {
+		return {
+			accessible: false,
+			identity: null,
+			reason: "Remote could not be accessed with git ls-remote",
+		};
+	}
+}
+
+export function buildPlan(discovery, choices, originVerification) {
 	const effects = [];
-	const gitClassification = discovery.git.isRepository ? "NO-OP" : "BLOCKING_CONFLICT";
-	effects.push(baseEffect(0, "git:repository", "state", gitClassification, discovery.git.isRepository ? "Existing Git repository detected." : "Setup requires an existing Git repository.", null));
-	effects.push(
-		baseEffect(
-			1,
-			"git:origin",
-			"state",
-			discovery.git.origin ? "PRESERVE" : "SKIP",
-			discovery.git.origin ? "Preserve the detected origin; it is never copied into WS configuration." : "Origin handling belongs to the repository-boundary transaction.",
-			null,
-		),
-	);
-	if (discovery.projectShape !== "standalone") {
-		effects.push(baseEffect(2, "project:shape", "state", "BLOCKING_CONFLICT", `This transaction supports standalone repositories, not ${discovery.projectShape}.`, null));
+	const isNotGit = discovery.projectShape === "not_git";
+	const createRepo = isNotGit && choices.createRepository;
+	const configureRequestedOrigin = !discovery.git.origin && choices.createRepository === true;
+	let originValidation = null;
+
+	let gitClassification = discovery.git.isRepository ? "NO-OP" : "BLOCKING_CONFLICT";
+	let gitReason = discovery.git.isRepository ? "Existing Git repository detected." : "Setup requires an existing Git repository.";
+	if (createRepo) {
+		gitClassification = "CREATE";
+		gitReason = "Initialize a new Git repository.";
+	}
+	effects.push(baseEffect(0, "git:repository", "state", gitClassification, gitReason, null, createRepo ? "CREATE" : null));
+
+	let originClassification = "SKIP";
+	let originReason = "Origin handling belongs to the repository-boundary transaction.";
+	let originAfter = null;
+	if (discovery.git.origin) {
+		originClassification = "PRESERVE";
+		originReason = "Preserve the detected origin; it is never copied into WS configuration.";
+	} else if (configureRequestedOrigin) {
+		originValidation = validateOrigin(choices.origin || "", originVerification);
+		if (!choices.origin) {
+			originClassification = "BLOCKING_CONFLICT";
+			originReason = "A valid origin URL is required to create a repository.";
+		} else if (!originValidation.isValid) {
+			originClassification = "BLOCKING_CONFLICT";
+			originReason = `Origin verification failed: ${originValidation.reason || "Malformed or inaccessible"}.`;
+		} else {
+			originClassification = "CREATE";
+			originReason = "Configure the required origin for the new repository.";
+			originAfter = choices.origin;
+		}
+	}
+	effects.push(baseEffect(1, "git:origin", "state", originClassification, originReason, null, originAfter));
+
+	const originIdentity = configureRequestedOrigin && originClassification === "CREATE" ? originValidation.identity : null;
+
+	if (discovery.projectShape === "not_git" || discovery.projectShape === "standalone" || discovery.projectShape === "hub_root" || discovery.projectShape === "hub_subrepository") {
+		effects.push(baseEffect(2, "project:shape", "state", "NO-OP", `Detected ${discovery.projectShape} repository scope.`, null));
 	} else {
-		effects.push(baseEffect(2, "project:shape", "state", "NO-OP", "Standalone repository scope detected.", null));
+		effects.push(baseEffect(2, "project:shape", "state", "BLOCKING_CONFLICT", `This transaction does not support ${discovery.projectShape}.`, null));
 	}
 
-	const configEntry = discovery.entries[".wsagency/config.yaml"];
-	if (configEntry.kind === "missing") {
-		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "CREATE", "Write the strict versioned recommended Local policy.", configEntry, CANONICAL_CONFIG_YAML));
-	} else if (configEntry.kind === "file" && configEntry.content === CANONICAL_CONFIG_YAML) {
-		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "NO-OP", "Canonical configuration is already aligned.", configEntry, CANONICAL_CONFIG_YAML));
+	const configEntry = discovery.entries[".wsagency/config.yaml"] || { kind: "missing", fingerprint: null };
+	const targetConfig = choices?.targetConfig || CANONICAL_CONFIG_YAML;
+	const configValidation = validateCanonicalConfig(targetConfig);
+	const config = configValidation.status === "valid" ? configValidation.config : null;
+	if (!config) {
+		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "BLOCKING_CONFLICT", "Target configuration is not a strict valid installed-schema policy.", configEntry));
+	} else if (configEntry.kind === "missing") {
+		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "CREATE", "Write the strict versioned policy.", configEntry, targetConfig));
+	} else if (configEntry.kind === "file" && configEntry.content === targetConfig) {
+		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "NO-OP", "Configuration is already aligned.", configEntry, targetConfig));
 	} else {
-		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", "BLOCKING_CONFLICT", "Existing configuration is not the verified recommended Local v1 payload.", configEntry));
+		effects.push(baseEffect(10, ".wsagency/config.yaml", "file", choices?.targetConfig ? "UPDATE" : "BLOCKING_CONFLICT", choices?.targetConfig ? "Apply the explicitly materialized configuration." : "Existing configuration is not the verified recommended Local v1 payload.", configEntry, choices?.targetConfig ? targetConfig : undefined));
 	}
 
-	effects.push(directoryEffect(20, "dev-docs/tickets/open", discovery));
-	effects.push(directoryEffect(21, "dev-docs/tickets/done", discovery));
-	effects.push(managedFileEffect(30, "dev-docs/agents/issue-tracker.md", TEMPLATE_CONTENT["dev-docs/agents/issue-tracker.md"], discovery, false));
-	effects.push(managedFileEffect(31, "dev-docs/agents/triage-labels.md", TEMPLATE_CONTENT["dev-docs/agents/triage-labels.md"], discovery, false));
-	effects.push(managedFileEffect(32, "dev-docs/agents/domain.md", TEMPLATE_CONTENT["dev-docs/agents/domain.md"], discovery, false));
-	effects.push(contextEffect(40, discovery));
-	effects.push(managedFileEffect(50, "AGENTS.md", AGENT_SKILLS_BLOCK, discovery, true));
-	effects.push(claudeEffect(60, discovery));
-	effects.push(
-		baseEffect(
-			70,
-			"runtime:session_discipline",
-			"state",
-			discovery.machine.sessionDiscipline ? "NO-OP" : "BLOCKING_CONFLICT",
-			discovery.machine.sessionDiscipline ? "Active harness delivers the required session discipline." : "Active harness does not deliver required session discipline.",
-			null,
-		),
-	);
-	effects.push(
-		baseEffect(
-			71,
-			"runtime:dangerous_git_guard",
-			"state",
-			discovery.machine.dangerousGitGuard ? "NO-OP" : "BLOCKING_CONFLICT",
-			discovery.machine.dangerousGitGuard ? "Active harness delivers the required dangerous-git guard." : "Active harness does not deliver the required dangerous-git guard.",
-			null,
-		),
-	);
-	effects.push(baseEffect(80, "integration:jira", "state", "SKIP", "Recommended Local setup does not bind Jira.", null));
-	effects.push(baseEffect(81, "documentation:bootstrap", "state", "SKIP", "Documentation bootstrap is outside this core setup transaction.", null));
+	const trackerDiscovery = originIdentity
+		? { ...discovery, git: { ...discovery.git, origin: choices.origin } }
+		: discovery;
 
+	const engineeringEnabled = Boolean(config?.tracker && config?.triage && config?.domain && config?.commit && config?.runtime);
+	if (engineeringEnabled) {
+		if (config.tracker.primary === "local") {
+			effects.push(directoryEffect(20, "dev-docs/tickets/open", discovery));
+			effects.push(directoryEffect(21, "dev-docs/tickets/done", discovery));
+		} else {
+			effects.push(baseEffect(20, "dev-docs/tickets/open", "directory", "SKIP", `${config.tracker.primary} owns tickets; do not create a Local store.`, discovery.entries["dev-docs/tickets/open"]));
+			effects.push(baseEffect(21, "dev-docs/tickets/done", "directory", "SKIP", `${config.tracker.primary} owns tickets; do not create a Local store.`, discovery.entries["dev-docs/tickets/done"]));
+		}
+		const trackerEffects = planTrackerEffects(config, trackerDiscovery, choices?.jiraValidation, choices?.capabilities);
+		effects.push(...trackerEffects.filter(item => item.target !== "dev-docs/agents/issue-tracker.md"));
+		effects.push(managedFileEffect(30, "dev-docs/agents/issue-tracker.md", getAdapterContent(config.tracker.primary), discovery, false));
+		effects.push(managedFileEffect(31, "dev-docs/agents/triage-labels.md", TEMPLATE_CONTENT["dev-docs/agents/triage-labels.md"], discovery, false));
+		effects.push(managedFileEffect(32, "dev-docs/agents/domain.md", TEMPLATE_CONTENT["dev-docs/agents/domain.md"], discovery, false));
+		effects.push(contextEffect(40, discovery, config));
+		effects.push(managedFileEffect(50, "AGENTS.md", desiredAgentSkillsBlock(config), discovery, true));
+		effects.push(claudeEffect(60, discovery, desiredClaudeImport(config)));
+		const disciplineReady = discovery.machine.sessionDiscipline || config.runtime.session_discipline !== "required";
+		effects.push(baseEffect(70, "runtime:session_discipline", "state", disciplineReady ? "NO-OP" : "BLOCKING_CONFLICT", disciplineReady ? "Active harness satisfies repository session policy." : "Active harness does not deliver required session discipline.", null));
+		const guardReady = discovery.machine.dangerousGitGuard || config.runtime.dangerous_git_guard !== "enabled";
+		effects.push(baseEffect(71, "runtime:dangerous_git_guard", "state", guardReady ? "NO-OP" : "BLOCKING_CONFLICT", guardReady ? "Active harness satisfies repository dangerous-git policy." : "Active harness does not deliver the required dangerous-git guard.", null));
+	} else {
+		for (const [order, target, kind] of [[20, "dev-docs/tickets/open", "directory"], [21, "dev-docs/tickets/done", "directory"], [30, "dev-docs/agents/issue-tracker.md", "file"], [31, "dev-docs/agents/triage-labels.md", "file"], [32, "dev-docs/agents/domain.md", "file"], [40, "CONTEXT.md", "file"], [41, "CONTEXT-MAP.md", "file"], [50, "AGENTS.md", "file"], [60, "CLAUDE.md", "file"]]) {
+			effects.push(baseEffect(order, target, kind, "SKIP", "Engineering setup is not selected by this partial canonical policy.", discovery.entries[target]));
+		}
+		effects.push(baseEffect(70, "runtime:session_discipline", "state", "SKIP", "Engineering runtime policy is not selected.", null));
+		effects.push(baseEffect(71, "runtime:dangerous_git_guard", "state", "SKIP", "Engineering runtime policy is not selected.", null));
+	}
+	effects.push(baseEffect(81, "documentation:bootstrap", "state", config?.docs ? "PRESERVE" : "SKIP", config?.docs ? "Documentation effects are owned by the confirmed docs-bootstrap worker manifest." : "Documentation bootstrap was not selected.", null));
+
+	const plannedTargets = new Set(effects.map(e => e.target));
+	const dirtyFiles = discovery.git.dirty;
+
+	for (const effect of effects) {
+		if ((isWriteEffect(effect) || effect.classification === "PRESERVE") && dirtyFiles.includes(effect.target)) {
+			effect.classification = "BLOCKING_CONFLICT";
+			effect.reason = `Dirty overlap: ${effect.target} has uncommitted changes.`;
+		}
+	}
+
+	for (const dirtyFile of dirtyFiles) {
+		if (!plannedTargets.has(dirtyFile)) {
+			effects.push(baseEffect(99, dirtyFile, "file", "PRESERVE", "Preserve unrelated uncommitted changes.", discovery.entries[dirtyFile] || { kind: "unknown", fingerprint: "dirty" }, undefined));
+		}
+	}
 	effects.sort((left, right) => left.order - right.order);
+
 	const scope = { root: discovery.root, projectShape: discovery.projectShape };
 	const hashPayload = {
 		scope,
 		choices,
+		originIdentity,
+		repositoryIdentity: {
+			head: discovery.git.head,
+			dirty: discovery.git.dirty,
+		},
 		effects: effects.map(effect => ({
 			order: effect.order,
 			target: effect.target,
@@ -380,21 +633,132 @@ function buildPlan(discovery, choices) {
 			fingerprint: effect.fingerprint,
 		})),
 	};
-	return { hash: sha256(JSON.stringify(hashPayload)), scope, effects };
+	return { hash: sha256(JSON.stringify(hashPayload)), scope, originIdentity, effects };
 }
 
-function deriveReadiness(discovery) {
-	const configValid = discovery.entries[".wsagency/config.yaml"]?.content === CANONICAL_CONFIG_YAML;
-	const trackerReady =
-		configValid &&
-		discovery.entries["dev-docs/tickets/open"]?.kind === "directory" &&
-		discovery.entries["dev-docs/tickets/done"]?.kind === "directory";
-	const runtimeReady = discovery.machine.sessionDiscipline && discovery.machine.dangerousGitGuard;
+function compositionConflict(plan, target, reason, entry) {
+	let found = false;
+	const effects = plan.effects.map(effect => {
+		if (effect.target !== target) return effect;
+		found = true;
+		return { ...effect, classification: "BLOCKING_CONFLICT", reason, after: undefined, diff: "" };
+	});
+	if (!found) effects.push(baseEffect(49, target, entry?.kind === "directory" ? "directory" : "file", "BLOCKING_CONFLICT", reason, entry));
+	effects.sort((left, right) => left.order - right.order || left.target.localeCompare(right.target));
+	return { ...plan, effects, hash: sha256(JSON.stringify({ delegated: plan.hash, effects })) };
+}
+
+/**
+ * Materialize authorized pre-cleanup legacy writes into one executable core plan.
+ * Each target is written at most once from its originally authorized fingerprint.
+ */
+export function composeLegacyContextPlan(discovery, choices, legacyPlan) {
+	const initialPlan = buildPlan(discovery, choices);
+	const legacyWrites = (legacyPlan?.effects ?? []).filter(effect =>
+		effect.order < 900
+		&& isWriteEffect(effect)
+		&& effect.kind !== "state"
+	);
+	if (legacyWrites.length === 0) return initialPlan;
+
+	const legacyByTarget = new Map();
+	for (const effect of legacyWrites) {
+		const entry = discovery.entries[effect.target] ?? { kind: "missing", fingerprint: null };
+		if (legacyByTarget.has(effect.target)) {
+			return compositionConflict(initialPlan, effect.target, `Multiple authorized legacy writes collide at ${effect.target}.`, entry);
+		}
+		if (effect.kind !== "file" || typeof effect.after !== "string") {
+			return compositionConflict(initialPlan, effect.target, `Legacy write at ${effect.target} cannot be composed as a regular file.`, entry);
+		}
+		if (discovery.git.dirty.includes(effect.target)) {
+			return compositionConflict(initialPlan, effect.target, `Dirty overlap: ${effect.target} has uncommitted changes.`, entry);
+		}
+		const expectedKind = effect.classification === "CREATE" ? "missing" : "file";
+		if (entry.kind !== expectedKind || entry.fingerprint !== effect.fingerprint) {
+			return compositionConflict(initialPlan, effect.target, `Legacy write collision: ${effect.target} no longer matches its authorized source.`, entry);
+		}
+		legacyByTarget.set(effect.target, effect);
+	}
+
+	const entries = Object.fromEntries(Object.entries(discovery.entries).map(([target, entry]) => [target, { ...entry }]));
+	for (const effect of legacyWrites) {
+		entries[effect.target] = { kind: "file", content: effect.after, fingerprint: sha256(effect.after) };
+	}
+	const virtualPlan = buildPlan({ ...discovery, entries }, choices);
+	const effects = virtualPlan.effects.map(effect => {
+		const legacy = legacyByTarget.get(effect.target);
+		if (!legacy) return effect;
+		if (effect.classification === "BLOCKING_CONFLICT") return effect;
+		if (effect.classification === "SKIP") {
+			return {
+				...effect,
+				classification: "BLOCKING_CONFLICT",
+				reason: `Legacy write at ${effect.target} collides with an unselected core capability.`,
+				after: undefined,
+				diff: "",
+			};
+		}
+		const original = discovery.entries[effect.target] ?? { kind: "missing", fingerprint: null };
+		const after = isWriteEffect(effect) ? effect.after : legacy.after;
+		return {
+			...effect,
+			classification: original.kind === "missing" ? "CREATE" : "UPDATE",
+			reason: `Compose the authorized legacy context migration with canonical setup: ${effect.reason}`,
+			...(original.kind === "file" ? { before: original.content } : {}),
+			after,
+			diff: renderDiff(effect.target, original.kind === "file" ? original.content : "", after),
+			fingerprint: original.fingerprint,
+		};
+	});
+	for (const legacy of legacyWrites) {
+		if (effects.some(effect => effect.target === legacy.target)) continue;
+		effects.push(legacy);
+	}
+
+	const legacyClaude = legacyByTarget.get("CLAUDE.md");
+	const legacyAgents = legacyByTarget.get("AGENTS.md");
+	const claudeSource = discovery.entries["CLAUDE.md"];
+	if (
+		legacyClaude
+		&& legacyAgents
+		&& claudeSource?.kind === "file"
+		&& claudeSource.content.length > 0
+		&& legacyAgents.after.includes(claudeSource.content)
+		&& !legacyClaude.after.includes(claudeSource.content)
+	) {
+		const claudeEffect = effects.find(effect => effect.target === "CLAUDE.md");
+		if (claudeEffect && isWriteEffect(claudeEffect)) {
+			claudeEffect.preservationChecks = [{ target: "AGENTS.md", content: claudeSource.content }];
+		}
+	}
+
+	effects.sort((left, right) => left.order - right.order || left.target.localeCompare(right.target));
+	return {
+		...virtualPlan,
+		effects,
+		hash: sha256(JSON.stringify({ delegated: [virtualPlan.hash, legacyPlan.hash], effects })),
+	};
+}
+
+export function deriveReadiness(discovery, choices = {}) {
+	const targetConfig = choices.targetConfig || CANONICAL_CONFIG_YAML;
+	const validation = validateCanonicalConfig(targetConfig);
+	const config = validation.status === "valid" ? validation.config : null;
+	const configValid = Boolean(config) && discovery.entries[".wsagency/config.yaml"]?.content === targetConfig;
+	const engineeringSelected = Boolean(config?.tracker && config?.triage && config?.domain && config?.commit && config?.changelog && config?.ui && config?.runtime);
+	const tracker = config?.tracker ? checkTrackerReadiness(config, discovery, choices.jiraValidation, choices.capabilities) : { trackerReady: false, blockers: ["Tracker policy is not configured."] };
+	const runtimeReady = Boolean(config?.runtime) && runtimeCapabilitiesAligned(config, discovery.machine);
 	return {
 		configValid,
-		engineeringReady: discoveryIsAligned(discovery),
-		trackerReady,
-		runtimeReady,
+		engineeringReady: configValid && engineeringSelected && discoveryIsAligned(discovery, targetConfig, choices),
+		trackerReady: configValid && tracker.trackerReady,
+		docsReady: configValid && Boolean(config?.docs) && choices.docsReadiness?.ready === true,
+		docsConfigured: Boolean(config?.docs),
+		runtimeReady: configValid && runtimeReady,
+		blockers: {
+			tracker: tracker.blockers,
+			docs: config?.docs && choices.docsReadiness?.ready !== true ? [choices.docsReadiness?.reason || "Documentation artifacts have not been verified by docs-bootstrap."] : [],
+		},
 	};
 }
 
@@ -410,11 +774,15 @@ function blockingEffects(plan) {
 	return plan.effects.filter(effect => effect.classification === "BLOCKING_CONFLICT");
 }
 
+function readinessSummary(readiness) {
+	return `Readiness: config=${readiness.configValid ? "ready" : "blocked"}, engineering=${readiness.engineeringReady ? "ready" : "blocked"}, tracker=${readiness.trackerReady ? "ready" : "blocked"}, documentation=${readiness.docsConfigured ? readiness.docsReady ? "ready" : "blocked" : "not configured"}, runtime=${readiness.runtimeReady ? "ready" : "blocked"}.`;
+}
+
 function noChangeReport(readiness) {
 	return [
-		"Detected standalone repository with aligned WS setup.",
+		"Detected repository with aligned WS setup.",
 		"No changes required",
-		`Readiness: config=${readiness.configValid ? "ready" : "blocked"}, engineering=${readiness.engineeringReady ? "ready" : "blocked"}, tracker=${readiness.trackerReady ? "ready" : "blocked"}, runtime=${readiness.runtimeReady ? "ready" : "blocked"}.`,
+		readinessSummary(readiness),
 	].join("\n");
 }
 
@@ -426,7 +794,7 @@ function verifiedReport(plan, readiness) {
 		"WS setup verified",
 		"Completed:",
 		...completed,
-		`Readiness: config=${readiness.configValid ? "ready" : "blocked"}, engineering=${readiness.engineeringReady ? "ready" : "blocked"}, tracker=${readiness.trackerReady ? "ready" : "blocked"}, runtime=${readiness.runtimeReady ? "ready" : "blocked"}.`,
+		readinessSummary(readiness),
 	].join("\n");
 }
 
@@ -438,54 +806,126 @@ function failedVerificationReport(plan, readiness) {
 	return verifiedReport(plan, readiness).replace("WS setup verified", "WS setup verification failed");
 }
 
-async function applyPlan(root, plan) {
+export async function preflightPlan(root, plan) {
+	const resolvedRoot = await realpath(path.resolve(root));
+	for (const effect of plan.effects) {
+		if (!isWriteEffect(effect) || effect.kind === "state") continue;
+		await validateContainment(resolvedRoot, effect.target);
+		const current = await readSnapshotEntry(resolvedRoot, effect.target, effect.kind);
+		if (current.fingerprint !== effect.fingerprint) {
+			throw new Error(`Authorization is stale: ${effect.target} changed before apply.`);
+		}
+	}
+}
+
+export async function applyPlan(root, plan, injectedFailure) {
+	const resolvedRoot = await realpath(path.resolve(root));
 	const operations = [];
+	const completed = [];
+	const pending = [];
+	await preflightPlan(resolvedRoot, plan);
 	for (const effect of plan.effects) {
 		if (!isWriteEffect(effect)) continue;
-		const current = await readSnapshotEntry(root, effect.target, effect.kind);
-		if (current.fingerprint !== effect.fingerprint) throw new Error(`Authorization is stale: ${effect.target} changed before apply.`);
+		pending.push(effect.target);
 	}
 	for (const effect of plan.effects) {
 		if (!isWriteEffect(effect)) continue;
-		const absolute = path.join(root, effect.target);
-		operations.push({ action: "write", target: effect.target });
-		if (effect.kind === "directory") {
-			await mkdir(absolute, { recursive: true });
-		} else {
-			await mkdir(path.dirname(absolute), { recursive: true });
-			await writeFile(absolute, effect.after, "utf8");
+		try {
+			if (injectedFailure?.phase === "write" && injectedFailure?.target === effect.target) {
+				throw new Error("Injected write failure");
+			}
+			if (effect.kind !== "state") {
+				await validateContainment(resolvedRoot, effect.target);
+			}
+			for (const check of effect.preservationChecks ?? []) {
+				await validateContainment(resolvedRoot, check.target);
+				const preserved = await readSnapshotEntry(resolvedRoot, check.target, "file");
+				const occurrences = preserved.kind === "file" ? preserved.content.split(check.content).length - 1 : 0;
+				if (occurrences !== 1) {
+					throw new Error(`Preserved authored bytes were not verified in ${check.target} before writing ${effect.target}.`);
+				}
+			}
+			const absolute = path.resolve(resolvedRoot, effect.target);
+			operations.push({ action: "write", target: effect.target });
+			if (effect.kind === "directory") {
+				await mkdir(absolute, { recursive: true });
+			} else if (effect.kind === "file") {
+				await mkdir(path.dirname(absolute), { recursive: true });
+				await writeFile(absolute, effect.after, "utf8");
+			} else if (effect.kind === "state") {
+				if (effect.target === "git:repository") {
+					await runGit(resolvedRoot, ["init"]);
+				} else if (effect.target === "git:origin") {
+					await runGit(resolvedRoot, ["remote", "add", "origin", effect.after]);
+				}
+			}
+
+			if (injectedFailure?.phase === "verify" && injectedFailure?.target === effect.target) {
+				throw new Error("Injected verify failure");
+			}
+			const verified = effect.kind === "state" ? { kind: "state" } : await readSnapshotEntry(resolvedRoot, effect.target, effect.kind);
+			if (effect.kind === "directory" ? verified.kind !== "directory" : (effect.kind === "file" && verified.content !== effect.after)) {
+				throw new Error(`Verification failed after writing ${effect.target}.`);
+			}
+			operations.push({ action: "verify", target: effect.target });
+			completed.push(effect.target);
+			pending.shift();
+		} catch (error) {
+			return { operations, failure: { target: effect.target, error, completed, pending } };
 		}
-		const verified = await readSnapshotEntry(root, effect.target, effect.kind);
-		if (effect.kind === "directory" ? verified.kind !== "directory" : verified.content !== effect.after) {
-			throw new Error(`Verification failed after writing ${effect.target}.`);
-		}
-		operations.push({ action: "verify", target: effect.target });
 	}
-	return operations;
+	return { operations, failure: null };
 }
 
 /** Deterministic plan/authorize/apply seam used by both harnesses. */
 export async function runSetupTransaction(request) {
 	if ((await realpath(path.resolve(request.root))) !== request.discovery.root) throw new Error("Transaction root does not match the discovered root.");
-	const configPresent = request.discovery.entries[".wsagency/config.yaml"]?.kind !== "missing";
-	const choices = request.choices ?? (configPresent ? RECOMMENDED_LOCAL_CHOICES : undefined);
+
+	const isNotGit = request.discovery.projectShape === "not_git";
+	let choices = request.choices;
 	if (!choices) {
+		const configEntry = request.discovery.entries[".wsagency/config.yaml"];
+		const validation = configEntry?.kind === "file" ? validateCanonicalConfig(configEntry.content) : null;
+		if (validation?.status === "valid" && !isNotGit) choices = { profile: "canonical", targetConfig: configEntry.content, capabilities: request.discovery.machine };
+	}
+	const needsProfile = !choices?.profile;
+	const needsCreateRepo = isNotGit && choices?.createRepository === undefined;
+	const needsOrigin = isNotGit && choices?.createRepository && typeof choices?.origin !== "string";
+
+	if (needsProfile || needsCreateRepo || needsOrigin) {
+		const questions = [];
+		if (needsProfile) {
+			questions.push({
+				id: "setup_profile",
+				question: "Use the recommended Local Markdown engineering setup?",
+				recommended: "recommended_local",
+			});
+		}
+		if (needsCreateRepo) {
+			questions.push({
+				id: "create_repository",
+				question: "No Git repository found. Create one?",
+				recommended: true,
+			});
+		} else if (needsOrigin) {
+			questions.push({
+				id: "origin_url",
+				question: "Repository origin URL (required):",
+			});
+		}
 		return {
 			discovery: request.discovery,
-			questions: [
-				{
-					id: "setup_profile",
-					question: "Use the recommended Local Markdown engineering setup?",
-					recommended: "recommended_local",
-				},
-			],
+			questions,
 			requiresConfirmation: false,
 			operations: [],
 			report: "Discovery complete. No files have been changed.",
 		};
 	}
-	if (choices.profile !== "recommended_local") throw new Error(`Unsupported setup profile: ${choices.profile}`);
-	const plan = buildPlan(request.discovery, choices);
+	if (!["recommended_local", "canonical", "materialized"].includes(choices.profile)) throw new Error(`Unsupported setup profile: ${choices.profile}`);
+	const originVerification = choices.createRepository === true && !request.discovery.git.origin && typeof choices.origin === "string"
+		? await resolveOriginVerification(choices.origin, request.originVerifier)
+		: null;
+	const plan = buildPlan(request.discovery, choices, originVerification);
 	const blockers = blockingEffects(plan);
 	if (blockers.length > 0) {
 		return {
@@ -498,7 +938,7 @@ export async function runSetupTransaction(request) {
 		};
 	}
 	if (!hasWrites(plan)) {
-		const readiness = deriveReadiness(request.discovery);
+		const readiness = deriveReadiness(request.discovery, choices);
 		return {
 			discovery: request.discovery,
 			questions: [],
@@ -520,19 +960,49 @@ export async function runSetupTransaction(request) {
 		};
 	}
 	const freshDiscovery = await discoverStandaloneRepository(request.root, request.discovery.machine);
-	const freshPlan = buildPlan(freshDiscovery, choices);
+	const freshOriginVerification = choices.createRepository === true && !freshDiscovery.git.origin && typeof choices.origin === "string"
+		? await resolveOriginVerification(choices.origin, request.originVerifier)
+		: null;
+	const freshPlan = buildPlan(freshDiscovery, choices, freshOriginVerification);
 	if (request.authorization !== plan.hash || request.authorization !== freshPlan.hash) {
 		throw new Error("Authorization is stale because the planned target set or payload changed.");
 	}
-	const operations = await applyPlan(request.root, freshPlan);
+	const applyResult = await applyPlan(request.root, freshPlan, request.injectedFailure);
 	const verifiedDiscovery = await discoverStandaloneRepository(request.root, request.discovery.machine);
-	const readiness = deriveReadiness(verifiedDiscovery);
+	const readiness = deriveReadiness(verifiedDiscovery, choices);
+
+	if (applyResult.failure) {
+		const transactionFailure = applyResult.failure;
+		return {
+			discovery: verifiedDiscovery,
+			questions: [],
+			plan: freshPlan,
+			requiresConfirmation: false,
+			operations: applyResult.operations,
+			readiness,
+			failure: {
+				target: transactionFailure.target,
+				error: transactionFailure.error.message,
+				completed: [...transactionFailure.completed],
+				pending: [...transactionFailure.pending],
+			},
+			report: [
+				`Transaction stopped at ${transactionFailure.target}: ${transactionFailure.error.message}`,
+				"No rollback was performed. The repository is in a partial setup state.",
+				`Completed: ${transactionFailure.completed.length === 0 ? "none" : transactionFailure.completed.join(", ")}`,
+				`Pending: ${transactionFailure.pending.join(", ")}`,
+				"To resume, run exactly:",
+				"  /ws-setup",
+			].join("\n"),
+		};
+	}
+
 	return {
 		discovery: verifiedDiscovery,
 		questions: [],
 		plan: freshPlan,
 		requiresConfirmation: false,
-		operations,
+		operations: applyResult.operations,
 		readiness,
 		report: readinessComplete(readiness) ? verifiedReport(freshPlan, readiness) : failedVerificationReport(freshPlan, readiness),
 	};
@@ -557,7 +1027,7 @@ async function runCommandLine() {
 	const profile = commandLineArgument("--profile");
 	const choices = profile ? { profile } : undefined;
 	const authorization = commandLineArgument("--authorization");
-	const result = await runSetupTransaction({ root, discovery, choices, authorization });
+	const result = await runSetupTransaction({ root, discovery, choices, authorization, originVerifier: verifyOriginWithGit });
 	console.log(JSON.stringify(result, null, 2));
 }
 

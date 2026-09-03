@@ -14,6 +14,16 @@ This command is _informed_ by the project's domain model and built on a shared d
 - Run the `/ws-codebase-design` skill for the architecture vocabulary (**module**, **interface**, **depth**, **seam**, **adapter**, **leverage**, **locality**) and its principles (the deletion test, "the interface is the test surface", "one adapter = hypothetical seam, two = real"). Use these terms exactly in every suggestion — don't drift into "component," "service," "API," or "boundary."
 - The domain language in `CONTEXT.md` gives names to good seams; ADRs record decisions this command should not re-litigate — discover them by project shape (see `project-hub-conventions`), not only at the repo root.
 
+## Canonical domain readiness
+
+Resolve the installed ws plugin root and request only the `domain` capability
+through `skills/ws-project-bootstrap/consumer.mjs#inspectCanonicalCapability`.
+Read `domain.layout` from the returned canonical policy and follow the domain
+adapter for context/ADR locations. If blocked, report the canonical ownership
+line and exact blocker and stop; detected repository-local legacy state is
+named and directed to `/ws-setup`, never read as policy or replaced with a
+layout default. This architecture scan probes no tracker integration.
+
 ## Process
 
 ### 1. Explore
@@ -23,7 +33,7 @@ This command is _informed_ by the project's domain model and built on a shared d
 - If the user named a direction — a module, a subsystem, a pain point — take it, and skip the inference below.
 - Otherwise, walk back a good stretch of the commit history (`git log --oneline`) to find the codebase's hot spots — the files and areas that keep coming up — and let those paths pull your attention first. If the changes are scattered with no clear hot spot, widen the net.
 
-Read the project's domain model and governing ADRs first — by project shape (see `project-hub-conventions`): resolve `CONTEXT-MAP.md` before `CONTEXT.md` for a multi-context repo, and scan the hub, repo-root, and any bounded-context `dev-docs/decisions/` you're touching. This is the same set `ws-domain-modeling` owns; missing it re-proposes already-rejected refactors.
+Read the project's domain model and governing ADRs first, routing by canonical `domain.layout` and the ready domain adapter rather than inferring layout from files. Scan the hub, repo root, and any bounded context the adapter names; missing this context re-proposes already-rejected refactors.
 
 Then delegate one read-only exploration pass: Claude Code uses the Agent tool
 with `subagent_type=Explore`; omp uses one `scout` task agent (and `effort: med`
@@ -79,7 +89,7 @@ Side effects happen inline as decisions crystallize — run the `/ws-domain-mode
 ## Graph node
 
 - **Tier:** user-invoked (entry)
-- **Reads:** git history hot spots (`git log --oneline`), `CONTEXT.md` (or `CONTEXT-MAP.md` plus per-context files), ADRs across the hub, repo root, and any touched bounded-context `dev-docs/decisions/` (by project shape, see `project-hub-conventions`), the codebase (walked by one bounded Explore pass)
+- **Reads:** git history hot spots (`git log --oneline`), canonical domain policy and adapter, the applicable context files and ADRs across the hub/repo/bounded context, and the codebase (walked by one bounded Explore pass)
 - **Emits:** a self-contained HTML report of deepening candidates at `<tmpdir>/architecture-review-<timestamp>.html`; then, per picked candidate: `CONTEXT.md` updates and sparing ADRs from the grilling loop
 - **Edges:**
   - then → ws-codebase-design (the vocabulary every suggestion is written in; its design-it-twice pattern for alternative interfaces inside the grilling loop)

@@ -1,0 +1,28 @@
+schema_version: 1
+tracker:
+  primary: local
+  pull_requests: ignore
+triage:
+  labels:
+    needs_triage: needs-triage
+    needs_info: needs-info
+    ready_for_agent: ready-for-agent
+    ready_for_human: ready-for-human
+    wontfix: wontfix
+domain:
+  layout: single_context
+commit:
+  jira:
+    actions: disabled
+    smart_commit_trailer: false
+    post_commit_comment: false
+    pr_transition: null
+changelog:
+  update_mode: pull_request
+  path: CHANGELOG.md
+  skip_types: [docs, chore, test, style, build, ci]
+ui:
+  session_start_dashboard: disabled
+runtime:
+  session_discipline: required
+  dangerous_git_guard: enabled

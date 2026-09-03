@@ -12,8 +12,8 @@
  *               named profile OMP_PROFILE>PI_PROFILE roots it at
  *               ~/.omp/profiles/<p>/plugins, XDG_DATA_HOME relocates it to
  *               $XDG_DATA_HOME/omp[/profiles/<p>]/plugins once omp migrated that
- *               data root, otherwise ~/.omp/plugins — resolved by lib/settings's
- *               resolvePluginsDir, mirroring pi-utils 17.2.4 getPluginsDir)
+ *               data root, otherwise ~/.omp/plugins — resolved by
+ *               lib/plugin-paths, mirroring pi-utils 17.2.4 getPluginsDir)
  *       project nearest ancestor .omp/plugins/installed_plugins.json from cwd
  *   - the USER omp registry is AUTHORITATIVE for an id: any NON-EMPTY entry
  *     array (even all `enabled:false`) unconditionally drops the Claude-sourced
@@ -41,7 +41,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { resolveConfigDirName, resolvePluginsDir } from "./lib/settings";
+import { resolveConfigDirName, resolvePluginsDir } from "./lib/plugin-paths";
 
 export const MARKETPLACE_PLUGIN_ID = "ws@ws-marketplace";
 
@@ -118,10 +118,10 @@ async function readRegistry(filePath: string | undefined): Promise<Registry | un
 
 /**
  * omp's user plugins dir is profile/XDG/legacy-aware (getPluginsDir). Resolve it
- * via the shared resolver (lib/settings's resolvePluginsDir) so this reads the
- * installed_plugins.json omp's writer actually targets under any layout — a
- * named profile (OMP_PROFILE>PI_PROFILE), an XDG-migrated data root, or the
- * legacy ~/.omp — instead of a hardcoded ~/.omp path.
+ * via the shared plugin-path resolver so this reads the installed_plugins.json
+ * omp's writer actually targets under any layout — a named profile
+ * (OMP_PROFILE>PI_PROFILE), an XDG-migrated data root, or the legacy ~/.omp —
+ * instead of a hardcoded ~/.omp path.
  */
 export function userOmpRegistryPath(home: string, env: NodeJS.ProcessEnv = process.env): string {
 	return path.join(resolvePluginsDir(home, env), "installed_plugins.json");

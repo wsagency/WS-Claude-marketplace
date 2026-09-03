@@ -7,18 +7,18 @@
  * TS behaviors the markdown surface cannot express.
  *
  * Tier 1 (parity + guard):
- *   - ws-guard: fail-safe tool_call block on dangerous git/rm commands
- *   - changelog-gate: opt-in `git commit` gate (docs-config changelog_per_commit)
- *   - dashboard: Jira workload widget on session_start
- *   - stop-nudge: non-blocking CHANGELOG-drift reminder on session_stop
+ *   - ws-guard: canonical dangerous-git/rm enforcement
+ *   - changelog-gate: canonical per-commit changelog enforcement
+ *   - dashboard: canonical Jira workload widget on session_start
+ *   - stop-nudge: canonical non-blocking changelog reminder
  *   - wiki-freshness: OpenWiki staleness banner (skips when the per-project
  *     .omp/hooks/post/openwiki-freshness.ts hook already covers the repo)
  *
  * 0.2.0 additions:
  *   - both-installed: warns when ws@ws-marketplace duplicates this package
- *   - compaction: preserves WS state (open tickets, changelog drift) across
- *     session compaction
- *   - plugin settings (jiraProject/guard/dashboard) honored via lib/settings
+ *   - compaction: preserves canonical Local-ticket and changelog state
+ *   - generic profile/XDG plugin-path resolution supports duplicate detection;
+ *     OMP_WS_GUARD is the only machine-wide guard-strengthening input
  *
  * Tier 2 (conventions as tools): ws_ticket, ws_changelog, ws_adr.
  *
@@ -34,6 +34,7 @@ import { registerStopNudge } from "./stop-nudge";
 import { registerChangelogTool } from "./tools/changelog";
 import { registerAdrTool } from "./tools/adr";
 import { registerTicketTool } from "./tools/ticket";
+import { runSynchronizedOperation } from "./lib/ticket-sync";
 import { registerWikiFreshness } from "./wiki-freshness";
 
 export default function ompWs(pi: ExtensionAPI): void {
@@ -49,7 +50,7 @@ export default function ompWs(pi: ExtensionAPI): void {
 	registerCompaction(pi);
 
 	// Tier 2 — registered tools
-	registerTicketTool(pi);
+	registerTicketTool(pi, { runSynchronizedOperation });
 	registerChangelogTool(pi);
 	registerAdrTool(pi);
 }

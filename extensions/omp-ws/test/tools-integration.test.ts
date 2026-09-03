@@ -41,18 +41,54 @@ beforeEach(async () => {
 afterEach(async () => {
 	await fs.rm(cwd, { recursive: true, force: true });
 });
+async function writeCanonicalPolicy(options: {
+	tracker?: "local" | "github" | "gitlab" | "jira";
+	jiraSync?: "disabled" | "all_local_tickets";
+	devTrack?: string;
+} = {}) {
+	const tracker = options.tracker ?? "local";
+	const jira = options.jiraSync === undefined
+		? ""
+		: `
+jira:
+  project: WCM
+  default_issue_type: Task
+  sync: ${options.jiraSync}
+`;
+	await fs.mkdir(path.join(cwd, ".wsagency"), { recursive: true });
+	await fs.writeFile(
+		path.join(cwd, ".wsagency", "config.yaml"),
+		`schema_version: 1
+tracker:
+  primary: ${tracker}
+  pull_requests: ignore
+docs:
+  user_track: docs
+  dev_track: ${options.devTrack ?? "dev-docs"}
+  default_audience: ask
+  default_scope: repo
+  adr_for_arch_changes: true
+${jira}`,
+		"utf8",
+	);
+}
 
-async function call(tool: FakeTool, params: Record<string, unknown>) {
-	return tool.execute("test-call", params, undefined, undefined, { cwd });
+
+async function call(tool: FakeTool, params: Record<string, unknown>, callCwd = cwd) {
+	return tool.execute("test-call", params, undefined, undefined, { cwd: callCwd });
 }
 
 describe("ws_ticket", () => {
 	const tool = collectTools(registerTicketTool).get("ws_ticket") as FakeTool;
+	beforeEach(async () => {
+		await writeCanonicalPolicy();
+	});
+
 
 	test("refuses when dev-docs/tickets is missing", async () => {
 		const result = await call(tool, { op: "create", title: "X", body: "Y" });
 		expect(result.isError).toBe(true);
-		expect(result.content[0]?.text).toContain("/ws-matt setup");
+		expect(result.content[0]?.text).toContain("/ws-setup");
 	});
 
 	test("create -> close lifecycle", async () => {
@@ -77,9 +113,9 @@ describe("ws_ticket", () => {
 
 		const closed = await call(tool, { op: "close", slug: "add-dark-mode-toggle", share: "https://example.com/s/1" });
 		expect(closed.isError).toBeFalsy();
-		expect(await fs.readFile(path.join(cwd, "dev-docs", "tickets", "done", "add-dark-mode-toggle.md"), "utf8")).toContain(
-			"share: https://example.com/s/1",
-		);
+		const closedText = await fs.readFile(path.join(cwd, "dev-docs", "tickets", "done", "add-dark-mode-toggle.md"), "utf8");
+		expect(closedText).toContain("share: https://example.com/s/1");
+		expect(closedText).toContain("**Status:** done");
 		await expect(fs.stat(openPath)).rejects.toThrow();
 	});
 
@@ -88,7 +124,7 @@ describe("ws_ticket", () => {
 		await fs.writeFile(path.join(cwd, "dev-docs", "tickets", "done", "old.md"), "# Old\n", "utf8");
 		const result = await call(tool, { op: "move", slug: "old", to: "open" });
 		expect(result.isError).toBeFalsy();
-		expect(await fs.readFile(path.join(cwd, "dev-docs", "tickets", "open", "old.md"), "utf8")).toBe("# Old\n");
+		expect(await fs.readFile(path.join(cwd, "dev-docs", "tickets", "open", "old.md"), "utf8")).toContain("**Status:** ready-for-agent");
 	});
 
 	test("close of a missing slug errors", async () => {
@@ -196,10 +232,172 @@ describe("ws_ticket", () => {
 		expect(result.content[0]?.text).toContain("already archived");
 		await expect(fs.stat(path.join(cwd, "dev-docs", "tickets", "open", "revive.md"))).rejects.toThrow();
 	});
+	test("fails closed for missing, malformed, and non-Local canonical policy", async () => {
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "open"), { recursive: true });
+		await fs.rm(path.join(cwd, ".wsagency", "config.yaml"));
+		const missing = await call(tool, { op: "create", title: "Missing", body: "Policy" });
+		expect(missing.isError).toBe(true);
+		expect(missing.content[0]?.text).toContain(".wsagency/config.yaml is missing");
+
+		await fs.writeFile(path.join(cwd, ".wsagency", "config.yaml"), "schema_version: nope\n", "utf8");
+		const malformed = await call(tool, { op: "create", title: "Malformed", body: "Policy" });
+		expect(malformed.isError).toBe(true);
+		expect(malformed.content[0]?.text).toContain("invalid");
+
+		await writeCanonicalPolicy({ tracker: "github" });
+		const remotePrimary = await call(tool, { op: "create", title: "Remote", body: "Primary" });
+		expect(remotePrimary.isError).toBe(true);
+		expect(remotePrimary.content[0]?.text).toContain("tracker.primary is github");
+		expect(await fs.readdir(path.join(cwd, "dev-docs", "tickets", "open"))).toEqual([]);
+	});
+
+	test("fails closed when all-ticket Jira sync lacks the durable boundary", async () => {
+		await writeCanonicalPolicy({ jiraSync: "all_local_tickets" });
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "open"), { recursive: true });
+		const result = await call(tool, { op: "create", title: "Synchronized", body: "Required" });
+		expect(result.isError).toBe(true);
+		expect(result.content[0]?.text).toContain("durable synchronization boundary is unavailable");
+		expect(await fs.readdir(path.join(cwd, "dev-docs", "tickets", "open"))).toEqual([]);
+	});
+
+	test("routes create and status writes through the durable boundary without Local-only metadata", async () => {
+		await writeCanonicalPolicy({ jiraSync: "all_local_tickets" });
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "open"), { recursive: true });
+		const operations: Array<{ action: string; payload: Record<string, unknown> }> = [];
+		const synchronizedTool = collectTools(pi => registerTicketTool(pi, {
+			runSynchronizedOperation: async ({ operation }) => {
+				operations.push({ action: operation.action, payload: operation.payload });
+				return operation.perform();
+			},
+		})).get("ws_ticket") as FakeTool;
+
+		const created = await call(synchronizedTool, {
+			op: "create",
+			title: "Durable native",
+			body: "Use the shared boundary.",
+			criteria: ["Persist intent"],
+			blocked_by: ["local-only-blocker"],
+			share: "https://private.example/session",
+		});
+		expect(created.isError).toBeFalsy();
+		const closed = await call(synchronizedTool, {
+			op: "close",
+			slug: "durable-native",
+			share: "https://private.example/session",
+		});
+		expect(closed.isError).toBeFalsy();
+		expect(operations).toEqual([
+			{
+				action: "create",
+				payload: {
+					title: "Durable native",
+					description: "Use the shared boundary.",
+					acceptanceCriteria: "- [ ] Persist intent",
+					status: "ready-for-agent",
+					type: "Task",
+				},
+			},
+			{ action: "status", payload: { status: "done" } },
+		]);
+		expect(JSON.stringify(operations)).not.toContain("private.example");
+		expect(JSON.stringify(operations)).not.toContain("local-only-blocker");
+	});
+
+	test("synchronized create and close retries accept matching already-applied Local state", async () => {
+		await writeCanonicalPolicy({ jiraSync: "all_local_tickets" });
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "open"), { recursive: true });
+		const attempts = { create: 0, status: 0 };
+		const synchronizedTool = collectTools(pi => registerTicketTool(pi, {
+			runSynchronizedOperation: async ({ operation }) => {
+				attempts[operation.action] += 1;
+				const message = await operation.perform(operation.payload);
+				if (attempts[operation.action] === 1) {
+					throw new Error(`simulated crash after Local ${operation.action}`);
+				}
+				return message;
+			},
+		})).get("ws_ticket") as FakeTool;
+		const createParams = {
+			op: "create",
+			title: "Retry durable write",
+			body: "Resume without repeating Local state.",
+			criteria: ["One Local result"],
+			share: "https://example.com/retry",
+		};
+
+		const interruptedCreate = await call(synchronizedTool, createParams);
+		expect(interruptedCreate.isError).toBe(true);
+		const resumedCreate = await call(synchronizedTool, createParams);
+		expect(resumedCreate.isError).toBeFalsy();
+		expect(attempts.create).toBe(2);
+
+		const closeParams = { op: "close", slug: "retry-durable-write", share: "https://example.com/retry" };
+		const interruptedClose = await call(synchronizedTool, closeParams);
+		expect(interruptedClose.isError).toBe(true);
+		const resumedClose = await call(synchronizedTool, closeParams);
+		expect(resumedClose.isError).toBeFalsy();
+		expect(attempts.status).toBe(2);
+		expect(await fs.readFile(
+			path.join(cwd, "dev-docs", "tickets", "done", "retry-durable-write.md"),
+			"utf8",
+		)).toContain("**Status:** done");
+	});
+
+	test("synchronized retries reject mismatched creates and status collisions without overwriting", async () => {
+		await writeCanonicalPolicy({ jiraSync: "all_local_tickets" });
+		const openDir = path.join(cwd, "dev-docs", "tickets", "open");
+		const doneDir = path.join(cwd, "dev-docs", "tickets", "done");
+		await fs.mkdir(openDir, { recursive: true });
+		await fs.mkdir(doneDir, { recursive: true });
+		const synchronizedTool = collectTools(pi => registerTicketTool(pi, {
+			runSynchronizedOperation: async ({ operation }) => operation.perform(operation.payload),
+		})).get("ws_ticket") as FakeTool;
+
+		const mismatchedPath = path.join(openDir, "mismatch.md");
+		await fs.writeFile(mismatchedPath, "# Existing\n", "utf8");
+		const mismatch = await call(synchronizedTool, {
+			op: "create",
+			title: "Replacement",
+			body: "Must not overwrite.",
+			slug: "mismatch",
+		});
+		expect(mismatch.isError).toBe(true);
+		expect(mismatch.content[0]?.text).toContain("does not match");
+		expect(await fs.readFile(mismatchedPath, "utf8")).toBe("# Existing\n");
+
+		const collisionOpen = path.join(openDir, "collision.md");
+		const collisionDone = path.join(doneDir, "collision.md");
+		await fs.writeFile(collisionOpen, "# Open\n", "utf8");
+		await fs.writeFile(collisionDone, "# Done\n", "utf8");
+		const collision = await call(synchronizedTool, { op: "close", slug: "collision" });
+		expect(collision.isError).toBe(true);
+		expect(collision.content[0]?.text).toContain("both open/ and done/");
+		expect(await fs.readFile(collisionOpen, "utf8")).toBe("# Open\n");
+		expect(await fs.readFile(collisionDone, "utf8")).toBe("# Done\n");
+	});
+
+	test("resolves the repository root before accessing canonical tickets", async () => {
+		const git = Bun.spawn(["git", "init", "-q"], { cwd, stdout: "ignore", stderr: "ignore" });
+		expect(await git.exited).toBe(0);
+		await fs.mkdir(path.join(cwd, "dev-docs", "tickets", "open"), { recursive: true });
+		const nested = path.join(cwd, "nested", "work");
+		await fs.mkdir(nested, { recursive: true });
+
+		const result = await call(tool, { op: "create", title: "Root routed", body: "From a nested cwd." }, nested);
+		expect(result.isError).toBeFalsy();
+		expect(await fs.readFile(path.join(cwd, "dev-docs", "tickets", "open", "root-routed.md"), "utf8")).toContain(
+			"From a nested cwd.",
+		);
+	});
+
 });
 
 describe("ws_adr", () => {
 	const tool = collectTools(registerAdrTool).get("ws_adr") as FakeTool;
+	beforeEach(async () => {
+		await writeCanonicalPolicy();
+	});
+
 
 	test("numbers continue the existing sequence and return the path", async () => {
 		const dir = path.join(cwd, "dev-docs", "decisions");
@@ -250,11 +448,75 @@ describe("ws_adr", () => {
 		expect(result.isError).toBeFalsy();
 		expect(result.content[0]?.text).toContain("0010-tenth.md");
 	});
+	test("routes from a nested hub directory to configured docs.dev_track decisions", async () => {
+		await writeCanonicalPolicy({ devTrack: "internal" });
+		await fs.writeFile(path.join(cwd, "project.yaml"), "project:\n  name: example\n", "utf8");
+		const git = Bun.spawn(["git", "init", "-q"], { cwd, stdout: "ignore", stderr: "ignore" });
+		expect(await git.exited).toBe(0);
+		const nested = path.join(cwd, "working-repo-view");
+		await fs.mkdir(nested, { recursive: true });
+
+		const result = await call(tool, { title: "Hub-owned decision", sentences: "Keep product decisions at the hub root." }, nested);
+		expect(result.isError).toBeFalsy();
+		const target = path.join(cwd, "internal", "decisions", "0001-hub-owned-decision.md");
+		expect(await fs.readFile(target, "utf8")).toContain("Keep product decisions at the hub root.");
+		await expect(fs.stat(path.join(nested, "dev-docs", "decisions"))).rejects.toThrow();
+	});
+
+	test("fails closed for missing, legacy, malformed, and incomplete docs policy", async () => {
+		await fs.rm(path.join(cwd, ".wsagency", "config.yaml"));
+		const missing = await call(tool, { title: "Missing", sentences: "Policy." });
+		expect(missing.isError).toBe(true);
+		expect(missing.content[0]?.text).toContain(".wsagency/config.yaml is missing");
+
+		await fs.mkdir(path.join(cwd, ".claude"), { recursive: true });
+		await fs.writeFile(path.join(cwd, ".claude", "docs-config.yaml"), "docs:\n  dev_track: dev-docs\n", "utf8");
+		const legacy = await call(tool, { title: "Legacy", sentences: "Policy." });
+		expect(legacy.isError).toBe(true);
+		expect(legacy.content[0]?.text).toContain("legacy repository policy");
+		await fs.rm(path.join(cwd, ".claude"), { recursive: true });
+
+		await fs.writeFile(path.join(cwd, ".wsagency", "config.yaml"), "schema_version: nope\n", "utf8");
+		const malformed = await call(tool, { title: "Malformed", sentences: "Policy." });
+		expect(malformed.isError).toBe(true);
+		expect(malformed.content[0]?.text).toContain("invalid");
+
+		await fs.writeFile(
+			path.join(cwd, ".wsagency", "config.yaml"),
+			"schema_version: 1\ntracker:\n  primary: local\n  pull_requests: ignore\n",
+			"utf8",
+		);
+		const incomplete = await call(tool, { title: "Incomplete", sentences: "Policy." });
+		expect(incomplete.isError).toBe(true);
+		expect(incomplete.content[0]?.text).toContain("docs.dev_track");
+	});
+
 });
 
 describe("ws_changelog", () => {
 	const tool = collectTools(registerChangelogTool).get("ws_changelog") as FakeTool;
 	const BASE = "# Changelog\n\n## [Unreleased]\n\n## [1.0.0] - 2026-01-01\n\n### Added\n\n- Initial\n";
+
+	beforeEach(async () => {
+		await fs.mkdir(path.join(cwd, ".wsagency"), { recursive: true });
+		await fs.writeFile(
+			path.join(cwd, ".wsagency", "config.yaml"),
+			`schema_version: 1
+
+changelog:
+  update_mode: pull_request
+  path: CHANGELOG.md
+  skip_types: [docs, chore, test, style, build, ci]
+
+docs:
+  user_track: docs
+  dev_track: dev-docs
+  default_audience: ask
+  default_scope: ask
+  adr_for_arch_changes: true
+`,
+		);
+	});
 
 	test("errors without CHANGELOG.md", async () => {
 		const result = await call(tool, { type: "feat", text: "X" });
@@ -283,11 +545,24 @@ describe("ws_changelog", () => {
 		expect(result.content[0]?.text).not.toContain("mirrored");
 		await expect(fs.stat(path.join(cwd, "docs", "changelog.md"))).rejects.toThrow();
 	});
-	test("success message tells the caller to stage CHANGELOG.md", async () => {
+	test("success message tells the caller to stage the configured changelog", async () => {
 		await fs.writeFile(path.join(cwd, "CHANGELOG.md"), BASE, "utf8");
 		const result = await call(tool, { type: "feat", text: "Add thing" });
 		expect(result.isError).toBeFalsy();
-		expect(result.content[0]?.text).toContain("git add CHANGELOG.md");
+		expect(result.content[0]?.text).toContain("Stage the updated file");
+	});
+
+	test("writes the changelog path selected by canonical policy", async () => {
+		const configPath = path.join(cwd, ".wsagency", "config.yaml");
+		const config = await fs.readFile(configPath, "utf8");
+		await fs.writeFile(configPath, config.replace("path: CHANGELOG.md", "path: changes/HISTORY.md"));
+		await fs.mkdir(path.join(cwd, "changes"), { recursive: true });
+		await fs.writeFile(path.join(cwd, "changes", "HISTORY.md"), BASE, "utf8");
+
+		const result = await call(tool, { type: "feat", text: "Use canonical path" });
+		expect(result.isError).toBeFalsy();
+		expect(await fs.readFile(path.join(cwd, "changes", "HISTORY.md"), "utf8")).toContain("- Use canonical path");
+		await expect(fs.stat(path.join(cwd, "CHANGELOG.md"))).rejects.toThrow();
 	});
 
 	test("surfaces a failed mirror write instead of reporting no mirror", async () => {

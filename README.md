@@ -20,7 +20,7 @@ One plugin ([ws](./plugins/ws)), one workflow:
 
 | Plugin | Description | Commands |
 |--------|-------------|----------|
-| [ws](./plugins/ws) | The WS Agency engineering suite in one plugin: ws-matt graph-engineered skills, Jira-aware git flows via jira-cli, dual-track docs, and multi-repo project hubs | `/ws-help`, `/ws-matt <entry>`, `/ws-setup`, `/ws-docs <verb>`, `/ws-hub <verb>` (init, doctor, update, intake, status, repos, add, describe, docs, explained), `/ws-commit [pr \| clean]`, `/ws-status`, `/ws-init` |
+| [ws](./plugins/ws) | The WS Agency engineering suite in one plugin: canonical project setup, ws-matt graph-engineered skills, Jira-aware git flows, dual-track docs, and multi-repo project hubs | `/ws-help`, `/ws-setup [reconfigure]`, `/ws-matt <entry>`, `/ws-docs <verb>`, `/ws-hub <verb>` (init, doctor, update, intake, status, repos, add, describe, docs, explained), `/ws-commit [pr \| clean]`, `/ws-status` |
 
 ## Prerequisites
 
@@ -28,7 +28,7 @@ One plugin ([ws](./plugins/ws)), one workflow:
 - [Git](https://git-scm.com/)
 - [tea CLI](https://gitea.com/gitea/tea) (required for the git flows, `/ws-commit`) — `brew install tea`
 - [jira-cli](https://github.com/ankitpokhrel/jira-cli) (required for the git flows, `/ws-commit`) — `brew install ankitpokhrel/jira-cli/jira-cli`, then `export JIRA_API_TOKEN=<token>` and `jira init`
-- ws-matt issue trackers: local `dev-docs/tickets/` by default; `gh` (GitHub) / `glab` (GitLab) / jira-cli (Jira) only when that tracker is chosen in `/ws-matt setup`
+- Project trackers: Local `dev-docs/tickets/` by default; `gh` (GitHub), `glab` (GitLab), or jira-cli (Jira) only when selected through `/ws-setup`
 - [Python 3](https://python.org/) (required for `/ws-docs publish` — one-way Outline sync) with `OUTLINE_API_TOKEN` exported or stored in `~/.config/ws-docs/outline-token`
 
 ## Installation
@@ -52,7 +52,7 @@ claude plugin marketplace update ws-marketplace
 claude plugin uninstall ws@ws-marketplace
 ```
 
-### Installation in omp — native package (recommended)
+### Installation in omp — native package
 
 On omp, install the **native package** `@wsagency/omp-ws` — it carries the
 COMPLETE suite (all commands, skills, and agents, generated from the same
@@ -60,13 +60,10 @@ source as the Claude plugin — ADR 0004) plus omp-only capabilities: a
 **fail-safe git guard**, TTSR convention rules, the opt-in changelog gate, a
 **Jira session dashboard widget**, docs-drift and OpenWiki-freshness nudges,
 compaction preservation, and the schema-validated `ws_ticket` /
-`ws_changelog` / `ws_adr` tools. Requires [bun](https://bun.sh):
+`ws_changelog` / `ws_adr` tools:
 
 ```bash
-git clone git@github.com:wsagency/WS-Claude-marketplace.git
-cd WS-Claude-marketplace/extensions/omp-ws
-bun install && bun run build
-omp plugin link .
+omp plugin install @wsagency/omp-ws@0.7.0
 ```
 
 Restart open omp sessions afterwards. Do NOT also install the marketplace
@@ -77,14 +74,12 @@ omp's **user plugin registry** — `installed_plugins.json` under omp's plugins
 dir, whose path the warning prints exactly (`OMP_PROFILE`/`PI_PROFILE` and
 `XDG_DATA_HOME` relocate it off the default `~/.omp`) — when it came from
 Claude Code. omp reads both registries.
-Details, settings, and off-switches:
-[extensions/omp-ws/README.md](./extensions/omp-ws/README.md).
+Native runtime policy, duplicate-install handling, and machine guard
+strengthening: [extensions/omp-ws/README.md](./extensions/omp-ws/README.md).
 
-Compat alternative (no bun, no checkout): omp also reads this registry in
-Claude-plugin format — `/marketplace add git@github.com:wsagency/WS-Claude-marketplace.git`
-then `/plugin install ws@ws-marketplace` (⚠️ always with the
-`@ws-marketplace` suffix — a bare `install ws` resolves to the npm websocket
-package). You get all commands/skills/agents but none of the native layer.
+The Claude-format marketplace installation is not a supported omp consumer
+path after WS 5.0. Disable or uninstall `ws@ws-marketplace` before enabling
+the native package.
 Machine setup (model roles, feature toggles):
 [docs/how-to/omp-setup.md](./docs/how-to/omp-setup.md). What works and known
 gaps: [docs/how-to/use-with-omp.md](./docs/how-to/use-with-omp.md).
@@ -157,17 +152,16 @@ For **hard enforcement**, add hooks to `.claude/settings.json`:
 
 ### Project setup (`/ws-setup`)
 
-`/ws-setup` reconciles an existing standalone Git repository through one visible, confirmed, and verified manifest transaction. Its recommended Local Markdown profile writes strict `.wsagency/config.yaml` policy plus tracker, triage, domain, context, and runtime-policy artifacts; an aligned rerun is prompt-free and reports `No changes required`.
+`/ws-setup` is the sole project-setup command. It configures, migrates, repairs, and verifies standalone repositories, hub working repositories, and complete hub scopes through one categorized manifest and one confirmation. Committed policy lives only in strict `.wsagency/config.yaml`; Local Markdown is the default tracker, GitHub, GitLab, Jira, and Local/Jira synchronization are supported when their capabilities are available, optional documentation uses the shared missing-only bootstrap, and an aligned rerun is prompt-free with `No changes required`. Use `/ws-setup reconfigure` for intentional policy changes. Existing repositories should follow [Migrate an existing project to WS 5](./docs/how-to/migrate-to-ws-5.md).
 
-### Git flows (`/ws-commit`, `/ws-status`, `/ws-init`)
+### Git flows (`/ws-commit`, `/ws-status`)
 
 Jira-aware git workflow commands, powered by [jira-cli](https://github.com/ankitpokhrel/jira-cli). Detects ticket key from branch name (`WSC-123-feature`), composes Conventional Commits with `(WSC-123)` suffix, applies worklogs and transitions via explicit jira-cli calls. PR creation via [tea CLI](https://gitea.com/gitea/tea) for Gitea.
 
 **Requires:** [tea CLI](https://gitea.com/gitea/tea) (`brew install tea && tea login add`), [jira-cli](https://github.com/ankitpokhrel/jira-cli) (`brew install ankitpokhrel/jira-cli/jira-cli` + `JIRA_API_TOKEN` + `jira init`)
 
 **Commands:**
-- `/ws-init` — Verify jira-cli setup and bind the current project to a Jira project
-- `/ws-status` — Show your Jira assignments grouped by status and a suggestion for what to pick up next
+- `/ws-status` — Show Jira assignments when canonical policy selects a valid Jira binding, grouped by status with a suggested next item
 - `/ws-commit` — Jira-aware commit (Conventional Commits + ticket suffix, optional worklog and transition via jira-cli)
 - `/ws-commit pr` — Commit + update CHANGELOG.md + push + open PR with Jira link; optionally transitions ticket to In Review
 - `/ws-commit clean` — Clean up git branches marked as `[gone]`
@@ -175,17 +169,17 @@ Jira-aware git workflow commands, powered by [jira-cli](https://github.com/ankit
 
 **Changelog integration:** `/ws-commit pr` auto-updates `CHANGELOG.md` (Keep a Changelog format) at PR time, mapping commit types to sections (`feat`→Added, `fix`→Fixed, etc.). Auto-creates the file if missing. Skips non-functional types (`docs, chore, test, style, build, ci`) by default — configurable per-project. Powered by the ws plugin's `keep-a-changelog` skill, which auto-loads on the word "CHANGELOG".
 
-**Hooks:** `SessionStart` — when claude opens in a folder bound to a WS project, injects the project binding, current branch, and a prompt to run `/ws-status` for the rendered workload (the omp native package renders a live Jira dashboard widget instead). Toggle via `hooks.session_start_dashboard: false` in `.claude/ws-project.yaml`.
+**Hooks:** `SessionStart` reads `.wsagency/config.yaml` and activates Jira assignment context only when canonical policy selects it and the machine integration is ready. The omp native package renders the corresponding live dashboard widget. Run `/ws-setup` to migrate a detected legacy binding.
 
 **Skills:** `ws-jira-conventions` — branch naming, commit format, Smart Commit syntax
 
 ### ws-matt skill graph (`/ws-matt`)
 
-[Matt Pocock's engineering skills](https://github.com/mattpocock/skills) (MIT © Matt Pocock, vendored with attribution) restructured as a **graph-engineered skill set**: 19 interlinked `ws-*` skills where each SKILL.md is a graph node with a declared contract (state it reads, state delta it emits, edges to other nodes). Two tiers per Matt's own design: user-invoked entry nodes (`ws-ask-matt` router, `ws-implement`, `ws-to-spec`, `ws-to-tickets`, `ws-triage`, `ws-grill-with-docs`, `ws-improve-codebase-architecture`, `ws-wayfinder`, `ws-setup-matt-pocock-skills`) and model-invoked worker nodes (`ws-tdd`, `ws-code-review`, `ws-research`, `ws-prototype`, `ws-diagnosing-bugs`, `ws-domain-modeling`, `ws-codebase-design`, `ws-resolving-merge-conflicts`, `ws-grilling`) — entry nodes never chain into other entry nodes. A new `ws-graph-engineering` skill carries the methodology (node/edge/state contract, fan-out/synthesize, `DONE|{path}` file handoff).
+[Matt Pocock's engineering skills](https://github.com/mattpocock/skills) (MIT © Matt Pocock, vendored with attribution) are restructured as a **graph-engineered skill set**. Each `ws-*` skill declares the state it reads, the state delta it emits, and its edges. User-invoked entry nodes route to model-invoked worker disciplines; project setup is deliberately outside the engineering graph and owned only by `/ws-setup`.
 
-Tickets default to the **local tracker** (`dev-docs/tickets/open|done/` — fastest for agents; optional Jira mirror via jira-cli, chosen in `/ws-matt setup`). Ready tickets run in `Blocked by:` dependency-frontier waves under one scheduling owner; `ws-graph-engineering` chooses Herdr outer lanes, batched task workers, or sequential execution without duplicate submission.
+Tickets default to the **Local tracker** (`dev-docs/tickets/open|done/` — fastest for agents), with optional all-ticket Jira synchronization selected in `/ws-setup`. Ready tickets run in `Blocked by:` dependency-frontier waves under one scheduling owner; `ws-graph-engineering` chooses Herdr outer lanes, batched task workers, or sequential execution without duplicate submission.
 
-**Commands:** `/ws-matt` — graph status; `/ws-matt <entry>` routes to an entry node; `/ws-matt setup` bootstraps a project (and installs the omp edge-discipline rule).
+**Commands:** `/ws-matt` shows graph status; `/ws-matt <entry>` routes to an engineering entry node. Run `/ws-setup` before the first engineering flow when the repository is not configured.
 
 **Agents:** `ws-reviewer` (fan-out code review on `@slow`), `researcher`, `tdd-runner` — addressed as `ws:<agent>` in Claude Code (so `ws:ws-reviewer`, `ws:researcher`, `ws:tdd-runner`) and by the agent name in omp — with structured-output schemas for omp's task system.
 
@@ -276,12 +270,12 @@ See [`dev-docs/runbooks/create-plugin.md`](dev-docs/runbooks/create-plugin.md) f
 
 ## Using with omp
 
-The marketplace also works in [omp](https://omp.sh) — its plugin system reads this
-repo's Claude-compatible registry natively (commands, skills, agents). Jira and Outline
-flows are CLI/script-based and fully agent-neutral. Context files follow the
-**AGENTS.md convention**: canonical content in `AGENTS.md`, `CLAUDE.md` is a thin
-`@AGENTS.md` import. See [Use the marketplace with omp](docs/how-to/use-with-omp.md)
-for setup and known gaps.
+The native `@wsagency/omp-ws` package is the supported omp distribution. It
+contains the complete generated command, skill, and agent surface plus the
+native runtime layer. Context files follow the **AGENTS.md convention**:
+canonical content in `AGENTS.md`, while `CLAUDE.md` is a thin `@AGENTS.md`
+import. See [Use WS with omp](docs/how-to/use-with-omp.md) for setup and known
+gaps.
 
 ## Documentation
 

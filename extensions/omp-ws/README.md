@@ -1,11 +1,11 @@
 # @wsagency/omp-ws
 
-WS Agency **full-native suite** for [omp](https://omp.sh) (oh-my-pi). Since
-0.2.0 (ADR 0004) this package IS the complete WS surface on omp — one
-install, zero marketplace coupling:
+WS Agency **full-native consumer suite** for [omp](https://omp.sh) (oh-my-pi).
+Since 0.2.0 (ADR 0004) this package is the complete consumer-facing WS surface
+on omp — one install, zero marketplace coupling:
 
 - **Generated at build time** from `plugins/ws/` in the ws-claude-marketplace
-  repo (single source of truth): `commands/` (8), `skills/` (31), `agents/`
+  repo (single source of truth): `commands/` (7), `skills/` (30), `agents/`
   (14, with omp `@role` model aliases and Claude tool names remapped to
   omp-resolvable ids), `rules/` (4 TTSR/always-apply rules), `templates/`
   (including the hub-only `openwiki-freshness` rule under
@@ -21,7 +21,9 @@ omp discovers the generated directories natively from any enabled npm/link
 plugin (its `omp-plugins` provider scans `commands/*.md`, `skills/<name>/
 SKILL.md`, `rules/*.md`, and the task system scans `agents/*.md`). Claude
 Code users keep using the marketplace `ws` plugin; the two artifacts are
-independent, complete distributions generated from the same source.
+independent consumer distributions generated from the same source. The native
+package intentionally omits the source-checkout-only `ws-repo-maintenance`
+maintainer workflow.
 
 The hub-only `openwiki-freshness` rule carries `alwaysApply: true`, so it is
 deliberately NOT shipped under the auto-scanned `rules/` — it would otherwise
@@ -43,16 +45,17 @@ bun run build          # generate the complete markdown/runtime surface + bundle
 omp plugin link "$(pwd)"
 ```
 
-Restart omp. Once published to npm:
+Install the published package directly:
 
 ```bash
-omp plugin install @wsagency/omp-ws
+omp plugin install @wsagency/omp-ws@0.7.0
 ```
 
 `npm pack` and `npm publish` run the `prepack` script (`bun run build`)
-automatically, so a clean checkout produces a complete tarball with no manual
-build step — every path in `package.json#files` is regenerated from
-`plugins/ws/` before the tarball is created.
+automatically. Release builds require the exact marketplace commit identity and
+emit a checksum manifest for the generated commands, skills, agents, and rules,
+so the pre-publication verifier can prove the tarball matches the reviewed
+source.
 
 **Rebuild after plugin changes:** any change to `plugins/ws/` that the generator
 consumes (commands, skills, agents, rules, templates, or runtime scripts)
@@ -105,37 +108,30 @@ every WS command, skill, agent, and tool:
   `task.enableEffort` (omp 17.1.6+) so callers can choose `hi`, `med`, or `lo`
   per task item.
 
-## Settings
+## Repository policy and machine capability
 
-Declared in `package.json` under `omp.settings`; set globally via
-`omp plugin settings @wsagency/omp-ws` (stored in `omp-plugins.lock.json` under
-omp's plugins dir — profile/XDG/legacy-aware, same resolution as `omp plugin`
-itself: `~/.omp/plugins` by default, `~/.omp/profiles/<p>/plugins` under a named
-`OMP_PROFILE`, or `$XDG_DATA_HOME/omp[/profiles/<p>]/plugins` once omp migrated
-the data root) or per-project in `.omp/plugin-overrides.json`:
+The package declares no settings schema and never reads plugin settings
+or project override files as WS policy. Repository behavior is owned only by
+the checked-in `.wsagency/config.yaml` created by `/ws-setup`:
 
-```json
-{ "settings": { "@wsagency/omp-ws": { "guard": false, "dashboard": false, "jiraProject": "WSC" } } }
-```
+- `runtime` selects session discipline and dangerous-git protection.
+- `ui.session_start_dashboard` plus a canonical `jira` binding selects the Jira
+  assignments widget.
+- `changelog`, `tracker`, and the remaining sections drive their matching
+  native helpers and generated skills.
 
-| Setting | Type | Default | Effect |
-|---|---|---|---|
-| `jiraProject` | string (env `JIRA_PROJECT`) | `""` | Jira project the dashboard scopes to; overrides the `.claude/ws-project.yaml` binding |
-| `guard` | boolean | `true` | fail-safe dangerous-git/rm guard |
-| `dashboard` | boolean | `true` | Jira workload widget on session start |
+Use `/ws-setup reconfigure` for intentional repository-policy changes. A
+legacy-only repository is directed to `/ws-setup`; legacy files are detected
+by path and never parsed as runtime policy.
 
-omp 17.2.4 offers no ExtensionAPI settings accessor, so the extension reads
-the same two stores omp's own `getPluginSettings` reads (project overrides
-global, env fallback and defaults applied per the schema). Legacy
-off-switches keep working: `.omp/ws-guard.off` file or `OMP_WS_GUARD=off`
-for the guard; `hooks.session_start_dashboard` / `ui.session_start_dashboard`
-YAML toggles for the dashboard.
+`OMP_WS_GUARD=on` (or `OMP_WS_GUARD=required`) is the sole explicit
+machine-wide strengthening signal. It may keep dangerous-git protection active
+when a repository disables its own guard, but no package setting, project
+override, or force-off environment value can weaken a committed requirement.
 
-No `features` split: omp's feature mechanism only gates `extensions`/`tools`
-manifest entry points — it cannot gate the directory-convention surface
-(commands/skills/agents/rules), which is the bulk of this package, so a
-split would toggle almost nothing. The `settings` booleans cover the real
-switches.
+The profile/XDG/legacy-aware plugin-path resolver remains only for
+both-installed detection, so the warning reads the same
+`installed_plugins.json` omp uses under named profiles and migrated XDG roots.
 
 ## Behaviors (dist/index.js)
 
@@ -156,21 +152,20 @@ in-stream; this hook is the enforcement layer.
 
 ### changelog-gate (tool_call on `git commit`)
 
-Port of `enforce-changelog.sh`. Only enforces when the project's
-`.claude/docs-config.yaml` sets `auto.changelog_per_commit: true`
-(PR-time is the canonical WS timing; per-commit is opt-in). Passes for:
-absent config, `auto.enforce_via_hooks: false`, docs-only staged sets,
-staged CHANGELOG.md, skip commit types (`docs chore test style build ci`,
-overridable via `changelog.skip_types`), commits whose type cannot be
+The gate reads only canonical `.wsagency/config.yaml`. It enforces when
+`changelog.update_mode` is `commit`, using the configured changelog path and
+skip types. It passes for repositories with no canonical policy or no detected
+legacy source, non-commit cadence, docs-only staged sets, a staged configured
+changelog, configured skip commit types, commits whose type cannot be
 extracted from `-m`, and `--allow-empty`.
 
 ### dashboard (session_start)
 
-Port of `session-start-dashboard.sh`, rendered as a persistent widget below
-the editor plus a one-line notification. Requires `./.claude/ws-project.yaml`
-and `~/.claude/ws/config.yaml`; honors the `dashboard` plugin setting and the
-YAML toggles. Fetches with the same jira-cli query `/ws-status` uses (3s
-timeout). Silent no-op on any failure.
+Native counterpart of the canonical SessionStart dashboard hook, rendered as
+a persistent widget below the editor plus a one-line notification. It requires
+`ui.session_start_dashboard: jira_assignments`, a canonical Jira binding, and a
+working jira-cli integration. Missing machine integration is a silent no-op;
+legacy-only repository policy directs `/ws-setup` without being parsed.
 
 ### both-installed warning (session_start)
 
@@ -188,11 +183,11 @@ error.
 
 ### stop-nudge (session_stop, non-blocking)
 
-Port of `enforce-stop.sh`, deliberately downgraded from a blocking stop hook
-to a visible reminder: when uncommitted code changes exist without a
-CHANGELOG.md update (and docs-config enforcement is on), it shows a warning
-notification and a banner. It never returns `continue`/`decision: "block"`,
-so the turn always settles.
+Native counterpart of the canonical stop hook, deliberately downgraded from a
+blocking stop hook to a visible reminder. It uses canonical changelog policy
+to detect uncommitted code changes without a configured changelog update,
+shows a warning notification and banner, and never returns
+`continue`/`decision: \"block\"`, so the turn always settles.
 
 ### wiki-freshness (session_stop, non-blocking)
 
@@ -214,9 +209,9 @@ skills remain authoritative, and free-form file edits stay equally valid.
 
 | Tool | What it does |
 |---|---|
-| `ws_ticket` | create / move / close tickets in `dev-docs/tickets/open|done` per the local-tracker convention. Refuses with a pointer to `/ws-matt setup` when `dev-docs/tickets/` does not exist. |
+| `ws_ticket` | Create, move, or close tickets in the canonical repository root's `dev-docs/tickets/open|done`. Requires strict-valid `.wsagency/config.yaml` with `tracker.primary: local`; when `jira.sync: all_local_tickets` is configured, every write uses the durable synchronization boundary and fails closed if that boundary is unavailable. |
 | `ws_changelog` | append an entry (`feat|fix|perf|refactor|security|breaking`, text, optional ticket) under `[Unreleased]` in CHANGELOG.md, creating sections in canonical Keep-a-Changelog order; mirrors to `docs/changelog.md` when that file exists. |
-| `ws_adr` | scaffold a lightweight two-tier ADR (`# NNNN — Title` + 1-3 sentences) in `dev-docs/decisions/`, auto-numbered; returns the path. |
+| `ws_adr` | Scaffold a lightweight two-tier ADR (`# NNNN — Title` + 1-3 sentences) in the strict-valid canonical policy's `docs.dev_track/decisions/` directory, auto-numbered; returns the path. |
 
 ## Development
 

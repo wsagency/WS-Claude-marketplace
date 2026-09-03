@@ -9,7 +9,22 @@ disableModelInvocation: true
 
 Break a plan, spec, or conversation into a set of **tickets** — tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
-The issue tracker and triage label vocabulary should have been provided to you — run `/ws-setup-matt-pocock-skills` if not.
+Before reading or publishing tracker state, resolve the installed ws plugin
+root and request the `triage` capability through
+`skills/ws-project-bootstrap/consumer.mjs#inspectCanonicalCapability`. Read the
+tracker, Jira, pull-request, and five triage-label choices only from its
+validated canonical config, then follow the returned operational adapters. If
+blocked, report the canonical ownership line and exact blocker and stop;
+detected repository-local legacy state is named and directed to `/ws-setup`,
+never read as policy or replaced with defaults. Probe only the selected
+tracker integration.
+
+For every Local mutation with `jira.sync: all_local_tickets`, call
+`runCanonicalSynchronizedTrackerOperation`, persist returned mappings and
+pending work, and retry pending work before the next mutation. A Jira outage
+keeps the Local ticket operation valid and records pending synchronization. A
+same-field conflict stops before overwrite and offers Local, Jira, or manual
+merge. Claims, shares, map pointers, and agent state remain local.
 
 ## Process
 
@@ -58,10 +73,12 @@ Iterate until the user approves the breakdown.
 
 ### 5. Publish the tickets to the configured tracker
 
-Publish the approved tickets — they land in the tracker configured by `dev-docs/agents/issue-tracker.md` (written by `/ws-setup-matt-pocock-skills`). **How** depends on that tracker — the tickets are the same either way, only the shape of the blocking edges changes:
+Publish the approved tickets through the operational adapter selected by canonical `tracker.primary`. The ticket content is the same; only the blocking-edge representation changes:
 
-- **Local files** → write one kebab-case file per ticket under `dev-docs/tickets/open/<slug>.md`, blockers first. Each file's "Blocked by" line lists the slugs/titles it depends on. Use the per-ticket file template below — one ticket per file, never a single combined file.
-- **A real issue tracker (GitHub, Linear, …)** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the platform's native blocking / sub-issue relationship where it has one; otherwise set each ticket's "Blocked by" to the blocking issues. Apply the `ready-for-agent` triage label unless instructed otherwise — the tickets are agent-grabbable by construction.
+- **Local** → write one kebab-case file per ticket under `dev-docs/tickets/open/<slug>.md`, blockers first. Each `Blocked by:` line names its dependencies. Apply the configured `triage.labels.ready_for_agent` value.
+- **GitHub** → create GitHub issues in dependency order with `gh`; use native blocked-by/sub-issue relationships when available.
+- **GitLab** → create GitLab issues in dependency order with `glab`; use native blocking relationships when available.
+- **Jira** → create issues in canonical `jira.project` with `jira-cli`, using `jira.default_issue_type` and native issue links for blockers.
 
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
 
@@ -121,8 +138,8 @@ both layers. The precedence table lives in `ws-graph-engineering`.
 ## Graph node
 
 - **Tier:** user-invoked (entry)
-- **Reads:** the plan/spec/conversation (or a passed spec path / issue reference with its comments), the codebase, `CONTEXT.md`, ADRs, the tracker config
-- **Emits:** one ticket per tracer-bullet vertical slice, each declaring its **blocking edges** — the tickets are graph edges as data. Local tracker: `dev-docs/tickets/open/<slug>.md`, blockers first; real tracker: one issue per ticket with native blocking links, labelled `ready-for-agent`
+- **Reads:** the plan/spec/conversation (or a passed spec path / canonical tracker issue with its comments), the codebase, `CONTEXT.md`, ADRs, and the named canonical tracker/triage capability
+- **Emits:** one ticket per tracer-bullet vertical slice, each declaring its blocking edges through the configured Local, GitHub, GitLab, or Jira adapter and carrying the configured ready-for-agent label value
 - **Edges:**
   - when done, recommend → ws-implement per frontier ticket (user-mediated: any ticket whose blockers are all done is grabbable; clear context between tickets)
   - the emitted blocking edges define the runtime frontier that later ws-implement sessions walk (blockers-first; expand–contract sequences for wide refactors)

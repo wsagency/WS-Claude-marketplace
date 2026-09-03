@@ -1,8 +1,24 @@
 import { describe, expect, test } from "bun:test";
-import { evaluateGuard, isInsideCwd, splitSegments, tokenize } from "../src/guard";
+import {
+	evaluateGuard,
+	hasExplicitMachineGuardProtection,
+	isInsideCwd,
+	resolveGuardPolicyCwd,
+	splitSegments,
+	tokenize,
+} from "../src/guard";
 
 const CWD = "/Users/dev/project";
 const HOME = "/Users/dev";
+
+describe("machine guard capability", () => {
+	test("only explicit force-on values strengthen repository policy", () => {
+		expect(hasExplicitMachineGuardProtection({ OMP_WS_GUARD: "on" })).toBe(true);
+		expect(hasExplicitMachineGuardProtection({ OMP_WS_GUARD: "required" })).toBe(true);
+		expect(hasExplicitMachineGuardProtection({ OMP_WS_GUARD: "off" })).toBe(false);
+		expect(hasExplicitMachineGuardProtection({})).toBe(false);
+	});
+});
 
 function blocked(command: string): boolean {
 	return evaluateGuard(command, CWD, HOME) !== undefined;
@@ -37,6 +53,22 @@ describe("git push force", () => {
 	});
 	test("does not confuse other commands mentioning force", () => {
 		expect(blocked("echo 'git push --force is dangerous'")).toBe(false);
+	});
+});
+
+describe("repository policy target", () => {
+	test("uses the target of repeated git -C options", () => {
+		expect(resolveGuardPolicyCwd("git -C ../other -C nested push --force", CWD)).toBe(
+			"/Users/dev/other/nested",
+		);
+	});
+	test("uses the dangerous segment rather than an earlier safe command", () => {
+		expect(resolveGuardPolicyCwd("git status && git -C ../other clean -fd", CWD)).toBe(
+			"/Users/dev/other",
+		);
+	});
+	test("keeps rm protection under the command execution directory", () => {
+		expect(resolveGuardPolicyCwd("rm -rf ../outside", CWD)).toBe(CWD);
 	});
 });
 

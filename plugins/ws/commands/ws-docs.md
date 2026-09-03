@@ -6,9 +6,34 @@ argument-hint: "[init | audit | catchup | repair | write | adr | architecture | 
 
 # /ws-docs — Unified Documentation Entry
 
-Single entry point for all documentation operations in this project. Follows the dual-track-docs convention (`docs/` user, `dev-docs/` internal).
+Single entry point for all documentation operations in this project. Follows the dual-track-docs convention, with track paths supplied by canonical project policy rather than assumed directory names.
 
-Project state lives in `.claude/docs-config.yaml`. Hooks (PreToolUse + Stop) read this file to decide whether to enforce; absent file = no enforcement. Hooks resolve the config from the **current working directory only** and inspect `git diff` there, so enforcement is **repo-local**: it applies inside a repo that carries its own `.claude/docs-config.yaml`, and is inert at a hub root (the hub has no config and its git never sees sub-repo changes). See the hub-sweep init note.
+## Canonical policy and capability readiness
+
+Before project-shape routing or verb dispatch, import `inspectCanonicalPolicy`,
+`derivePolicyReadiness`, and `deriveDocumentationReadiness` from
+`plugins/ws/skills/ws-docs-bootstrap/policy.mjs`. A repository reads policy
+ONLY from its own `.wsagency/config.yaml`; never walk upward for configuration.
+If that file is absent and `.claude/docs-config.yaml` or
+`.claude/ws-project.yaml` exists, stop, name every detected legacy source, and
+direct the user to `/ws-setup`. Never read a legacy file's contents or use it
+as a fallback. Invalid or older canonical policy also stops with `/ws-setup`;
+a future schema stops with an instruction to update the ws plugin.
+
+Require only the capability used by the verb:
+
+- discovery, `audit`, `init`, and `repair` may inspect missing canonical state;
+  they report it, while `init` may add a confirmed docs/changelog fragment.
+- `write`, `adr`, `architecture`, `contributing`, `explain`, and `publish`
+  require `documentation` readiness.
+- `changelog` requires `changelog` readiness. `catchup` and `release-notes`
+  require `maintenance` because they also route documentation/ADR artifacts.
+
+After policy validation, take `user_track`, `dev_track`,
+`default_audience`, `default_scope`, and `adr_for_arch_changes` only from
+`config.docs`; take `update_mode`, `path`, and `skip_types` only from
+`config.changelog`. Do not fill a missing runtime value with a convention
+default.
 
 ## Skills loaded
 
@@ -23,11 +48,10 @@ Project state lives in `.claude/docs-config.yaml`. Hooks (PreToolUse + Stop) rea
 Run **project shape detection** (see `project-hub-conventions`) — it returns
 one of three shapes. The result decides behavior before any verb dispatches:
 
-- **Standalone repo** — no `project.yaml` found (ADR 0007): a valid, permanent
-  state, not a gap. Operate entirely repo-locally — the repo's own `docs/`
-  (user track) and `dev-docs/` (internal track). Product- and repo-wide ADRs
-  use this repo's root `dev-docs/decisions/`; when `CONTEXT-MAP.md` exists,
-  bounded-context ADRs use that context's mapped `dev-docs/decisions/`. No hub,
+- **Standalone repo** — no `project.yaml` found (ADR 0007): operate locally
+  using this repository's configured user and contributor tracks. Repo-wide
+  ADRs use `<config.docs.dev_track>/decisions/`; when `CONTEXT-MAP.md` exists,
+  bounded-context ADRs use that context's mapped contributor track. No hub,
   no sweep, no warning: every verb below runs locally, so skip the hub scope
   routing and the Hub sweep section entirely.
 - **Hub sub-repo** — `project.yaml` was found in a PARENT directory: run
@@ -36,39 +60,41 @@ one of three shapes. The result decides behavior before any verb dispatches:
   repo to document (hubs never carry `docs/`), so verbs run as a **hub sweep**
   across the sub-repos (section below).
 
-In a hub (ADR 0006 — every repo has a `type: working | input | output`),
-resolve `DOCS_REPO` = the hub-relative path of the `type: output, purpose:
-docs` repo when one is registered (legacy spelling: `role: docs`) — it
-receives only USER-track product writes. Product-level INTERNAL writes always
-go to the hub's own `dev-docs/` (the knowledge root), whether or not a docs
-repo exists.
+In a hub, resolve policy at two explicit ownership boundaries:
 
-Scope routing in a hub sub-repo (repo-level behavior is unchanged outside hubs):
-- `write` with user audience → ALWAYS `DOCS_REPO/docs/` (user docs are
-  product-level by definition; requires a registered `purpose: docs` repo)
-- `write` with dev audience → ask scope: **this repo** (local `dev-docs/`) or
-  **product** (hub `dev-docs/`)
-- `adr` → ask scope: local ADR (repo-wide or bounded-context-specific; choose
-  the narrowest local `dev-docs/decisions/`) or product ADR (hub
-  `dev-docs/decisions/`)
-- `architecture` → ask scope; product scope targets
-  hub `dev-docs/architecture.md` (delegate to the ws plugin's
-  hub-architect agent when available)
-- `changelog`, `release-notes` → repo-level, unchanged
-- `explain`, `publish` → operate on `DOCS_REPO`: both take `--root DOCS_REPO` in hub mode (the user track lives there). If no `purpose: docs` repo is registered, refuse and point at `/ws-hub init` step 4b.
-- `init` → DEV track only: do NOT create `docs/` dirs or dispatch `diataxis-writer` (the user track is product-level in `DOCS_REPO` — offer `/ws-hub init` step 4b). Run only the dev-track workers (`architecture-documenter`, the `contributing-generator` dev-track files, `changelog-analyzer`) and create only `dev-docs/` + `.claude/docs-config.yaml` + the AGENTS.md maintenance section, matching the hub-root init wave.
-- `repair`, discovery (no verb) → DEV track only: omit the `docs/` rows from the artifact table (a per-repo `docs/` track is product-level in `DOCS_REPO`, not local); repair and report only `dev-docs/`, `CHANGELOG.md`, config, and the context files.
+- **Hub policy** is the hub root's own `.wsagency/config.yaml`. It governs
+  product user docs and hub-owned internal product artifacts.
+- **Repository policy** is each working repository's own materialized
+  `.wsagency/config.yaml`. It governs only that repository's local docs and
+  changelog work. Never fall back to or merge with hub policy at runtime.
 
-When the hub registers no `purpose: docs` output, user-track product targets
-are unavailable: refuse user-track writes (`write` with user audience,
-`explain`, `publish`) and mention that `/ws-hub init` step 4b (or `/ws-hub add`)
-can register one. Internal-track verbs (`adr`, `architecture`, dev-audience
-`write`) fall back to the local repo's `dev-docs/` in sub-repo position, or the
-hub's own `dev-docs/` at the hub root. Product internal targets are always
-available.
+Resolve `DOCS_REPO` from the hub registry as the path of the single
+`type: output, purpose: docs` repository. It receives product user-track
+writes at `<DOCS_REPO>/<hub config.docs.user_track>`. Product internal writes
+go to `<hub>/<hub config.docs.dev_track>`. Missing or inaccessible output
+repositories are explicit blockers for user-track operations: report the
+registry/path problem and point to `/ws-hub add`; never create, clone,
+initialize, or substitute a repository implicitly.
 
-The scope answer may be cached in `.claude/docs-config.yaml` as
-`default_scope: repo | product | ask` (honor it like `default_audience`).
+Scope routing in a hub sub-repo:
+
+- `write` with user audience → product `DOCS_REPO`, using hub policy.
+- `write` with dev audience → use child `default_scope`; if `ask`, ask for
+  this repository or product. Repository scope uses child `dev_track`;
+  product scope uses hub `dev_track`.
+- `adr` → resolve repository vs product from child `default_scope`; then use
+  that owner's configured `dev_track/decisions/`, with bounded-context
+  narrowing only for repository scope.
+- `architecture` → resolve scope the same way. Product scope delegates to
+  `hub-architect` and targets the hub's configured `dev_track`.
+- `changelog`, `release-notes` → repository-local child policy.
+- `explain`, `publish` → product `DOCS_REPO` using hub policy.
+- `init`, `repair`, discovery → repository-local contributor artifacts using
+  child policy. They never scaffold a local user track in a working repo.
+
+At a hub root, product scope is implicit and uses hub policy. Product-internal
+operations remain available without a docs output repository; user-track
+operations do not.
 
 ### Worker dispatch (all scopes)
 
@@ -88,70 +114,51 @@ chooser and lane definition live in `ws-graph-engineering`.
 
 ### Hub sweep (invoked at the hub root)
 
-Sweep targets: every `type: working` repo (legacy hubs: entries with neither
-`type` nor `role`) in `project.yaml` that exists on disk — `type: input` and
-`type: output` repos are excluded (inputs are raw deliveries processed via
-`/ws-hub intake`, outputs are covered by the product-level rows). Each working
-repo is its own git, so per-repo workers cannot conflict across repos: dispatch
-**one worker per target repo in parallel** through the Worker dispatch contract,
-passing the repo's absolute path as its working root, and aggregate only after
-all report.
-Each subagent honors that repo's own `.claude/docs-config.yaml` (the hub has
-none).
+Sweep targets are every accessible `type: working` repository in
+`project.yaml`; input and output repositories are excluded. Each working
+repository is an independent policy and git boundary. Dispatch one worker per
+target through the Worker dispatch contract and pass that repository's
+absolute root. Every worker validates only the materialized
+`.wsagency/config.yaml` at that root. A missing or blocked child config is a
+repository-specific blocker; never substitute hub policy. Aggregate only
+after all workers report.
 
 Verb behavior at the hub root:
 
-- **no verb (discovery)** — one `docs-doctor` per target repo. Render a
-  compact aggregate table: one row per repo with its worst state per column
-  (`dev-docs/`, `CHANGELOG`, config) — working sub-repos keep only repo-specific
-  `dev-docs/` (user docs are product-level in `DOCS_REPO`), so NEVER report a
-  per-repo `docs/` column — then product rows (`DOCS_REPO` present/missing, hub
-  `dev-docs/` state, `openwiki/` freshness). End with suggested verbs per repo.
-- **audit** — fan out the full repo-level audit wave per target repo: one
-  `docs-doctor` (`mode: audit`), one `public-api-watcher`, and one
-  `arch-watcher` each (three agents per repo, dispatched in parallel across
-  repos), so the merged report can fill the "Public API changes detected" and
-  "ADR candidates" sections; merge into one report grouped by repo.
-- **catchup** — one subagent per target repo returning the three proposal
-  sets (changelog entries, reference updates, ADR candidates). Present ONE
-  combined triage grouped by repo, then apply and commit **per repo, inside
-  that repo's git** (same commit format as repo-level catchup). When
-  `openwiki/` exists and dev-docs changed, offer the prompted wiki refresh at
-  the end.
-- **repair** — fan out discovery, list gaps grouped by repo, one confirmation,
-  then per-repo repair subagents (create only what's missing).
-- **init** — NEVER scaffold docs in the hub itself, and NEVER scaffold a user
-  track (`docs/`) inside a working sub-repo: working sub-repos keep only
-  repo-specific `dev-docs/` (user docs are product-level in `DOCS_REPO`). List
-  target repos missing the convention, let the user pick (AskUserQuestion,
-  multi-select). Resolve the interactive answers ONCE in the main session
-  before dispatch — `default_audience` and the real-`CLAUDE.md` migration offer
-  are user-facing prompts a subagent cannot surface — and pass the resolved
-  values to each repo. Do NOT re-enter the repo-level 4-worker wave per repo
-  through a coordinator subagent (shipped WS workers are leaves and cannot
-  spawn); instead the main session dispatches, per selected repo, the DEV-TRACK
-  workers only — `architecture-documenter` → `dev-docs/architecture.md`,
-  `contributing-generator` → the DEV-track CONTRIBUTING files only (root `CONTRIBUTING.md` router + `dev-docs/development.md`; the `docs/contributing.md` user-track page routes to `DOCS_REPO` with the rest of the user track), `changelog-analyzer`
-  → root `CHANGELOG.md` — while the main session creates that repo's
-  `dev-docs/{decisions,runbooks,reference,explanation}/` + `index.md` stubs,
-  `.claude/docs-config.yaml`, the AGENTS.md maintenance section, and the thin
-  `CLAUDE.md` import. The `diataxis-writer` (user-track tutorial) is excluded
-  here — route all `docs/` scaffolding to `DOCS_REPO` (offer `/ws-hub init`
-  step 4b if none is registered). `auto.enforce_via_hooks` is repo-local (see
-  the header): it takes effect inside each sub-repo, not from the hub-root
-  session, so do not offer it as a hub-level toggle.
-- **write / adr / architecture** — product scope by default (user-track
-  writes → `DOCS_REPO`; internal writes → hub `dev-docs/`; architecture
-  delegates to hub-architect when available) — at the hub root you are at
-  product level, so skip the repo-vs-product question. If no `purpose: docs`
-  repo is registered, user-track product writes are unavailable — say so and
-  point at `/ws-hub init` step 4b.
-- **changelog / release-notes** — per-repo artifacts: ask which repo, then run
-  repo-level inside it.
-- **explain / publish** — operate on `DOCS_REPO` (both take `--root DOCS_REPO`).
-  If no `purpose: docs` repo is registered, refuse and point at `/ws-hub init`
-  step 4b — never fall back to the hub itself (hubs carry no `docs/`, and
-  publishing an empty tree is refused by `outline-sync.py`).
+- **no verb (discovery)** — one `docs-doctor` per working repository with its
+  child policy, plus product rows from hub policy. Render configured
+  `dev_track`, changelog path, and config readiness per child; then render the
+  registered docs output, hub `dev_track`, and `openwiki/` freshness. Do not
+  render a local user-track row for working repositories.
+- **audit** — for every policy-ready working repository, fan out one
+  `docs-doctor` (`mode: audit`), `public-api-watcher`, and `arch-watcher`.
+  Report policy blockers beside skipped repositories and merge the rest by
+  repository.
+- **catchup** — one proposal worker per maintenance-ready repository. Use each
+  child's changelog path/skip types and docs paths. Present one combined
+  triage, then write and commit per repository. If
+  `docs.adr_for_arch_changes` is false, report ADR candidates without
+  proposing automatic ADR creation.
+- **repair** — discover configured paths per child, list missing-only effects
+  grouped by repository, obtain one confirmation, and apply through
+  `ws-docs-bootstrap`. Policy blockers are not repair guesses.
+- **init** — select working repositories, resolve user-facing choices once,
+  then invoke `discoverDocumentation(root, "hub_subrepository", childConfig)`,
+  `planDocumentation`, and `applyDocumentation` for each child. The shared
+  worker owns every missing-only docs write; it must produce no effect beneath
+  `childConfig.docs.user_track`. Each child policy must already be
+  materialized, or the repository is blocked with `/ws-setup`; never copy hub
+  values at runtime. Compose returned AGENTS.md/CLAUDE.md fragments once in
+  the caller.
+- **write / adr / architecture** — product scope by default. Use hub policy:
+  user writes target the explicit docs output and internal writes target the
+  hub `dev_track`. Product architecture delegates to `hub-architect` through
+  the same scratch/diff/confirmation gate as `/ws-hub docs`.
+- **changelog / release-notes** — ask for a working repository, validate its
+  child changelog capability, and run there.
+- **explain / publish** — require the registered, locally accessible docs
+  output and use the hub-configured `user_track`. Never fall back to the hub
+  or initialize an output repository.
 
 ## Routing
 
@@ -165,81 +172,66 @@ it is fast). It returns a structured report. Render this exact table format:
 ```
 ws-docs status
 ─────────────────────────────────────────────────────────────────
-Artifact                  Status      Notes
+Artifact                                  Status      Notes
 ─────────────────────────────────────────────────────────────────
-docs/                     <state>     <note>
-  docs/index.md           <state>     <note>
-  docs/tutorials/         <state>     <note>
-  docs/how-to/            <state>     <note>
-  docs/reference/         <state>     <note>
-  docs/explanation/       <state>     <note>
-dev-docs/                 <state>     <note>
-CHANGELOG.md              <state>     <note>
-docs/changelog.md         <state>     <note>
-CONTRIBUTING.md           <state>     <note>
-.claude/docs-config.yaml  <state>     <note>
+<config.docs.user_track>/                 <state>     <note>
+  <user_track>/index.md                   <state>     <note>
+  <user_track>/tutorials/                 <state>     <note>
+  <user_track>/how-to/                    <state>     <note>
+  <user_track>/reference/                 <state>     <note>
+  <user_track>/explanation/               <state>     <note>
+<config.docs.dev_track>/                  <state>     <note>
+<config.changelog.path>                   <state>     <note>
+<user_track>/changelog.md                 <state>     <note>
+CONTRIBUTING.md                           <state>     <note>
+.wsagency/config.yaml                     <state>     <note>
 
 Suggested:
-  <recommended verbs>
+  <recommended verbs or exact policy blockers>
 ```
 
-State icons: `✓ present`, `⚠ stale|behind|empty`, `✗ missing`. Suggest verbs based on detected gaps. Do not write anything.
+When canonical config is missing with no legacy source, show the config row as
+missing and suggest `/ws-docs init` or `/ws-setup`. A detected legacy source
+is a blocker, not a missing row. State icons are `✓ present`,
+`⚠ stale|behind|empty`, and `✗ missing`. Do not write anything.
 
 ### verb = init
 
-First-time setup. Dispatch the following as one parallel wave through the Worker
-dispatch contract:
+First-time documentation setup delegates every documentation artifact write
+to the shared `ws-docs-bootstrap` worker:
 
-1. `architecture-documenter` → writes `dev-docs/architecture.md`
-2. `contributing-generator` → writes the 3-file CONTRIBUTING set
-3. `changelog-analyzer` → generates root `CHANGELOG.md` from git history (the command owns the `docs/changelog.md` mirror — see below)
-4. `diataxis-writer` (quadrant: `tutorial`) → writes `docs/tutorials/getting-started.md` if absent
+1. Inspect canonical policy. Legacy, malformed, older, and future state follows
+   the fail-closed rules above. If canonical policy is missing, propose a
+   docs-only schema-version-1 config containing the worker's `docs` and
+   `changelog` fragments; if valid canonical policy exists, preserve every
+   configured value and propose only explicitly missing docs/changelog
+   sections.
+2. Resolve and confirm all policy choices once. There is no
+   `enforce_via_hooks` setting: `changelog.update_mode` is the sole maintenance
+   cadence (`commit`, `pull_request`, or `disabled`).
+3. Write or merge `.wsagency/config.yaml`, validate it with
+   `validateCanonicalConfig`, then call
+   `discoverDocumentation(root, projectShape, validatedConfig)`.
+4. Run `planDocumentation(discovery)`. Show every create, preserve, skip, and
+   conflict. The worker is missing-only and never performs catch-up or
+   regeneration.
+5. Resolve any real `CLAUDE.md` migration, then compose the worker's
+   `contextFragments` with other managed AGENTS.md content exactly once.
+6. After confirmation call
+   `applyDocumentation(root, plan, plan.hash, failureInjection)`. On failure,
+   report `.completed` and `.pending` exactly so a rerun plans only remaining
+   missing work.
 
-While they run, in the main session:
-- Create directories: `docs/{tutorials,how-to,reference,explanation,release-notes}/` and `dev-docs/{decisions,runbooks,reference,explanation}/`
-- Create `index.md` stubs in each subfolder if missing (one line: `# <Subfolder>`)
-- Write `.claude/docs-config.yaml` with defaults (see schema below). Prompt the user via AskUserQuestion (or a plain chat question when that tool is unavailable) if they want to override `default_audience` (ask | user | dev) or `auto.enforce_via_hooks` (true | false).
-- Append the "Documentation maintenance" section to root `AGENTS.md` (the canonical, agent-neutral context file; create it if missing). Do not overwrite existing content; if a previous maintenance section is detected in `AGENTS.md` (`# Documentation maintenance` heading), replace it; otherwise append. Never append the maintenance section to `CLAUDE.md`. (Tool-managed marker blocks in a thin `CLAUDE.md` — e.g. OpenWiki's `<!-- OPENWIKI:START/END -->` — are a permitted exception owned by their tool: leave them alone, and do not treat a thin import that carries one as "fat".)
-- Ensure root `CLAUDE.md` is the thin import. If it is missing, create it containing exactly:
-
-  ```markdown
-  @AGENTS.md
-  <!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->
-  ```
-
-- If a real (non-thin) `CLAUDE.md` exists (anything beyond the `@AGENTS.md` import — including a v2.x/v3.x `# Documentation maintenance` section), offer migration via AskUserQuestion: move its content into `AGENTS.md` (dropping any old maintenance section there — the fresh one is appended above), then replace `CLAUDE.md` with the two-line import. If the user declines, leave `CLAUDE.md` untouched; the maintenance section still goes to `AGENTS.md`.
-
-Collect every worker result and summarize only when all report. When
-`changelog-analyzer` reports its `CHANGELOG.md`, mirror it to
-`docs/changelog.md` (Read `CHANGELOG.md` + Write `docs/changelog.md`) — the
-command owns this mirror, not the worker, matching the `changelog` verb. While
-workers
-run, you may print a status block like:
-
-```
-/ws-docs init  —  4 subagents
-
-⏳ architecture-documenter   running   writing dev-docs/architecture.md
-⏳ contributing-generator    running   analyzing tooling...
-✓ diataxis-writer           done      docs/tutorials/getting-started.md
-⏳ changelog-analyzer        running   parsing commits
-```
-
-When all complete, print a final summary listing every file created. Commit nothing automatically — print the suggested commit message:
-
-```
-Suggested commit:
-  git add docs/ dev-docs/ CHANGELOG.md CONTRIBUTING.md AGENTS.md CLAUDE.md .claude/docs-config.yaml
-  git commit -m "chore(docs): initialize dual-track docs via /ws-docs init"
-```
+Print the created paths and a suggested commit using only those paths plus
+`.wsagency/config.yaml`, AGENTS.md, and CLAUDE.md. Never commit automatically.
 
 ### verb = audit
 
 Verbose diagnosis. Run these 3 agents as one parallel wave through the Worker
 dispatch contract:
-1. `docs-doctor` with `mode: audit` — returns the artifact table plus per-commit details since last CHANGELOG entry
-2. `public-api-watcher` — returns detected public API changes needing `docs/reference/` updates
-3. `arch-watcher` — returns ADR candidates (architectural signals)
+1. `docs-doctor` with `mode: audit` and the canonical policy
+2. `public-api-watcher` with the configured user-reference destination
+3. `arch-watcher` with `adr_for_arch_changes`
 
 Collect all three reports, then merge them: render the same table as discovery
 (from `docs-doctor`), then a follow-up section combining the watcher findings:
@@ -264,47 +256,36 @@ Optionally write the report to `docs-audit-<YYYY-MM-DD>.md` if the user opts in 
 
 ### verb = catchup
 
-Run these 3 agents as one parallel wave through the Worker dispatch contract:
-1. `changelog-analyzer` (mode: propose) — returns proposed [Unreleased] entries
-2. `public-api-watcher` — returns reference files needing update
-3. `arch-watcher` — returns ADR candidates
+Run `changelog-analyzer`, `public-api-watcher`, and `arch-watcher` as one
+parallel wave. Pass the configured changelog path and skip types, configured
+user/dev tracks, and `adr_for_arch_changes`. If `changelog.update_mode` is
+`disabled`, omit automatic changelog proposals; an explicit `changelog` verb
+remains available. If `adr_for_arch_changes` is false, list architectural
+candidates for awareness but do not offer automatic ADR creation.
 
-Collect all three reports, then present an interactive triage:
-
-```
-─────────────────
-CHANGELOG (12 entries proposed):
-  [A] Added — OTP login screen (WSC-142)  abc1234
-  [A] Fixed — Token refresh race (WSC-138)  def5678
-  ...
-Action: [a]ccept all, [s]elect, [n]one
-```
-
-Use AskUserQuestion to gather decisions. After the user triages each category, perform the writes (update CHANGELOG.md + mirror, edit reference files, write new ADR(s)). Stage ONLY the paths actually written this run — a hard-coded pathspec aborts and stages nothing when any path is absent (common: no ADRs yet, no `docs/reference/`, or a hub sub-repo with no user track), so build the add list from the files you just wrote:
-
-```bash
-git add <only paths written this run>        # e.g. CHANGELOG.md docs/changelog.md docs/reference/api.md
-git commit -m "docs: catchup since <last_version_or_sha>"
-```
-
-If the write set is empty (the user chose `[n]one` in every category), skip the commit entirely — `git commit` with nothing staged fails with "nothing to commit".
-
-Use the last version tag if one exists; otherwise the SHA of the last CHANGELOG-modifying commit.
-
-In a hub with `openwiki/`, significant dev-docs changes warrant an OpenWiki refresh (see the hub AGENTS.md; AI-driven).
+Present one interactive triage, then write only accepted changes. The
+changelog source is `config.changelog.path`; its user-facing mirror is
+`<config.docs.user_track>/changelog.md`. Reference updates and ADRs use the
+configured track paths and resolved scope. Stage only paths written in this
+run and skip the commit when the write set is empty. Use the last version tag
+when one exists, otherwise the SHA of the last commit that changed the
+configured changelog. In a hub with `openwiki/`, offer refresh only after
+significant internal documentation changes.
 
 ### verb = repair
 
-Re-run discovery, then ALSO check directly (these are not rows the docs-doctor table reports): whether root `AGENTS.md` carries the `# Documentation maintenance` section, and whether root `CLAUDE.md` is the thin `@AGENTS.md` import. List ONLY the ✗-missing items repair can create — exclude every ⚠-stale row (except the changelog mirror below) and every gap repair cannot act on: a behind root `CHANGELOG.md` → suggest `catchup`; a non-thin or stub `CONTRIBUTING.md` → suggest `contributing`; missing `docs/` quadrants → suggest `init`/`write`. Surface those as suggestions, not confirmation rows. The one ⚠ repair WILL fix is a stale `docs/changelog.md` mirror (root `CHANGELOG.md` is ahead of it): re-copy root → mirror, since the root is the canonical single source. Prompt confirmation (AskUserQuestion: proceed | cancel) on the filtered actionable list only. Then create only what's missing — never delete, never modify other present files.
+Re-run discovery with canonical policy and pass the result to the shared
+missing-only bootstrap planner. Repair may create missing configured
+directories, indexes, contributing files, changelog, and managed context
+fragments; it preserves authored content and does not repair stale prose or a
+behind changelog. The one safe refresh is the derived changelog mirror:
+copy `config.changelog.path` to
+`<config.docs.user_track>/changelog.md` when the mirror is missing or stale.
 
-Specifically:
-- Missing `dev-docs/` → create directory tree + `index.md` stubs
-- Missing or stale `docs/changelog.md` → copy from root `CHANGELOG.md` (stale = root is ahead)
-- Missing `.claude/docs-config.yaml` → write defaults
-- Missing AGENTS.md `# Documentation maintenance` section → append it to `AGENTS.md` (create the file if missing). Never append it to `CLAUDE.md`, which stays a thin `@AGENTS.md` import
-- Missing `CLAUDE.md` → create the thin two-line `@AGENTS.md` import (see init)
-
-Print a summary of what was repaired.
+Missing docs/changelog policy is a specific blocker, not permission to write
+defaults. Direct the user to `/ws-docs init` or `/ws-setup`. Apply the
+confirmed missing-only plan through `applyDocumentation`, compose AGENTS.md
+and CLAUDE.md fragments once, and print completed/pending paths.
 
 ### verb = write
 
@@ -313,10 +294,12 @@ Print a summary of what was repaired.
 If type is missing or invalid → AskUserQuestion to pick from the 4 options. If topic is missing → AskUserQuestion for it.
 
 Audience routing:
-- `tutorial` → always user track
-- Others → read `.claude/docs-config.yaml` `default_audience`. If `ask`, AskUserQuestion. If `user` or `dev`, use that.
 
-Resolve destination from audience + type (see dual-track-docs skill routing table). In a hub with `openwiki/`, significant dev-docs changes warrant an OpenWiki refresh (see the hub AGENTS.md; AI-driven).
+- `tutorial` always uses the configured user track.
+- Other types use `config.docs.default_audience`; ask only when it is `ask`.
+
+Resolve the destination from the selected policy owner and configured track.
+Do not use literal `docs/` or `dev-docs/` as runtime fallbacks.
 
 Dispatch the matching agent (foreground, single):
 - `tutorial` → `diataxis-writer` with `quadrant: tutorial`
@@ -330,86 +313,100 @@ Pass `destination_track`, `destination_path`, and `topic` inputs to the agent (p
 
 `$2` = decision text (required; AskUserQuestion if missing).
 
-First resolve a single destination directory and reuse it for every step below. A **product-scope** ADR — hub-root position, or a hub sub-repo whose user chose product scope — lands in `<hub>/dev-docs/decisions/`. For any **local** ADR (repo scope in a hub sub-repo, or any standalone invocation), inspect `CONTEXT-MAP.md`: without one, use the current repo's root `dev-docs/decisions/`; with one, AskUserQuestion whether the decision is repo-wide/system-wide or specific to one mapped bounded context, then use the root or that context's mapped `dev-docs/decisions/`. Never infer a context from a file being edited. At the hub root product scope is the default; inside a hub sub-repo, ask product vs local first (see hub scope routing above).
+Resolve one policy owner and destination directory, then reuse it. Product
+scope uses `<hub>/<hubConfig.docs.dev_track>/decisions/`; repository scope
+uses `<repo>/<childConfig.docs.dev_track>/decisions/`. For local ADRs, inspect
+`CONTEXT-MAP.md` and ask repo-wide vs a mapped bounded context when needed;
+never infer context from the edited file. Explicit `adr` always runs:
+`adr_for_arch_changes` controls automatic maintenance suggestions, not a
+direct user request.
 
-1. Scan that resolved directory for the highest existing number; new number = highest + 1, zero-padded to 4 digits.
-2. Slug the decision text to kebab-case for the filename: `<resolved-dir>/<NNNN>-<slug>.md`.
-3. Dispatch `adr-writer` foreground with the decision, the resolved target path, and project context. Two-tier rule (see the `adr` skill): the lightweight template (`# NNNN — Title` + 1-3 sentences) is the default; full MADR v4.0.0 only for big decisions (breaking / costly to undo / multiple serious options). Both tiers share the same home and numbering.
-4. Print "✓ wrote `<resolved-path>`".
+Scan the resolved directory for the highest number, create the next
+zero-padded filename, dispatch `adr-writer`, and report the configured path.
+Use the lightweight ADR by default and full MADR only for a breaking,
+costly-to-undo, or genuinely multi-option decision.
 
 In a hub with `openwiki/`, significant dev-docs changes warrant an OpenWiki refresh (see the hub AGENTS.md; AI-driven).
 
 ### verb = architecture
 
-Run one `architecture-documenter` through the Worker dispatch contract. Before writing, show a diff vs current `dev-docs/architecture.md` (if it exists) and AskUserQuestion: proceed | cancel. On proceed, write the new version.
-
-**When the project sits in a hub with `openwiki/`** (or its own OpenWiki): `architecture.md` is deliberately THIN — curated boundaries, cross-module contracts, and invariants only, opening with a pointer: "The living structural map is the OpenWiki (`openwiki/architecture/`) — this file records only what a map cannot: intended boundaries and contracts." Do not duplicate the wiki's derivable content; pass this constraint to the agent.
+Resolve repository or product policy first. Generate into a scratch directory,
+diff against `<resolved dev_track>/architecture.md`, and ask
+**proceed | cancel** before copying. Product scope delegates to
+`hub-architect`; repository scope uses `architecture-documenter`. When an
+OpenWiki exists, keep the architecture document thin: intended boundaries,
+contracts, and invariants with a pointer to the derived map.
 
 ### verb = contributing
 
-Run one `contributing-generator` through the Worker dispatch contract. It will produce 3 file contents (root router, `docs/contributing.md`, `dev-docs/development.md`). Before writing, show a diff per file vs current content and AskUserQuestion per file: write | skip. Write only the confirmed files.
+Run one `contributing-generator` with the configured `user_track` and
+`dev_track`. It produces the root router,
+`<user_track>/contributing.md`, and `<dev_track>/development.md`. Show a diff
+and obtain write/skip confirmation per file.
 
 ### verb = changelog
 
-`$2` = optional version (e.g. `v1.3.0`).
+`$2` is an optional version. Dispatch `changelog-analyzer` against
+`config.changelog.path`, passing `skip_types`. Without a version, update
+`[Unreleased]`; with one, cut the version using today's ISO date and open a
+fresh `[Unreleased]`. This explicit verb may run even when `update_mode` is
+`disabled`.
 
-Dispatch `changelog-analyzer` foreground:
-- No version → update `[Unreleased]` section with new entries from commits since last entry
-- With version → close `[Unreleased]` as the new version (with today's ISO date), open a fresh empty `[Unreleased]`
-
-After the agent updates `CHANGELOG.md`, mirror it to `docs/changelog.md` (Read + Write).
+Afterward mirror the configured changelog to
+`<config.docs.user_track>/changelog.md` when documentation policy is present.
+If docs policy is absent, report the unavailable mirror without inventing a
+user track.
 
 ### verb = release-notes
 
-`$2` = version (e.g. `v1.3.0`). If missing, use the most recent git tag; if no tags, AskUserQuestion.
-
-Dispatch `release-notes-writer` foreground. Write to `docs/release-notes/<version>.md` in Linear style with screenshot placeholders (`![screenshot](TODO)`).
+Resolve the version from `$2` or the latest tag, then write
+`<config.docs.user_track>/release-notes/<version>.md`. This operation requires
+both documentation and changelog policy even though it does not update the
+changelog.
 
 ### verb = explain
 
-Not to be confused with `/ws-hub explained` (the `purpose: explained` HTML artefacts).
-
-Regenerate `docs/explained.md`: in hub mode this lives in `DOCS_REPO` (run with `--root DOCS_REPO`; if no `purpose: docs` repo is registered, refuse and point at `/ws-hub init` step 4b); standalone, the current repo. A single Outline-safe onboarding page generated from project.yaml, sub-repo READMEs, dev-docs/architecture.md, and existing docs/ — what the product is, a mermaid architecture diagram of the repos, workflow diagrams, a roles table, install/quickstart, links to deeper docs. First line: `<!-- GENERATED by /ws-docs explain — do not edit by hand -->`. Never hand-edit; regenerate instead. Outline-safe profile only (no raw HTML) — run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/outline-sync.py lint --root <repo>` before finishing, but fix ONLY violations in `docs/explained.md` (the file you generated); report any other violations for the owner to address — do not edit hand-written docs you did not generate (see Constraints).
+Not to be confused with `/ws-hub explained`. Regenerate
+`<resolved user_track>/explained.md` in the standalone repository or explicit
+hub docs output. Require the output repository to be registered and present;
+never create or initialize it. Generate from the available project registry,
+README files, configured internal track, and existing user track. Preserve
+the generated marker and Outline-safe profile, then lint with
+`outline-sync.py lint --root <target-repository>`.
 
 ### verb = publish
 
-Push the user track to Outline. In hub mode the user track lives in `DOCS_REPO` — run every step with `--root DOCS_REPO` (if no `purpose: docs` repo is registered, refuse and point at `/ws-hub init` step 4b; `outline-sync.py push` itself refuses an empty tree). Steps: (1) run
-`python3 ${CLAUDE_PLUGIN_ROOT}/scripts/outline-sync.py lint --root <repo>`
-(if CLAUDE_PLUGIN_ROOT is unset — e.g. in omp — use the plugin's install
-directory: the plugin root containing this command file) —
-abort on violations, listing them per file; (2) run
-`... outline-sync.py push --root <repo>` (add `--dry-run` first and show the
-plan when the user hasn't published before); (3) report created/updated/
-skipped/conflicts/archived from the JSON; conflicts mean the doc changed in
-Outline (revision mismatch) — Outline edits are not synced back; re-apply
-wanted changes in git and push with `--force`, which overwrites the
-conflicting docs; it does NOT skip the lint gate; (4) commit
-`.outline-sync.json` if it changed.
+Push the configured user track to Outline. In hub mode, run against the
+explicit docs output repository while using hub policy; standalone uses the
+current repository. Refuse a missing/unavailable output repository without
+falling back or creating it.
 
-Requires Python 3 + `OUTLINE_API_TOKEN` (or `~/.config/ws-docs/outline-token`);
-if the token is missing, the script exits with setup instructions — relay them.
+Run `outline-sync.py lint --root <target-repository>`, then `push --root` (show
+a dry-run plan before first publication). Report created, updated, skipped,
+conflicted, and archived pages. Outline edits never sync back; `--force`
+overwrites conflicts only after the normal lint gate. Commit
+`.outline-sync.json` only when it changed. Relay missing Python/token setup
+instructions from the script.
 
-## `.claude/docs-config.yaml` defaults
+## Canonical initialization policy
 
-When `init` creates this file, use:
+The bootstrap worker proposes these values only during a confirmed first-time
+docs initialization; consumers never use them as runtime fallbacks:
 
 ```yaml
+schema_version: 1
+
+changelog:
+  update_mode: pull_request
+  path: CHANGELOG.md
+  skip_types: [docs, chore, test, style, build, ci]
+
 docs:
-  initialized: <today ISO date>
-  version: 1
   user_track: docs
   dev_track: dev-docs
   default_audience: ask
-  changelog:
-    # Commit types that never require a CHANGELOG entry.
-    # Falls back to .claude/ws-project.yaml changelog.skip_types, then this default.
-    skip_types: [docs, chore, test, style, build, ci]
-  auto:
-    changelog_per_commit: false  # PR-time is canonical (ws-commit pr); set true only for repos without the PR flow
-    adr_for_arch_changes: true
-    enforce_via_hooks: true
-  surface:
-    subagent_status: compact
+  default_scope: repo
+  adr_for_arch_changes: true
 ```
 
 ## Constraints
@@ -422,10 +419,8 @@ docs:
 
 ## When you finish
 
-In two or three sentences, name what the verb wrote or changed and where it
-landed (`docs/`, `dev-docs/`, `CHANGELOG.md`, or the published Outline page),
-then point at the next move. After a writing verb (`write`, `adr`,
-`architecture`, `contributing`) the files are uncommitted — run `/ws-commit`
-to capture them; after `publish` or `explain` the artefact is live, so re-run
-`/ws-docs` (discovery) or `/ws-docs catchup` if more docs are stale. Routes
-are real `/ws-*` commands in this plugin.
+In two or three sentences, name what the verb changed and the configured path,
+then point at the next move. After a writing verb the files are uncommitted —
+run `/ws-commit`; after `publish` or `explain`, re-run `/ws-docs` discovery or
+`/ws-docs catchup` when maintenance remains. Routes are real `/ws-*` commands
+in this plugin.

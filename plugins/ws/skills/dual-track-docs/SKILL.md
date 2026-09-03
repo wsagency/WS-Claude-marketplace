@@ -51,6 +51,21 @@ The distinction is **audience**, not technical complexity. An API reference for 
 ### Why AGENTS.md
 
 `AGENTS.md` is the canonical, agent-neutral context file: omp and Codex read `AGENTS.md` (walk-up from cwd), and omp never reads a root `CLAUDE.md`. `CLAUDE.md` is kept as a thin import containing nothing but `@AGENTS.md` (plus a comment) so Claude Code loads the same content on every version — and it cannot double-load, because the file holds only the import. Sub-repos and projects follow the same pattern: per-repo rules live in that repo's own `AGENTS.md`, with a thin `CLAUDE.md` import beside it.
+## Canonical policy
+
+`.wsagency/config.yaml` is the only runtime owner of documentation and
+changelog policy. Consumers take track paths, audience/scope defaults, ADR
+maintenance behavior, changelog cadence/path, and skip types from its `docs`
+and `changelog` sections. The Standard layout below is an initialization
+proposal, never a fallback for missing values.
+
+Every repository reads only its own canonical file. In a hub, the hub policy
+governs hub-owned product artifacts and the explicit docs output; each working
+repository owns a materialized child config for repository-local work. Runtime
+inheritance is forbidden. If canonical policy is absent and
+`.claude/docs-config.yaml` or `.claude/ws-project.yaml` is detected, consumers
+name the source and fail closed with `/ws-setup`; they never parse legacy
+content.
 
 ## Routing rules for `/ws-docs`
 
@@ -58,120 +73,92 @@ As of v3.0.0, all docs operations route through `/ws-docs <verb>`:
 
 | Verb | Destination |
 |---|---|
-| (no verb) | Discovery — prints the artifact status table, no writes |
-| `init` | Scaffolds both tracks, writes `.claude/docs-config.yaml`, appends the AGENTS.md maintenance section + thin `CLAUDE.md` import (offers migration when a real CLAUDE.md exists), generates CHANGELOG.md, 3-file CONTRIBUTING |
-| `audit` | Verbose diagnosis; optionally writes `docs-audit-<date>.md` |
-| `catchup` | Proposes CHANGELOG entries, reference updates, ADRs; user triages; one big commit |
-| `repair` | Creates missing artifacts only (never deletes) |
-| `write <type> [topic]` | One Diátaxis doc; `type` = `tutorial \| howto \| reference \| explanation` |
-| `adr "<decision>"` | New ADR in `dev-docs/decisions/` |
-| `architecture` | Regenerate `dev-docs/architecture.md` (diff + confirm) |
-| `contributing` | Regenerate 3-file CONTRIBUTING set (diff + confirm) |
-| `changelog [version]` | Update `[Unreleased]` or cut version; mirrors to `docs/changelog.md` |
-| `release-notes [version]` | Linear-style notes → `docs/release-notes/<version>.md` |
-| `explain` | Regenerate `docs/explained.md` — Outline-safe product onboarding page (in `DOCS_REPO` when in hub mode) |
-| `publish` | Lint + push `docs/` to Outline via `outline-sync.py`; commits `.outline-sync.json`. One-way: Outline edits are never synced back |
+| (no verb) | Discovery of configured artifacts; no writes |
+| `init` | Confirm canonical docs/changelog policy, then apply the shared missing-only bootstrap |
+| `audit` | Verbose diagnosis; optionally writes an audit report |
+| `catchup` | Proposes changelog, reference, and ADR maintenance under canonical policy |
+| `repair` | Creates only missing configured artifacts |
+| `write <type> [topic]` | One Diátaxis document in the configured audience track |
+| `adr "<decision>"` | New ADR under the resolved owner’s configured contributor track |
+| `architecture` | Regenerate configured contributor architecture with diff + confirm |
+| `contributing` | Regenerate root router plus configured user/dev contribution guides |
+| `changelog [version]` | Update configured changelog and derived user-track mirror |
+| `release-notes [version]` | Notes under configured user track |
+| `explain` | Regenerate configured user-track onboarding page |
+| `publish` | Lint + push configured user track to Outline |
 
 ## Hub mode (repo types)
 
-This convention applies in every project shape (project shape detection, see
-`project-hub-conventions`):
+Project shape comes from `project-hub-conventions`; configuration ownership is
+separate:
 
-- **Standalone repo** — the Standard layout above is the whole story: `docs/`
-  for users, `dev-docs/` for contributors, scoped to that one repo.
-- **Hub sub-repo** — repo-specific tracks plus the product routing table: the
-  repo's own `dev-docs/` holds only repo-specific internal docs, while product
-  user docs route to `DOCS_REPO/docs/` and product internal docs route to the
-  hub's own `dev-docs/`.
+- Standalone uses its own canonical policy for both tracks.
+- A hub root uses hub canonical policy for product internal artifacts and the
+  explicit `type: output, purpose: docs` repository.
+- A working child uses its own materialized canonical policy for local
+  contributor docs/changelog. Product requests switch explicitly to hub
+  policy; the child never inherits it.
 
-The rest of this section covers **hub mode** — shared by hub root and hub sub-repo — followed by position-specific routing. When `/ws-docs` detects a
-hub (a `project.yaml` in this or an ancestor directory) it runs in **hub mode**:
-repo types and routing follow the ws plugin's `project-hub-conventions` skill
-(ADR 0006), and `/ws-docs` routes by audience:
+User product docs require a registered, locally accessible docs output.
+Missing output is a visible documentation blocker handled through
+`/ws-hub add`; no docs/setup consumer creates, clones, initializes, or
+substitutes one implicitly. Product internal work remains in the hub's
+configured contributor track and is distinct from repository-local work.
 
-- **User track (product-level)** → the `type: output, purpose: docs` repo
-  (`DOCS_REPO`), when one is registered.
-- **Internal track (product-level)** → the hub's own `dev-docs/` — the
-  product knowledge root (architecture synthesis, product ADRs, runbooks,
-  scoping docs). Always available, whether or not a docs repo exists.
+At the hub root, discovery/audit/catchup/repair/init sweep only
+`type: working` repositories and validate each child config independently.
+Input/output repositories are not swept. Product `write`, `adr`, and
+`architecture` use hub policy; `explain` and `publish` require the docs output.
 
-Split rule and repo-type semantics: see the ws plugin's `project-hub-conventions`
-skill (the canonical source — in a hub, working sub-repos keep only repo-specific
-`dev-docs/`; user docs are always product-level). `CHANGELOG.md` stays per-repo.
-
-Position decides behavior (authoritative detail in the `/ws-docs` command):
-invoked **inside a sub-repo** → repo-level with the product routing below;
-invoked **at the hub root** → **hub sweep** — discovery/audit/catchup/repair/
-init fan out one subagent per `type: working` sub-repo (each its own git, so
-parallel runs never conflict; catchup commits per repo) and aggregate, while
-write/adr/architecture default to product scope without asking, and
-`explain`/`publish` target `DOCS_REPO` (never the hub). Hubs never
-carry `docs/` of their own; input and output repos are never swept.
-
-Scope routing in sub-repo position (repo-level behavior is unchanged outside hubs):
+Inside a working child:
 
 | Verb | Hub-mode routing |
 |---|---|
-| `write` (user audience) | ALWAYS `DOCS_REPO/docs/` — user docs are product-level by definition (requires a `purpose: docs` repo) |
-| `write` (dev audience) | Ask scope: **this repo** (local `dev-docs/`) or **product** (hub `dev-docs/`) |
-| `adr` | Ask scope: local ADR (repo-wide or bounded-context-specific; choose the narrowest local `dev-docs/decisions/`) or product ADR (hub `dev-docs/decisions/`) |
-| `architecture` | Ask scope; product scope targets hub `dev-docs/architecture.md` (delegate to the ws plugin's hub-architect agent when available) |
-| `changelog`, `release-notes` | Repo-level, unchanged |
-| `explain`, `publish` | Operate on `DOCS_REPO` — both take `--root DOCS_REPO` (the user track lives there). If no `purpose: docs` repo is registered, refuse and point at `/ws-hub init` step 4b |
+| `write` (user) | Docs output + hub `docs.user_track` |
+| `write` (dev) | Child or product scope from child `default_scope`; selected owner’s `dev_track` |
+| `adr` | Child or product scope; selected owner’s `dev_track/decisions/` |
+| `architecture` | Child or product scope; selected owner’s `dev_track/architecture.md` |
+| `changelog` | Child `changelog.path` |
+| `release-notes` | Child changelog plus selected user-track policy |
+| `explain`, `publish` | Docs output + hub `user_track`; unavailable without explicit output |
 
-The scope answer may be cached in `.claude/docs-config.yaml` as
-`default_scope: repo | product | ask` (honored like `default_audience`).
+`docs.default_scope` and `docs.default_audience` are explicit canonical
+values. `ask` prompts once; `repo|product` and `user|dev` route without a
+prompt.
 
 ## Audience prompt
 
-For commands that span both tracks, prompt the user once per invocation:
+For commands spanning both audiences, use `docs.default_audience`. When it is
+`ask`, prompt once:
 
 > Who reads this? **External user** (consumer / end-user / library client) **or Internal contributor** (maintainer / dev team)?
 
-The answer can be cached for the session as a default, or persisted in `.claude/docs-config.yaml`:
-
-```yaml
-docs:
-  default_audience: user    # user | dev | ask
-  default_scope: ask        # repo | product | ask — hub mode only
-  user_track: docs
-  dev_track: dev-docs
-```
-
-If the config file exists and `default_audience` is `user` or `dev`, skip the prompt. `default_scope` works the same way for the hub-mode scope question (repo vs product).
+The runtime value comes only from `.wsagency/config.yaml`; session choices are
+ephemeral unless an explicit `/ws-setup reconfigure` changes policy.
 
 ## Changelog mirror
 
-The canonical changelog lives at the repo root (`CHANGELOG.md`) for GitHub's auto-detection. The user-facing site needs the same content under `docs/`. `/ws-docs changelog` always updates both:
-
-1. Write or edit `CHANGELOG.md` at the root
-2. Copy the full contents to `docs/changelog.md` (overwrites — single source remains root)
+The changelog source is `changelog.path`. When documentation policy is
+present, the user mirror is derived at
+`<docs.user_track>/changelog.md`; `/ws-docs changelog` copies the full source
+there. `changelog.update_mode` controls automatic maintenance:
+`pull_request`, `commit`, or `disabled`. Documentation hooks enforce only
+`commit`; they use the configured `skip_types` and never read legacy files.
 
 ## CONTRIBUTING split
 
-`/ws-docs contributing` produces three files:
+`/ws-docs contributing` produces three files using canonical track paths:
 
-1. **`CONTRIBUTING.md` (root)** — thin router (~5 lines):
-   ```markdown
-   # Contributing
+1. root `CONTRIBUTING.md` — thin router;
+2. `<docs.user_track>/contributing.md` — user-side issue, feature, and support
+   guidance; and
+3. `<docs.dev_track>/development.md` — setup, style, tests, and commit
+   conventions.
 
-   Thanks for your interest in this project.
-
-   - **Reporting bugs or requesting features?** See [docs/contributing.md](docs/contributing.md).
-   - **Setting up the project to contribute code?** See [dev-docs/development.md](dev-docs/development.md).
-   ```
-2. **`docs/contributing.md`** — user-side: how to file issues, propose features, ask questions
-3. **`dev-docs/development.md`** — dev-side: local setup, code style, test commands, conventional commits
-
-## VitePress portability
-
-`docs/` is structured to work as a VitePress source directory with no additional config (option A from the design spec). Each Diátaxis subfolder has an `index.md`. Markdown uses YAML frontmatter only where useful. No `.vitepress/` config is generated — users add VitePress themselves if they want.
-
-## Outline-safe markdown profile
-
-The user track syncs to Outline (docs.wsagency.io) via `/ws-docs publish`,
-which lints before pushing (`outline-sync.py lint`). Only `docs/` is bound by
-this profile — `dev-docs/` never syncs.
+The Standard layout's user track is VitePress-portable without generated
+`.vitepress/` configuration. The configured user track syncs to Outline via
+`/ws-docs publish` and is the only track bound by the Outline-safe profile;
+the configured contributor track never syncs.
 
 Allowed:
 - mermaid fences

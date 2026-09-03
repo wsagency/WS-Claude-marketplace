@@ -1,6 +1,6 @@
 # Command Reference
 
-All available commands in the WS Claude Marketplace. Everything ships in the single **ws** plugin; all operations route through eight commands: `/ws-help`, `/ws-matt`, `/ws-setup`, `/ws-docs`, `/ws-hub`, `/ws-commit`, `/ws-status`, `/ws-init`.
+All operations in the single **ws** plugin route through seven commands: `/ws-help`, `/ws-setup`, `/ws-matt`, `/ws-docs`, `/ws-hub`, `/ws-commit`, and `/ws-status`.
 
 Every artifact these commands generate — specs, tickets, ADRs, changelog entries, commit and PR bodies, review findings, research notes, generated docs and HTML — is written in English regardless of the conversation language. Translations are derived copies, never the original.
 
@@ -12,56 +12,64 @@ One-screen orientation guide to the WS system (start here: /ws-matt grill). Adap
 
 ## /ws-matt
 
-Matt Pocock's engineering skills (MIT, vendored) as a graph-engineered skill set: 19 `ws-*` skill nodes (18 vendored + ws-graph-engineering) in two tiers (entry orchestrators / worker disciplines), each SKILL.md carrying a `## Graph node` contract. Full graph: `plugins/ws/docs/graph.md`.
+Matt Pocock's engineering skills (MIT, vendored) form a graph-engineered skill set with two tiers: entry orchestrators and worker disciplines. Each `SKILL.md` declares a `## Graph node` contract. Project setup is outside this graph and belongs only to `/ws-setup`. Full graph: `plugins/ws/docs/graph.md`.
 
 Single entry for the skill graph.
 
 **Arguments:**
 | Name | Required | Description |
 |------|----------|-------------|
-| `entry` | No | None = graph status; `ask`, `implement`, `spec`, `tickets`, `triage`, `grill`, `architecture`, `wayfinder` route to the matching entry node; `setup` bootstraps the project (issue tracker conventions + omp edge-discipline rule) |
+| `entry` | No | None = graph status; `ask`, `implement`, `spec`, `tickets`, `triage`, `grill`, `architecture`, or `wayfinder` routes to the matching engineering entry node |
 
 **Examples:**
 ```
 /ws-matt
 /ws-matt implement
-/ws-matt setup
 ```
 
 ---
 
 ## /ws-docs
 
-Dual-track documentation suite. All documentation operations route through the single `/ws-docs` entry.
+Dual-track documentation suite backed only by canonical
+`.wsagency/config.yaml`. The config's `docs` section owns user/contributor
+track paths, audience/scope, and ADR maintenance; `changelog` owns cadence,
+path, and skip types. Legacy documentation/setup files are migration signals,
+not fallbacks, and direct `/ws-setup`.
 
-Unified documentation command. Run with no verb for discovery (artifact status table, no writes).
-
-Position-aware in WS project hubs (repo types per ADR 0006): invoked **inside a sub-repo** it runs repo-level with product routing (user docs go to the `purpose: docs` output repo; product ADRs and architecture go to the hub's `dev-docs/`; local ADRs resolve to the repo root or a bounded context mapped by `CONTEXT-MAP.md`); invoked **at the hub root** it runs a **hub sweep** — `discovery`/`audit`/`catchup`/`repair` fan out per `type: working` sub-repo in parallel (`audit` dispatches three watchers — `docs-doctor`, `public-api-watcher`, `arch-watcher` — per repo) and aggregate (catchup commits per repo), `write`/`adr`/`architecture` default to product scope, `init` never scaffolds docs in the hub itself (offers per-repo init instead). Input and output repos are never swept.
+Run with no verb for read-only status. `init` and `repair` delegate
+missing-only writes to the shared docs-bootstrap worker.
 
 **Arguments:**
 | Name | Required | Description |
 |------|----------|-------------|
-| `verb` | No | One of: `init`, `audit`, `catchup`, `repair`, `write`, `adr`, `architecture`, `contributing`, `changelog`, `release-notes`, `explain`, `publish` |
-| `args` | No | Verb-specific (e.g. `write <type> [topic]`, `adr "<decision>"`, `changelog [version]`) |
+| `verb` | No | `init`, `audit`, `catchup`, `repair`, `write`, `adr`, `architecture`, `contributing`, `changelog`, `release-notes`, `explain`, or `publish` |
+| `args` | No | Verb-specific arguments |
 
 **Verbs:**
 | Verb | Destination / effect |
 |---|---|
-| (none) | Discovery — status table of docs artifacts |
-| `init` | Scaffold both tracks (`docs/`, `dev-docs/`), config, CHANGELOG, 3-file CONTRIBUTING |
-| `audit` | Verbose diagnosis (docs-doctor + arch-watcher + public-api-watcher in parallel) |
-| `catchup` | Propose CHANGELOG entries, reference updates, ADRs from git history; user triages |
-| `repair` | Create missing artifacts only (never deletes) |
-| `write <type> [topic]` | One Diátaxis doc; `tutorial \| howto \| explanation` → diataxis-writer, `reference` → api-documenter |
-| `adr "<decision>"` | New scope-routed ADR: hub product, repo-wide, or mapped bounded-context `dev-docs/decisions/`; lightweight by default, full MADR v4.0.0 for high-cost decisions |
-| `architecture` | Regenerate `dev-docs/architecture.md` (diff + confirm) |
-| `contributing` | Regenerate 3-file CONTRIBUTING set (diff + confirm) |
-| `changelog [version]` | Update `[Unreleased]` or cut version; mirrors to `docs/changelog.md` |
-| `release-notes [version]` | Linear-style notes → `docs/release-notes/<version>.md` |
-| `explain` | Regenerate `docs/explained.md` — generated Outline-safe onboarding page (not to be confused with `/ws-hub explained`, the `purpose: explained` HTML artefact) |
-| `publish` | Lint Outline-safe profile, push `docs/` to Outline (`outline-sync.py`; needs Python 3 + `OUTLINE_API_TOKEN`) |
+| (none) | Configured-artifact status and capability blockers; no writes |
+| `init` | Confirm canonical docs/changelog policy, invoke the shared missing-only docs bootstrap, and preserve every authored artifact |
+| `audit` | Verbose configured-state diagnosis with docs-doctor, arch-watcher, and public-api-watcher in parallel |
+| `catchup` | Propose canonical-policy changelog entries, reference updates, and ADRs for user triage |
+| `repair` | Create only missing configured artifacts; never deletes |
+| `write <type> [topic]` | One Diátaxis document in the configured audience track; `tutorial \| howto \| explanation` → diataxis-writer, `reference` → api-documenter |
+| `adr "<decision>"` | Scope-routed ADR under the selected owner's configured contributor track; lightweight by default, full MADR v4.0.0 for high-cost decisions |
+| `architecture` | Regenerate configured contributor architecture with diff + confirm |
+| `contributing` | Regenerate the router and configured contribution guides with diff + confirm |
+| `changelog [version]` | Update the configured changelog and derived user-track mirror |
+| `release-notes [version]` | Linear-style notes under the configured user track |
+| `explain` | Regenerate the configured user-track Outline-safe onboarding page |
+| `publish` | Lint the Outline-safe profile and publish the configured user track (`outline-sync.py`; needs Python 3 + `OUTLINE_API_TOKEN`) |
 
-In a hub, `/ws-docs` enters hub mode: user-audience writes route to the `type: output, purpose: docs` repo, while product-internal writes route to the hub's own `dev-docs/`; local ADRs route to the repo root or mapped bounded context (scope prompt, cacheable as `default_scope`).
+In a hub, hub policy governs product artifacts; every working repository uses
+its own materialized child policy for repository-local work. Hub-root
+discovery/audit/catchup/repair/init sweep only working repositories and report
+child blockers independently. Product user operations require the explicit
+`type: output, purpose: docs` repository. A missing output is never created or
+initialized implicitly; register it through `/ws-hub add`. Product-internal
+work remains in the hub's configured contributor track.
 
 **Examples:**
 ```
@@ -90,8 +98,12 @@ Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-h
 | `repos <pull\|clone>` | One git operation across all registered sub-repos |
 | `add [--scan]` | Register a sub-repo; `--scan` discovers unregistered repos first |
 | `describe` | Refresh `description`/`tech` fields from repo contents |
-| `docs` | Cross-repo docs via the hub-architect agent (+ wiki refresh offer) |
+| `docs` | Cross-repo synthesis under the hub config’s contributor track, via scratch/diff/confirmation |
 | `explained` | Generate the `purpose: explained` product explainer artefact (not to be confused with `/ws-docs explain`, the `docs/explained.md` onboarding page) |
+
+`/ws-hub docs` reads only the hub root's canonical policy. Working-repository
+inventories are source evidence, not policy inheritance; repo-local docs
+remain governed by each materialized child config.
 
 ### /ws-hub init
 
@@ -313,7 +325,7 @@ Show the user's Jira workload (assigned tickets grouped by status) and suggest t
 
 **Arguments:** None
 
-**Prerequisites:** `/ws-init` already run
+**Prerequisites:** A strict-valid `.wsagency/config.yaml` with a Jira binding and current jira-cli capability. Run `/ws-setup` to configure or migrate it.
 
 **Example:**
 ```
@@ -324,45 +336,37 @@ Show the user's Jira workload (assigned tickets grouped by status) and suggest t
 
 ## /ws-setup
 
-Safely reconciles an existing standalone Git repository through one deterministic manifest transaction. The currently supported complete profile is the recommended Local Markdown engineering setup.
+The sole public project-setup command. It configures, migrates, repairs, verifies, resumes, and intentionally reconfigures canonical WS policy across standalone repositories, hub working repositories, and hub roots.
 
-**Arguments:** None
+**Arguments:**
 
-**Behavior:**
-1. Discovers repository, setup, and active-runtime state without writing
-2. Asks only whether to use the unresolved recommended Local profile; an existing valid canonical configuration answers that choice
-3. Renders one ordered plan classifying every effect as `CREATE`, `UPDATE`, `PRESERVE`, `SKIP`, `NO-OP`, or `BLOCKING_CONFLICT`, including exact managed-content changes
-4. Obtains one confirmation for the complete plan hash, applies writes in order, and reads each result back before reporting derived readiness
-5. On an aligned rerun, asks no questions, writes nothing, and reports `No changes required`
+| Value | Required | Description |
+|---|---|---|
+| `reconfigure` | No | Intentionally change selected fields in an already strict-valid v1 policy |
 
-The transaction creates `.wsagency/config.yaml`, Local tracker directories, tracker/triage/domain adapters, root context guidance, and managed runtime-policy context. It does not write secrets or machine identity. Repository creation, hub scope, external trackers, documentation bootstrap, migration, and reconfiguration remain blocking or skipped states until their dedicated transaction slices land.
+**Ordinary behavior:**
+1. Discovers repository shape, canonical and legacy state, managed artifacts, active work, and machine capabilities without writing
+2. Applies canonical-first migration precedence and asks only unresolved choices
+3. Strict-validates every materialized `.wsagency/config.yaml` and capability dependency
+4. Renders one complete cross-worker manifest with `CREATE`, `UPDATE`, `PRESERVE`, `SKIP`, `NO-OP`, and `BLOCKING_CONFLICT` effects, exact diffs, external operations, exclusions, and an authorization hash
+5. Obtains one final confirmation, revalidates fingerprints, then runs machine, core, tracker, documentation, and verified legacy-cleanup effects in order
+6. Reads each result back, stops on the first failure without rollback, and reports exact completed and pending work plus independent configuration, engineering, tracker, documentation, and runtime readiness
+7. On an aligned rerun, asks no questions, invokes no worker, writes nothing, and reports `No changes required`
 
-**Example:**
-```
+New repositories default to Local Markdown. GitHub, GitLab, Jira, and Local/Jira all-ticket synchronization are available when their required repository and machine capabilities are present. At a hub root, setup covers the hub and every registered, locally present working repository in registry order while showing input, output, and absent repositories as excluded. Hub values fill missing initial child choices and are materialized; they are not runtime inheritance.
+
+`/ws-setup reconfigure` selects repository scope, policy domains, and concrete fields. It preserves everything unselected, shows dependency closure and data disposition, and uses a secret-free prepare/cutover/cleanup journal with safe resume and reviewed partial acceptance.
+
+Existing repositories should follow [Migrate an existing project to WS 5](../how-to/migrate-to-ws-5.md).
+
+**Examples:**
+```text
 /ws-setup
+/ws-setup reconfigure
 ```
 
 ---
 
-
-## /ws-init
-
-Verify jira-cli setup and configure the marketplace for this user. If run inside a git repo, also binds that project to a specific Jira project key.
-
-**Arguments:** None
-
-**Behavior:**
-1. Checks the `jira` binary and `jira me`; if missing, prints install/token/`jira init` steps and aborts
-2. Writes `~/.claude/ws/config.yaml` (site host + defaults; auth stays in jira-cli)
-3. If in a git repo, asks which Jira project to bind (`jira project list`); writes `./.claude/ws-project.yaml`, preserving existing `changelog:`/`hooks:` settings (with a diff) on re-run
-4. Reports summary and suggests next commands
-
-**Example:**
-```
-/ws-init
-```
-
----
 
 ## Agents
 
@@ -453,9 +457,9 @@ Skills provide knowledge and templates, loaded on demand. All ship in the ws plu
 | Skill | Purpose |
 |-------|---------|
 | `ws-graph-engineering` | Node/edge/state contract, fan-out/synthesize, file-handoff protocol |
-| `ws-ask-matt` + 8 entry nodes | User-invoked orchestrators (implement, to-spec, to-tickets, triage, grill-with-docs, improve-codebase-architecture, wayfinder, setup) |
-| `ws-tdd` + 8 worker nodes | Model-invoked disciplines (code-review, research, prototype, diagnosing-bugs, domain-modeling, codebase-design, resolving-merge-conflicts, grilling) |
-| `ws-project-bootstrap` | Internal `/ws-setup` worker that applies the confirmed core manifest and returns verified readiness |
+| `ws-ask-matt` + 7 other entry nodes | User-invoked orchestrators (implement, to-spec, to-tickets, triage, grill-with-docs, improve-codebase-architecture, wayfinder) |
+| `ws-tdd` + 8 other worker nodes | Model-invoked disciplines (code-review, research, prototype, diagnosing-bugs, domain-modeling, codebase-design, resolving-merge-conflicts, grilling) |
+| `ws-project-bootstrap` + `ws-docs-bootstrap` | Internal `/ws-setup` workers that apply the confirmed core and documentation manifests and return verified readiness |
 
 
 ### Project Hub Skills

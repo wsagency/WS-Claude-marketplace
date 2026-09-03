@@ -1,0 +1,3 @@
+jira:
+  project: WCM
+  default_issue_type: Task

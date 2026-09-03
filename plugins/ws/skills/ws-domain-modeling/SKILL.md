@@ -7,9 +7,19 @@ description: Build and sharpen a project's domain model. Use when the user wants
 
 Actively build and sharpen the project's domain model as you design. This is the *active* discipline — challenging terms, inventing edge-case scenarios, and writing the glossary and decisions down the moment they crystallise. (Merely *reading* `CONTEXT.md` for vocabulary is not this skill — that's a one-line habit any skill can do. This skill is for when you're changing the model, not just consuming it.)
 
+## Canonical domain contract
+
+Resolve the installed ws plugin root and request only the `domain` capability
+through `skills/ws-project-bootstrap/consumer.mjs#inspectCanonicalCapability`.
+Read `domain.layout` from its canonical policy and follow
+`dev-docs/agents/domain.md` only as the operational adapter. If blocked, report
+the ownership line and exact blocker and stop; detected repository-local
+legacy state is named and directed to `/ws-setup`, never read as policy or
+replaced with a layout default. Domain work probes no tracker integration.
+
 ## File structure
 
-Most repos have a single context:
+For canonical `domain.layout: single_context`, the repository has one context:
 
 ```
 /
@@ -21,7 +31,7 @@ Most repos have a single context:
 └── src/
 ```
 
-If a `CONTEXT-MAP.md` exists at the root, the repo has multiple contexts. The map points to where each one lives:
+For canonical `domain.layout: multi_context`, follow the ready domain adapter and `CONTEXT-MAP.md` to the configured contexts:
 
 ```
 /
@@ -88,7 +98,7 @@ If any of the three is missing, skip the ADR. Use the format in [ADR-FORMAT.md](
 ## Graph node
 
 - **Tier:** model-invoked (worker)
-- **Reads:** `CONTEXT.md` (or `CONTEXT-MAP.md` plus per-context files), the applicable hub-, repo-, and bounded-context `dev-docs/decisions/` directories, the terms used live in the conversation, the code (to cross-reference claims against reality)
+- **Reads:** canonical `domain.layout` and its operational adapter; `CONTEXT.md` (or `CONTEXT-MAP.md` plus per-context files), the applicable hub-, repo-, and bounded-context `dev-docs/decisions/` directories, the terms used live in the conversation, and the code
 - **Emits:** inline `CONTEXT.md` glossary updates the moment a term resolves (glossary only — never implementation details); an ADR only when the decision is hard to reverse, surprising without context, and a real trade-off — routed to the hub, repo root, or bounded context by scope
 - **Edges:**
   - then → return to whichever node invoked it (ws-grilling, ws-grill-with-docs, ws-triage, ws-improve-codebase-architecture, ws-codebase-design, ws-wayfinder, ws-implement, ws-to-spec) — this skill never continues anywhere itself

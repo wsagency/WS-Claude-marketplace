@@ -19,6 +19,11 @@ describe("buildPreservedContext", () => {
 		expect(lines).toEqual(["WS: CHANGELOG.md has uncommitted changes — keep the pending changelog entry in mind."]);
 	});
 
+	test("names the canonical changelog path", () => {
+		const lines = buildPreservedContext([], true, "changes/HISTORY.md");
+		expect(lines).toEqual(["WS: changes/HISTORY.md has uncommitted changes — keep the pending changelog entry in mind."]);
+	});
+
 	test("combines both", () => {
 		expect(buildPreservedContext(["t.md"], true)).toHaveLength(2);
 	});

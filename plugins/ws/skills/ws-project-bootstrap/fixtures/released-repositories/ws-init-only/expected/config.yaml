@@ -1,0 +1,33 @@
+schema_version: 1
+tracker:
+  primary: jira
+  pull_requests: ignore
+jira:
+  project: WCM
+  board: 42
+  default_issue_type: Task
+  sync: disabled
+triage:
+  labels:
+    needs_triage: needs-triage
+    needs_info: needs-info
+    ready_for_agent: ready-for-agent
+    ready_for_human: ready-for-human
+    wontfix: wontfix
+domain:
+  layout: single_context
+commit:
+  jira:
+    actions: disabled
+    smart_commit_trailer: false
+    post_commit_comment: false
+    pr_transition: null
+changelog:
+  update_mode: pull_request
+  path: CHANGELOG.md
+  skip_types: [docs, chore]
+ui:
+  session_start_dashboard: jira_assignments
+runtime:
+  session_discipline: required
+  dangerous_git_guard: enabled

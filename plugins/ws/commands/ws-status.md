@@ -1,101 +1,110 @@
 ---
-allowed-tools: Bash, Read
-description: Show your Jira assignments and suggest the next task to pick up
+allowed-tools: Bash, Read, Write, Edit
+description: Show the configured tracker workload and suggest the next ready task
 ---
 
 ## Context
 
-- Global config: !`cat ~/.claude/ws/config.yaml 2>/dev/null || echo "(missing — run /ws-init)"`
-- Project config: !`cat ./.claude/ws-project.yaml 2>/dev/null || echo "(no project binding)"`
+- Canonical policy: !`cat ./.wsagency/config.yaml 2>/dev/null || echo "(missing)"`
 - Current branch: !`git branch --show-current 2>/dev/null || echo "(not a repo)"`
 
-If any Context value above still shows an unexpanded shell command (an exclamation mark followed by a backtick-quoted command), your runtime does not pre-execute context commands — run each one via bash now, before proceeding.
+If a Context command was not expanded, run it now. Do not read
+`~/.claude/ws/config.yaml`, `.claude/ws-project.yaml`, or any other legacy
+configuration as a fallback.
 
 ## Your task
 
-Show the user their current Jira workload and suggest what to pick up next.
+Show the current workload from the tracker owned by `.wsagency/config.yaml` and
+suggest one ready item.
 
-This command is hub-independent: it reads only the Jira config and the current
-git branch, never `project.yaml`, so it runs identically in a standalone repo,
-a hub sub-repo, or at the hub root.
+### 1. Request tracker readiness
 
-### 1. Verify setup
+Resolve the installed ws plugin root, import
+`skills/ws-project-bootstrap/consumer.mjs`, and call
+`inspectCanonicalCapability({ root, capability: "tracker", snapshot })`.
+Build `snapshot` only for the selected tracker after first validating the
+canonical `config` capability:
 
-If `~/.claude/ws/config.yaml` is missing, abort and tell the user to run `/ws-init` first. If `jira me` fails, same — `/ws-init` walks them through jira-cli setup.
+- Local: inspect the local ticket store. Check Jira capability only when
+  `jira.sync` is `all_local_tickets`, and include pending/conflict counts from
+  the local mapping metadata.
+- GitHub: include the git origin and the result of the `gh` capability check.
+- GitLab: include the git origin and the result of the `glab` capability check.
+- Jira: include only the `jira-cli` authentication/project capability.
 
-Read the project binding (if present) from `./.claude/ws-project.yaml`.
+Request `dashboard` separately only when deciding whether to refresh the
+SessionStart cache. Dashboard readiness never blocks the tracker workload.
+Read its `ui.session_start_dashboard` value exactly; do not assume it is on.
 
-### 2. Fetch assignments
+Never probe an unrelated integration. If readiness is false, print its blocker
+verbatim. This names any detected repository-local legacy source and directs
+the user to `/ws-setup`; stop without reading legacy policy or guessing a
+tracker. Report the returned canonical ownership line even when blocked.
 
-Run jira-cli. Build the JQL as a filter clause, **then** append `ORDER BY` —
-the project clause goes inside the filter, before `ORDER BY` (appending it
-after `ORDER BY ...` is a Jira parse error):
+The returned config is policy; `dev-docs/agents/issue-tracker.md` is its
+operational adapter. The adapter never overrides config values.
 
-- Base filter: `assignee = currentUser() AND statusCategory != Done`
-- If a project binding exists, add `AND project = <KEY>` to the filter, before `ORDER BY`.
-- Final JQL: `<filter> ORDER BY priority DESC, updated DESC`
+### 2. Synchronize the Local/Jira boundary
 
-```bash
-jira issue list -q 'assignee = currentUser() AND statusCategory != Done ORDER BY priority DESC, updated DESC' \
-  --plain --no-headers --columns KEY,TYPE,STATUS,PRIORITY,SUMMARY --paginate 0:50
-# scoped to the bound project WSC, the JQL becomes:
-#   assignee = currentUser() AND statusCategory != Done AND project = WSC ORDER BY priority DESC, updated DESC
+When Local is primary and `jira.sync` is `all_local_tickets`, load the local
+ticket mapping and pending metadata and call
+`runCanonicalSynchronizedTrackerOperation` from the same module with
+`operation: null` before reading the queue. Persist the returned mapping and
+pending state. Use the real jira-cli adapter. Show the exact pending remote
+writes and confirm immediately before retrying them.
+
+- Retry pending synchronization first.
+- A Jira outage leaves the Local read available and preserves pending work;
+  display the readiness warning.
+- An unresolved same-field conflict stops before overwrite. Show both values
+  and offer exactly Local, Jira, or manual merge; rerun with the chosen
+  `conflictChoices`.
+- Never send claims, session shares, map pointers, agent state, or other
+  local-only metadata to Jira.
+
+### 3. Fetch the configured queue
+
+Follow the operational adapter and use only the selected backend:
+
+- Local: read `dev-docs/tickets/open/*.md`. A ticket is ready when every item
+  named by `Blocked by:` is present under `dev-docs/tickets/done/`. Use the
+  canonical `triage.labels` values when grouping status.
+- GitHub: use `gh issue list` against the origin identity returned by readiness.
+- GitLab: use `glab issue list` against the origin identity returned by
+  readiness.
+- Jira: query `assignee = currentUser() AND statusCategory != Done AND project
+  = <jira.project> ORDER BY priority DESC, updated DESC`. Keep the project
+  clause before `ORDER BY`.
+
+This command is read-only except for retrying and durably recording configured
+Local/Jira synchronization.
+
+### 4. Render and suggest
+
+Start with:
+
+```text
+Tracker owner: .wsagency/config.yaml
+Primary tracker: <local | github | gitlab | jira>
+Tracker readiness: <ready | degraded | blocked>
+Session dashboard: <disabled | ready | blocked: reason>
 ```
 
-If the plain columns prove insufficient (e.g. sprint info needed), use `--raw` and parse the JSON instead.
+Then group items by the canonical triage roles, show compact counts, mark the
+current branch's matching ticket, and name one suggestion:
 
-### 3. Render compact dashboard
+1. Resume an in-progress, unblocked item.
+2. Otherwise choose the highest-priority ready item.
+3. Break ties by oldest updated time.
 
-Group by status:
-
-```
-━━━ Your Jira Workload — WSC ━━━
-
-🔴 In Progress (2)
-  WSC-142  feat: OTP screen for login                 ▲ High
-           branch: WSC-142-otp-screen (you're here)
-  WSC-138  fix: token refresh race condition          ▲ High
-
-🟡 To Do (5)
-  WSC-150  feat: dark mode toggle                     ◆ Medium
-  WSC-149  chore: upgrade React Native to 0.74        ◆ Medium
-  WSC-145  docs: API contract for v2 endpoints        ▽ Low
-  ... (+2 more)
-
-🔵 In Review (1)
-  WSC-130  feat: biometric auth                       ▲ High
-
-Suggested next: WSC-150 (next priority, no blockers)
-  → git checkout -b WSC-150-dark-mode-toggle
-```
-
-Markers:
-- 🔴 In Progress / red dot
-- 🟡 To Do / yellow
-- 🔵 In Review / blue
-- ⏸  Blocked / pause icon
-- ▲ High / Highest, ◆ Medium, ▽ Low / Lowest
-
-If current branch matches a `^[A-Z]+-\d+` pattern, mark that ticket with `(you're here)`.
-
-### 4. Suggestion logic
-
-For "Suggested next":
-- First "In Progress" ticket → resume that one
-- Else top "To Do" by priority, excluding tickets with status "Blocked" or labels containing "blocked"
-- If multiple at same priority, prefer ones in the active sprint
-- Print the `git checkout -b <key>-<slugified-title>` command so the user can copy
-
-### 5. Cache
-
-After rendering, cache the result to `~/.cache/ws-hub/status.txt` (`mkdir -p ~/.cache/ws-hub/` first — the directory is only auto-created inside a hub) with a timestamp header so the SessionStart hook can show a stale snapshot quickly without a Jira roundtrip.
-
-Read-only — no Jira writes.
+For Local, suggest the ticket path. For a remote tracker, suggest its issue key
+or URL. Refresh `~/.cache/ws-hub/status.txt` only when the separately requested
+dashboard capability is ready and enabled; otherwise skip the cache and report
+why. This cache is presentation state only and is never a policy source.
 
 ## When you finish
 
-In two or three sentences, summarize the user's headline workload (counts per
-status) and name the single suggested next ticket with its
-`git checkout -b` command, then point at the move: pick the ticket up via
-`/ws-matt implement` (or `/ws-matt ask` to re-rank); if a branch is already
-in flight, run `/ws-commit pr` to land it first.
+In two or three sentences, state the primary tracker, readiness or precise
+capability blocker, headline counts, and the single suggested next item. Route
+a ready item to `/ws-matt implement`; if the current branch is already in
+flight, route to `/ws-commit pr`.

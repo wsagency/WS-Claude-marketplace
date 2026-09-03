@@ -1,9 +1,8 @@
 /**
- * ws-guard: fail-safe `tool_call` hook on bash that blocks dangerous git
- * and rm invocations (fails OPEN on internal error — see registerGuard).
- * Enforcement counterpart of the advisory ws-guard-git TTSR rule
- * (dev-docs/omp-native-improvements.md, Tier 1 item 1). It is a
- * self-discipline guard, not a security boundary: parsing is quote-blind,
+ * ws-guard: canonical repository-policy enforcement for dangerous git and rm
+ * invocations. The hook fails open on internal errors, but a dangerous command
+ * fails closed when repository policy is invalid or still legacy.
+ * It is a self-discipline guard, not a security boundary: parsing is quote-blind,
  * so deliberately obfuscated commands can evade it.
  *
  * Blocked:
@@ -13,19 +12,31 @@
  *   - `rm -rf` targeting paths outside the working-directory subtree
  *     (absolute, `~`, `..`-escapes)
  *
- * Off-switches: plugin setting `guard: false` (omp plugin settings /
- * .omp/plugin-overrides.json), `.omp/ws-guard.off` file in cwd, or env
- * OMP_WS_GUARD=off.
+ * Canonical `runtime.dangerous_git_guard` controls repository behavior.
+ * Explicit machine-wide protection may strengthen a disabled repository policy,
+ * but legacy project/package off-switches never weaken committed requirements.
  */
-import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { readWsSettings } from "./lib/settings";
+import {
+	deriveNativeRuntimeBehavior,
+	loadRepositoryPolicy,
+	missingPolicyCapability,
+	NATIVE_RUNTIME_CAPABILITIES,
+	repositoryPolicyProblem,
+} from "./lib/project-policy";
 
 export interface GuardVerdict {
 	block: true;
 	reason: string;
+}
+
+/** Explicit machine capability that may strengthen repository guard policy. */
+export function hasExplicitMachineGuardProtection(
+	env: NodeJS.ProcessEnv = process.env,
+): boolean {
+	return env.OMP_WS_GUARD === "on" || env.OMP_WS_GUARD === "required";
 }
 
 /**
@@ -40,6 +51,38 @@ export function evaluateGuard(command: string, cwd: string, home: string = os.ho
 		if (verdict) return verdict;
 	}
 	return undefined;
+}
+
+/**
+ * Resolve the repository whose policy governs the first dangerous segment.
+ * Git's repeated `-C` options are relative to the preceding target; rm remains
+ * governed by the command execution directory.
+ */
+export function resolveGuardPolicyCwd(command: string, cwd: string): string {
+	for (const segment of splitSegments(command)) {
+		if (evaluateGuard(segment, cwd) === undefined) continue;
+		const tokens = tokenize(segment);
+		const start = commandPosition(tokens);
+		if (start === undefined || tokens[start] !== "git") return cwd;
+		let target = cwd;
+		for (let index = start + 1; index < tokens.length; index += 1) {
+			const token = tokens[index] as string;
+			if (token === "-C") {
+				const operand = tokens[index + 1];
+				if (operand === undefined) return target;
+				target = path.resolve(target, operand);
+				index += 1;
+				continue;
+			}
+			if (token === "-c") {
+				index += 1;
+				continue;
+			}
+			if (!token.startsWith("-")) return target;
+		}
+		return target;
+	}
+	return cwd;
 }
 
 // --- git ---------------------------------------------------------------
@@ -222,29 +265,30 @@ function isShortClusterWith(token: string, letter: string): boolean {
 
 // --- omp wiring -------------------------------------------------------
 
-const OFF_FILE = path.join(".omp", "ws-guard.off");
-
-async function guardDisabled(cwd: string): Promise<boolean> {
-	if (process.env.OMP_WS_GUARD === "off") return true;
-	if (!(await readWsSettings(cwd)).guard) return true;
-	try {
-		await fs.stat(path.join(cwd, OFF_FILE));
-		return true;
-	} catch {
-		return false;
-	}
-}
-
 export function registerGuard(pi: ExtensionAPI): void {
 	pi.on("tool_call", async (event, ctx) => {
 		if (event.toolName !== "bash") return;
 		try {
-			if (await guardDisabled(ctx.cwd)) return;
 			const input = event.input as { command?: unknown; cwd?: unknown };
 			const command = typeof input.command === "string" ? input.command : "";
 			if (command === "") return;
 			const cwd = typeof input.cwd === "string" && input.cwd !== "" ? input.cwd : ctx.cwd;
-			return evaluateGuard(command, cwd);
+			const verdict = evaluateGuard(command, cwd);
+			if (verdict === undefined) return;
+
+			const state = await loadRepositoryPolicy(resolveGuardPolicyCwd(command, cwd));
+			const policyProblem = repositoryPolicyProblem(state, "ws-guard", ["runtime"]);
+			if (policyProblem !== undefined) return { block: true, reason: policyProblem };
+
+			const sharedProtection = hasExplicitMachineGuardProtection();
+			if (state.status === "missing") {
+				return sharedProtection ? verdict : undefined;
+			}
+			if (!state.config?.runtime) {
+				return { block: true, reason: missingPolicyCapability("ws-guard", "runtime policy") };
+			}
+			const behavior = deriveNativeRuntimeBehavior(state, NATIVE_RUNTIME_CAPABILITIES, sharedProtection);
+			return behavior.dangerousGitGuard ? verdict : undefined;
 		} catch (error) {
 			// Fail OPEN by design: an internal guard bug must never block every bash call.
 			pi.logger.warn(`ws-guard: internal error, allowing command: ${String(error)}`);
