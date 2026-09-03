@@ -23,6 +23,21 @@ export function sanitizeTicketFields(fields) {
 	}
 	return sanitized;
 }
+
+export function assertPendingCreateInvariants(syncState) {
+	const mappings = syncState?.mappings || {};
+	const seen = new Set();
+	for (const pending of syncState?.pendingOperations || []) {
+		if (pending.action !== "create") continue;
+		if (mappings[pending.localId]) {
+			throw new Error(`Pending Jira create is invalid for already mapped Local ticket ${pending.localId}.`);
+		}
+		if (seen.has(pending.localId)) {
+			throw new Error(`Pending Jira create correlation is ambiguous for ${pending.localId}.`);
+		}
+		seen.add(pending.localId);
+	}
+}
 function sanitizeOperationPayload(action, payload) {
 	if (action === "comment") return { text: payload?.text };
 	if (action === "status") return { status: payload?.status };
@@ -229,6 +244,14 @@ export async function runTrackerOperation({
 		return resolved;
 	};
 	const normalizePendingCorrelations = async () => {
+		try {
+			assertPendingCreateInvariants(result.nextSyncState);
+		} catch (error) {
+			throw new DurabilityError(
+				error instanceof Error ? error.message : "Pending Jira create invariants failed.",
+				error,
+			);
+		}
 		if (typeof correlationIdResolver !== "function") return;
 		let changed = false;
 		const seen = new Set();

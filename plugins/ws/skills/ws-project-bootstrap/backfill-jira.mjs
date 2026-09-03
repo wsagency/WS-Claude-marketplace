@@ -6,7 +6,13 @@ import {
 	resolveRepositoryIdentity,
 	validateRepositoryIdentity,
 } from "./correlation-identity.mjs";
-import { MAPPED_TICKET_FIELDS, hashField, hashTicketFields, sanitizeTicketFields } from "./sync.mjs";
+import {
+	assertPendingCreateInvariants,
+	MAPPED_TICKET_FIELDS,
+	hashField,
+	hashTicketFields,
+	sanitizeTicketFields,
+} from "./sync.mjs";
 
 function samePendingOperation(left, right) {
 	if (!left || !right) return false;
@@ -83,6 +89,7 @@ export async function auditBackfill(localTickets, syncState, jiraAdapter) {
 }
 
 export function planBackfill(localTickets, syncState, config, repository) {
+	assertPendingCreateInvariants(syncState);
 	const repositoryIdentity = resolveRepositoryIdentity({
 		root: repository?.root,
 		verifiedOrigin: repository?.verifiedOrigin,
@@ -155,6 +162,7 @@ export async function executeBackfill({ plan, syncState, jiraAdapter, persistenc
 	if (typeof jiraAdapter.findTicketByCorrelation !== "function") {
 		throw new TypeError("Backfill Jira adapter must support correlation recovery.");
 	}
+	assertPendingCreateInvariants(syncState);
 	const repositoryIdentity = validateRepositoryIdentity(plan.repositoryIdentity);
 	if (syncState.repositoryIdentity && syncState.repositoryIdentity !== repositoryIdentity) {
 		throw new Error("Backfill sync state belongs to a different repository.");

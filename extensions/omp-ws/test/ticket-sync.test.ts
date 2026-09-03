@@ -193,7 +193,9 @@ function testCommentCorrelationStore(
 			return [...jira.commentProperties.entries()].flatMap(([commentId, correlationId]) => {
 				try {
 					const expected = resolveJiraCorrelation(repositoryIdentity, project, correlationId);
-					return expected.id === correlationId ? [{ commentId, correlationId }] : [];
+					const comment = jira.issue?.fields.comment.comments.find(candidate => String(candidate.id) === commentId);
+					if (expected.id !== correlationId || typeof comment?.body !== "string") return [];
+					return [{ commentId, correlationId, text: comment.body }];
 				} catch {
 					return [];
 				}
@@ -360,16 +362,17 @@ describe("Jira CLI adapter", () => {
 			"WCM",
 			sourceCommentCorrelation,
 		).id;
-		const comment = await adapter.addComment("WCM-1", "Durable comment", sourceCommentCorrelation);
+		const exactComment = "  Durable comment  \n";
+		const comment = await adapter.addComment("WCM-1", exactComment, sourceCommentCorrelation);
 		expect(comment.id).toBe("10001");
 		expect(comment.version).toBe(jira.issue!.fields.updated);
 		expect(jira.commentPropertyCalls).toEqual([{
 			issueId: "WCM-1",
-			text: "Durable comment",
+			text: exactComment,
 			correlationId: scopedCommentCorrelation,
 		}]);
-		expect(jira.issue?.fields.comment.comments[0]?.body).toBe("Durable comment");
-		expect((await adapter.getTicket("WCM-1"))?.comments?.[0]?.text).toBe("Durable comment");
+		expect(jira.issue?.fields.comment.comments[0]?.body).toBe(exactComment);
+		expect((await adapter.getTicket("WCM-1"))?.comments?.[0]?.text).toBe(exactComment);
 	});
 
 	test("rejects malformed and ambiguous comment ownership properties before mutation", async () => {
@@ -389,7 +392,7 @@ describe("Jira CLI adapter", () => {
 		const malformedAdapter = createJiraAdapter(root, CONFIG, malformed.run, {
 			...malformedBase,
 			async correlations() {
-				return [{ correlationId: "malformed", commentId: "10001" }];
+				return [{ correlationId: "malformed", commentId: "10001", text: "Visible" }];
 			},
 		});
 		await expect(malformedAdapter.addComment("WCM-1", "Visible", "source-comment"))
@@ -410,7 +413,7 @@ describe("Jira CLI adapter", () => {
 		const ambiguousAdapter = createJiraAdapter(root, CONFIG, ambiguous.run, {
 			...ambiguousBase,
 			async correlations() {
-				return ["10001", "10002"].map(commentId => ({ correlationId: scopedCorrelation, commentId }));
+				return ["10001", "10002"].map(commentId => ({ correlationId: scopedCorrelation, commentId, text: "Visible" }));
 			},
 		});
 		await expect(ambiguousAdapter.addComment("WCM-1", "Visible", "source-comment"))
@@ -467,7 +470,12 @@ describe("Jira CLI adapter", () => {
 				});
 			}
 			const properties = Array.isArray(createdPayload?.properties) ? createdPayload.properties : [];
-			return new Response(JSON.stringify({ comments: [{ id: "10001", properties }] }), {
+			return new Response(JSON.stringify({
+				startAt: 0,
+				maxResults: 100,
+				total: 1,
+				comments: [{ id: "10001", body: createdPayload?.body, properties }],
+			}), {
 				status: 200,
 				headers: { "Content-Type": "application/json" },
 			});
@@ -479,11 +487,94 @@ describe("Jira CLI adapter", () => {
 			request,
 		});
 		const correlationId = await store.resolve("d".repeat(64));
+		const exactText = "  Exact visible comment  \n";
 
-		expect(await store.create("WCM-1", "Exact visible comment", correlationId)).toBe("10001");
-		expect(createdPayload?.body).toBe("Exact visible comment");
+		expect(await store.create("WCM-1", exactText, correlationId)).toBe("10001");
+		expect(createdPayload?.body).toBe(exactText);
 		expect(String(createdPayload?.body)).not.toContain(correlationId);
-		expect(await store.correlations("WCM-1")).toEqual([{ correlationId, commentId: "10001" }]);
+		expect(await store.correlations("WCM-1")).toEqual([{
+			correlationId,
+			commentId: "10001",
+			text: exactText,
+		}]);
+	});
+
+	test("paginates comment properties through the reported Jira total", async () => {
+		const configPath = path.join(root, "jira-cli.yml");
+		await fs.writeFile(
+			configPath,
+			"server: https://jira.example.test\nlogin: ws@example.test\nauth_type: basic\n",
+			"utf8",
+		);
+		const repositoryIdentity = resolveRepositoryIdentity({ root });
+		const correlationId = createJiraCorrelation(repositoryIdentity, "WCM", "e".repeat(64)).id;
+		const offsets: number[] = [];
+		const request = async (input: string | URL | Request): Promise<Response> => {
+			const startAt = Number(new URL(String(input)).searchParams.get("startAt"));
+			offsets.push(startAt);
+			const comments = startAt === 0
+				? Array.from({ length: 100 }, (_, index) => ({
+					id: String(index + 1),
+					body: `Comment ${index + 1}`,
+					properties: [],
+				}))
+				: [{
+					id: "101",
+					body: "Recovered beyond page one",
+					properties: [{
+						key: "ws.agency.comment-correlation",
+						value: {
+							schemaVersion: 1,
+							correlationId,
+							repositoryIdentity,
+							project: "WCM",
+						},
+					}],
+				}];
+			return new Response(JSON.stringify({
+				startAt,
+				maxResults: 100,
+				total: 101,
+				comments,
+			}), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		};
+		const store = createJiraCommentPropertyStore(root, repositoryIdentity, "WCM", {
+			configPath,
+			apiToken: "test-token",
+			request,
+		});
+
+		expect(await store.correlations("WCM-1")).toEqual([{
+			correlationId,
+			commentId: "101",
+			text: "Recovered beyond page one",
+		}]);
+		expect(offsets).toEqual([0, 100]);
+	});
+
+	test("recovers an owned comment missing from jira-cli's bounded comment list", async () => {
+		const jira = new FakeJiraCli(issue());
+		const repositoryIdentity = resolveRepositoryIdentity({ root });
+		const sourceCorrelationId = "older-comment";
+		const correlationId = createJiraCorrelation(repositoryIdentity, "WCM", sourceCorrelationId).id;
+		const adapter = createJiraAdapter(root, CONFIG, jira.run, {
+			resolve: () => correlationId,
+			correlations: async () => [{
+				correlationId,
+				commentId: "older-101",
+				text: "  Older exact comment  \n",
+			}],
+			create: async () => {
+				throw new Error("must not create a duplicate comment");
+			},
+		});
+
+		expect(await adapter.addComment("WCM-1", "  Older exact comment  \n", sourceCorrelationId))
+			.toEqual({ id: "older-101", version: jira.issue!.fields.updated });
+		expect(jira.issue?.fields.comment.comments).toEqual([]);
 	});
 
 	test("scopes search and create markers to the repository contract", async () => {
@@ -491,7 +582,12 @@ describe("Jira CLI adapter", () => {
 		try {
 			const sourceCorrelationId = "b".repeat(64);
 			const jira = new FakeJiraCli();
-			const firstAdapter = createJiraAdapter(root, CONFIG, jira.run);
+			const firstAdapter = createJiraAdapter(
+				root,
+				CONFIG,
+				jira.run,
+				testCommentCorrelationStore(jira, resolveRepositoryIdentity({ root })),
+			);
 			await firstAdapter.createTicket({ title: "First repository" }, sourceCorrelationId);
 			const firstMarker = jira.calls.find(call => call.args[1] === "create")?.args.join(" ");
 			const firstExpected = createJiraCorrelation(
@@ -501,7 +597,12 @@ describe("Jira CLI adapter", () => {
 			);
 			expect(firstMarker).toContain(firstExpected.marker);
 
-			const secondAdapter = createJiraAdapter(secondRoot, CONFIG, jira.run);
+			const secondAdapter = createJiraAdapter(
+				secondRoot,
+				CONFIG,
+				jira.run,
+				testCommentCorrelationStore(jira, resolveRepositoryIdentity({ root: secondRoot })),
+			);
 			expect(await secondAdapter.findTicketByCorrelation(sourceCorrelationId)).toBeNull();
 			const secondLookup = jira.calls.filter(call => call.args[1] === "list").at(-1)?.args.join(" ");
 			const secondExpected = createJiraCorrelation(
@@ -541,7 +642,10 @@ describe("native synchronization boundary", () => {
 			return `Created ${localPath}`;
 		};
 
-		const message = await createSynchronizedOperation(runner)({
+		const message = await createSynchronizedOperation(
+			runner,
+			testCommentCorrelationStore(jira, resolveRepositoryIdentity({ root })),
+		)({
 			root,
 			policy: policy(root),
 			operation: operation("create", localId, {
@@ -597,7 +701,11 @@ describe("native synchronization boundary", () => {
 			},
 		};
 
-		await expect(createSynchronizedOperation(jira.run)(request)).rejects.toThrow(
+		const synchronize = createSynchronizedOperation(
+			jira.run,
+			testCommentCorrelationStore(jira, resolveRepositoryIdentity({ root })),
+		);
+		await expect(synchronize(request)).rejects.toThrow(
 			"simulated crash after Local write",
 		);
 		expect(localCalls).toBe(1);
@@ -609,7 +717,7 @@ describe("native synchronization boundary", () => {
 			requiresLocalVerification: true,
 		});
 
-		const resumed = await createSynchronizedOperation(jira.run)(request);
+		const resumed = await synchronize(request);
 		expect(resumed).toContain("Jira synchronized");
 		expect(localCalls).toBe(1);
 		expect(jira.calls.filter(call => call.args[1] === "create")).toHaveLength(1);
@@ -621,7 +729,10 @@ describe("native synchronization boundary", () => {
 		jira.outage = true;
 		const localId = "offline-create";
 		const localPath = path.join(root, "dev-docs", "tickets", "open", `${localId}.md`);
-		const message = await createSynchronizedOperation(jira.run)({
+		const message = await createSynchronizedOperation(
+			jira.run,
+			testCommentCorrelationStore(jira, resolveRepositoryIdentity({ root })),
+		)({
 			root,
 			policy: policy(root),
 			operation: operation("create", localId, { title: "Offline", description: "Still local", type: "Task" }, async () => {
@@ -819,7 +930,10 @@ describe("native synchronization boundary", () => {
 		});
 		let performed = false;
 
-		const pending = createSynchronizedOperation(jira.run)({
+		const pending = createSynchronizedOperation(
+			jira.run,
+			testCommentCorrelationStore(jira, resolveRepositoryIdentity({ root })),
+		)({
 			root,
 			policy: policy(root),
 			operation: operation("status", localId, { status: "done" }, async () => {

@@ -72,6 +72,55 @@ test("rejects synchronization unless Local/Jira all-ticket policy is ready", asy
 	assert.match(noBinding.readiness.reason, /explicit ready Jira binding required/);
 });
 
+test("rejects ambiguous and already-mapped pending creates before persistence or Jira calls", async t => {
+	const cases = [
+		{
+			name: "duplicate",
+			mappings: {},
+			pendingOperations: ["first", "second"].map(correlationId => ({
+				correlationId,
+				localId: "local-create",
+				action: "create",
+				payload: { title: "Create" },
+			})),
+			error: /ambiguous/,
+		},
+		{
+			name: "mapped",
+			mappings: { "local-create": mapping("WCM-1", { title: "Create" }) },
+			pendingOperations: [{
+				correlationId: "pending-create",
+				localId: "local-create",
+				action: "create",
+				payload: { title: "Create" },
+			}],
+			error: /already mapped/,
+		},
+	];
+	for (const candidate of cases) {
+		await t.test(candidate.name, async () => {
+			const jiraAdapter = new FakeJiraAdapter();
+			const persistence = durablePersistence({}, {
+				mappings: candidate.mappings,
+				pendingOperations: candidate.pendingOperations,
+			});
+			const result = await runOperation({
+				config: CONFIG,
+				localStore: {},
+				syncState: persistence.syncSnapshot(),
+				operation: null,
+				jiraAdapter,
+				persistence,
+			});
+
+			assert.equal(result.readiness.ready, false);
+			assert.match(result.readiness.reason, candidate.error);
+			assert.deepEqual(persistence.events, []);
+			assert.deepEqual(jiraAdapter.getCallLog(), []);
+		});
+	}
+});
+
 test("reconciles before, performs the Local operation once, then reconciles after", async () => {
 	const jiraAdapter = new FakeJiraAdapter({
 		"WCM-1": { id: "WCM-1", title: "Before" },

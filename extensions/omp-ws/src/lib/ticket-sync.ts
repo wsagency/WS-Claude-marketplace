@@ -497,6 +497,10 @@ function normalizeAdfText(value: unknown): string {
 	return adfText(value).replace(/\n{3,}/g, "\n\n").trim();
 }
 
+function jiraCommentText(value: unknown): string {
+	return typeof value === "string" ? value : normalizeAdfText(value);
+}
+
 function parseDescriptionEnvelope(value: unknown): { description: string; acceptanceCriteria?: string; correlationId?: string } {
 	let text = normalizeAdfText(value);
 	let acceptanceCriteria: string | undefined;
@@ -555,7 +559,7 @@ function parseIssue(raw: unknown): ParsedIssue {
 	for (const candidate of rawComments) {
 		if (!isUnknownRecord(candidate) || (typeof candidate.id !== "string" && typeof candidate.id !== "number")) continue;
 		const id = String(candidate.id);
-		const text = normalizeAdfText(candidate.body);
+		const text = jiraCommentText(candidate.body);
 		const authorRecord = isUnknownRecord(candidate.author) ? candidate.author : null;
 		const author = typeof authorRecord?.displayName === "string"
 			? authorRecord.displayName
@@ -615,7 +619,7 @@ function changed(left: unknown, right: unknown): boolean {
 
 export interface JiraCommentCorrelationStore {
 	resolve(sourceCorrelationId: string): string | Promise<string>;
-	correlations(issueId: string): Promise<Array<{ correlationId: string; commentId: string }>>;
+	correlations(issueId: string): Promise<Array<{ correlationId: string; commentId: string; text: string }>>;
 	create(issueId: string, text: string, correlationId: string): Promise<string>;
 }
 
@@ -762,35 +766,68 @@ export function createJiraCommentPropertyStore(
 			return resolveJiraCorrelation(repositoryIdentity, project, sourceCorrelationId).id;
 		},
 		async correlations(issueId) {
-			const raw = await requestJson(
-				"GET",
-				`/issue/${encodeURIComponent(issueId)}/comment?maxResults=100&expand=properties`,
-			);
-			if (!isUnknownRecord(raw) || !Array.isArray(raw.comments)) {
-				throw new Error(`Jira comments for ${issueId} returned an invalid property response.`);
-			}
-			const correlations: Array<{ correlationId: string; commentId: string }> = [];
-			for (const comment of raw.comments) {
-				if (!isUnknownRecord(comment) || (typeof comment.id !== "string" && typeof comment.id !== "number")) continue;
-				const commentId = String(comment.id);
-				const properties = Array.isArray(comment.properties)
-					? comment.properties.filter(property =>
-						isUnknownRecord(property) && property.key === COMMENT_CORRELATION_PROPERTY
-					)
-					: [];
-				if (properties.length > 1) {
-					throw new Error(`Jira comment ${commentId} has ambiguous WS correlation properties.`);
-				}
-				if (properties.length === 0) continue;
-				const correlationId = jiraCommentPropertyValue(
-					(properties[0] as Record<string, unknown>).value,
-					repositoryIdentity,
-					project,
-					commentId,
+			const correlations: Array<{ correlationId: string; commentId: string; text: string }> = [];
+			const commentIds = new Set<string>();
+			let startAt = 0;
+			while (true) {
+				const raw = await requestJson(
+					"GET",
+					`/issue/${encodeURIComponent(issueId)}/comment?startAt=${startAt}&maxResults=100&expand=properties`,
 				);
-				if (correlationId) correlations.push({ correlationId, commentId });
+				if (
+					!isUnknownRecord(raw)
+					|| !Array.isArray(raw.comments)
+					|| !Number.isInteger(raw.startAt)
+					|| (raw.startAt as number) < 0
+					|| !Number.isInteger(raw.maxResults)
+					|| (raw.maxResults as number) <= 0
+					|| !Number.isInteger(raw.total)
+					|| (raw.total as number) < 0
+				) {
+					throw new Error(`Jira comments for ${issueId} returned an invalid paginated property response.`);
+				}
+				if (raw.startAt !== startAt) {
+					throw new Error(`Jira comments for ${issueId} returned an unexpected page offset.`);
+				}
+				for (const comment of raw.comments) {
+					if (!isUnknownRecord(comment) || (typeof comment.id !== "string" && typeof comment.id !== "number")) {
+						continue;
+					}
+					const commentId = String(comment.id);
+					if (commentIds.has(commentId)) {
+						throw new Error(`Jira comments for ${issueId} returned duplicate comment ${commentId}.`);
+					}
+					commentIds.add(commentId);
+					const properties = Array.isArray(comment.properties)
+						? comment.properties.filter(property =>
+							isUnknownRecord(property) && property.key === COMMENT_CORRELATION_PROPERTY
+						)
+						: [];
+					if (properties.length > 1) {
+						throw new Error(`Jira comment ${commentId} has ambiguous WS correlation properties.`);
+					}
+					if (properties.length === 0) continue;
+					const correlationId = jiraCommentPropertyValue(
+						(properties[0] as Record<string, unknown>).value,
+						repositoryIdentity,
+						project,
+						commentId,
+					);
+					if (correlationId) {
+						correlations.push({
+							correlationId,
+							commentId,
+							text: jiraCommentText(comment.body),
+						});
+					}
+				}
+				const nextStart = startAt + raw.comments.length;
+				if (nextStart >= (raw.total as number)) return correlations;
+				if (raw.comments.length === 0) {
+					throw new Error(`Jira comments for ${issueId} ended before the reported total.`);
+				}
+				startAt = nextStart;
 			}
-			return correlations;
 		},
 		async create(issueId, text, correlationId) {
 			const expected = resolveJiraCorrelation(repositoryIdentity, project, correlationId);
@@ -840,14 +877,11 @@ export function createJiraAdapter(
 	const getParsed = async (id: string): Promise<ParsedIssue> => {
 		const result = await invoke(["issue", "view", id, "--raw", "--comments", "100"], `Jira view ${id}`);
 		const parsed = parseIssue(parseJsonOutput(`Jira view ${id}`, result.stdout));
-		if ((parsed.ticket.comments?.length ?? 0) === 0) return parsed;
+		const comments = parsed.ticket.comments ?? [];
 		for (const ownership of await effectiveCommentStore.correlations(id)) {
 			const expected = resolveJiraCorrelation(repositoryIdentity, project, ownership.correlationId);
 			if (expected.id !== ownership.correlationId) {
 				throw new Error(`Jira comment ${ownership.commentId} has mismatched WS correlation ownership.`);
-			}
-			if (!parsed.ticket.comments?.some(comment => comment.id === ownership.commentId)) {
-				throw new Error(`Jira comment correlation ${ownership.correlationId} refers to an unavailable comment.`);
 			}
 			const existingOwner = parsed.commentCorrelations?.get(ownership.correlationId);
 			if (existingOwner) {
@@ -855,8 +889,12 @@ export function createJiraAdapter(
 					`Jira comment correlation ${ownership.correlationId} is ambiguously owned by ${existingOwner} and ${ownership.commentId}.`
 				);
 			}
+			const parsedComment = comments.find(comment => comment.id === ownership.commentId);
+			if (parsedComment) parsedComment.text = ownership.text;
+			else comments.push({ id: ownership.commentId, text: ownership.text });
 			parsed.commentCorrelations?.set(ownership.correlationId, ownership.commentId);
 		}
+		parsed.ticket.comments = comments;
 		return parsed;
 	};
 	const adapter: JiraAdapter = {
@@ -962,7 +1000,7 @@ export function createJiraAdapter(
 			if (typeof text !== "string" || text.trim() === "") {
 				throw new Error("Jira comment text must be a non-empty string.");
 			}
-			const visibleText = text.trim();
+			const visibleText = text;
 			const before = await getParsed(id);
 			const existingId = before.commentCorrelations?.get(correlationId);
 			if (existingId) {
