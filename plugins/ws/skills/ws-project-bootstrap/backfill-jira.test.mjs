@@ -220,6 +220,54 @@ test("planBackfill retains repository-owned pending create intents for recovery"
 	assert.equal(plan.unmapped[0].correlationId, pendingOperations[0].correlationId);
 });
 
+test("rejects multiple pending creates for one Local ticket before migration or Jira calls", async () => {
+	const localId = "LOCAL-AMBIGUOUS";
+	const localTickets = {
+		[localId]: { id: localId, title: "Ambiguous create", status: "open", type: "Task" },
+	};
+	const config = { jira: { project: "TKT", default_issue_type: "Task" } };
+	const first = hashField("first-create-intent");
+	const second = hashField("second-create-intent");
+	const duplicateState = {
+		mappings: {},
+		pendingOperations: [first, second].map(correlationId => ({
+			correlationId,
+			localId,
+			action: "create",
+			payload: { title: "Ambiguous create" },
+		})),
+	};
+
+	assert.throws(
+		() => planBackfill(localTickets, duplicateState, config, TEST_REPOSITORY),
+		/Pending Jira create correlation is ambiguous/,
+	);
+
+	const plan = planBackfill(
+		localTickets,
+		{ mappings: {}, pendingOperations: [] },
+		config,
+		TEST_REPOSITORY,
+	);
+	const persistence = durablePersistence({
+		repositoryIdentity: plan.repositoryIdentity,
+		...duplicateState,
+	});
+	const jiraAdapter = new FakeJiraAdapter();
+	const result = await executeBackfill({
+		plan,
+		syncState: persistence.snapshot(),
+		jiraAdapter,
+		persistence,
+	});
+
+	assert.deepEqual(result.completed, []);
+	assert.deepEqual(result.pending, [localId]);
+	assert.match(result.errors[0].error, /Pending Jira create correlation is ambiguous/);
+	assert.equal(jiraAdapter.getCallLog().length, 0);
+	assert.equal(persistence.events.length, 0);
+});
+
 test("migrates a bare native create intent before backfill recovery without losing journal state", async () => {
 	const localId = "LOCAL-NATIVE-PENDING";
 	const localTickets = {

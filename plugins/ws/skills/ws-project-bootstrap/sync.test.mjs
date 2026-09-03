@@ -346,13 +346,14 @@ test("posts two intentional comments with identical text under distinct durable 
 	const jiraAdapter = new FakeJiraAdapter({
 		[jiraId]: { id: jiraId, version: 1, title: "Repeated comment", comments: [] },
 	});
-	const operation = { action: "comment", localId, payload: { text: "Same text" } };
+	const firstOperation = { action: "comment", intentId: "repeated-comment-1", localId, payload: { text: "Same text" } };
+	const secondOperation = { action: "comment", intentId: "repeated-comment-2", localId, payload: { text: "Same text" } };
 
 	await runOperation({
 		config: CONFIG,
 		localStore: persistence.localSnapshot(),
 		syncState: persistence.syncSnapshot(),
-		operation,
+		operation: firstOperation,
 		jiraAdapter,
 		persistence,
 	});
@@ -360,7 +361,7 @@ test("posts two intentional comments with identical text under distinct durable 
 		config: CONFIG,
 		localStore: persistence.localSnapshot(),
 		syncState: persistence.syncSnapshot(),
-		operation,
+		operation: secondOperation,
 		jiraAdapter,
 		persistence,
 	});
@@ -377,6 +378,19 @@ test("posts two intentional comments with identical text under distinct durable 
 		["Same text", "Same text"],
 	);
 	assert.deepEqual(second.nextSyncState.pendingOperations, []);
+});
+
+test("requires caller-stable identities for comment operations", async () => {
+	await assert.rejects(
+		runOperation({
+			config: CONFIG,
+			localStore: {},
+			syncState: { mappings: {}, pendingOperations: [] },
+			operation: { action: "comment", localId: "missing-intent", payload: { text: "Unsafe retry" } },
+			jiraAdapter: new FakeJiraAdapter(),
+		}),
+		/stable caller-generated intentId/,
+	);
 });
 
 test("create and comment synchronization never disclose Local workflow metadata", async () => {
@@ -407,7 +421,7 @@ test("create and comment synchronization never disclose Local workflow metadata"
 		config: CONFIG,
 		localStore: created.nextLocalStore,
 		syncState: created.nextSyncState,
-		operation: { action: "comment", localId: "local-7", payload: { text: "Hello" } },
+		operation: { action: "comment", intentId: "private-metadata-comment-1", localId: "local-7", payload: { text: "Hello" } },
 		jiraAdapter
 	});
 	assert.equal(commented.nextLocalStore["local-7"].comments[0].text, "Hello");
@@ -747,7 +761,7 @@ test("durably journals each remote intent and returned version before the next m
 	assert.equal(persistence.syncSnapshot().mappings["local-durable"].jiraVersion, 2);
 	assert.equal(persistence.syncSnapshot().mappings["local-durable"].fieldHashes.title, hashField("Updated"));
 
-	await invoke({ action: "comment", localId: "local-durable", payload: { text: "Durable comment" } });
+	await invoke({ action: "comment", intentId: "durable-comment-1", localId: "local-durable", payload: { text: "Durable comment" } });
 	assert.equal(persistence.syncSnapshot().mappings["local-durable"].jiraVersion, 3);
 	assert.deepEqual(
 		persistence.localSnapshot()["local-durable"].comments,
@@ -839,7 +853,7 @@ test("recovers an accepted comment without posting it twice when its result was 
 		config: CONFIG,
 		localStore: persistence.localSnapshot(),
 		syncState: persistence.syncSnapshot(),
-		operation: { action: "comment", localId, payload: { text: "Accepted once" } },
+		operation: { action: "comment", intentId: "accepted-comment-1", localId, payload: { text: "Accepted once" } },
 		jiraAdapter,
 		persistence,
 	});
@@ -863,6 +877,75 @@ test("recovers an accepted comment without posting it twice when its result was 
 		persistence.localSnapshot()[localId].comments,
 		[{ id: jiraAdapter.existingData[jiraId].comments[0].id, text: "Accepted once" }],
 	);
+});
+
+test("retries a completed comment intent without duplicating the remote comment", async () => {
+	const localId = "local-comment-completion-crash";
+	const jiraId = "WCM-COMMENT-COMPLETION";
+	const jiraAdapter = new FakeJiraAdapter({
+		[jiraId]: { id: jiraId, version: 1, title: "Comment completion", comments: [] },
+	});
+	const persistence = durablePersistence(
+		{ [localId]: { id: localId, title: "Comment completion", comments: [] } },
+		{
+			mappings: {
+				[localId]: {
+					...mapping(jiraId, { title: "Comment completion", comments: [] }),
+					jiraVersion: 1,
+				},
+			},
+			pendingOperations: [],
+		},
+	);
+	const readSyncState = persistence.readSyncState.bind(persistence);
+	let failCompletionReadBack = true;
+	persistence.readSyncState = async () => {
+		const state = await readSyncState();
+		if (
+			failCompletionReadBack
+			&& state.pendingOperations.length === 0
+			&& state.mappings[localId]?.jiraVersion === 2
+		) {
+			failCompletionReadBack = false;
+			throw new Error("response lost after durable completion");
+		}
+		return state;
+	};
+	const operation = {
+		action: "comment",
+		intentId: "comment-completion-crash-1",
+		localId,
+		payload: { text: "Exactly once" },
+	};
+
+	const interrupted = await runOperation({
+		config: CONFIG,
+		localStore: persistence.localSnapshot(),
+		syncState: persistence.syncSnapshot(),
+		operation,
+		jiraAdapter,
+		persistence,
+	});
+	assert.equal(interrupted.readiness.ready, false);
+	assert.equal(jiraAdapter.existingData[jiraId].comments.length, 1);
+	assert.equal(persistence.syncSnapshot().pendingOperations.length, 0);
+
+	const retried = await runOperation({
+		config: CONFIG,
+		localStore: persistence.localSnapshot(),
+		syncState: persistence.syncSnapshot(),
+		operation,
+		jiraAdapter,
+		persistence,
+	});
+	const calls = jiraAdapter.getCallLog().filter(call => call.method === "addComment");
+	assert.equal(retried.readiness.ready, true);
+	assert.equal(jiraAdapter.existingData[jiraId].comments.length, 1);
+	assert.equal(calls.length, 2);
+	assert.equal(calls[0].args.correlationId, calls[1].args.correlationId);
+	assert.deepEqual(persistence.localSnapshot()[localId].comments, [
+		{ id: jiraAdapter.existingData[jiraId].comments[0].id, text: "Exactly once" },
+	]);
 });
 
 test("pulls Jira-only mapped changes before applying the Local operation", async () => {

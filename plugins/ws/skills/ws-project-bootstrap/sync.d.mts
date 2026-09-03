@@ -50,6 +50,8 @@ export interface EffectiveTrackerOperation {
 	action: "create" | "update" | "comment" | "status";
 	localId: string;
 	payload: Record<string, unknown>;
+	/** Stable caller-generated operation identity. Required for comment actions. */
+	intentId?: string;
 }
 
 export interface TrackerOperation extends EffectiveTrackerOperation {

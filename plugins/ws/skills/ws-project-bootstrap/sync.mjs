@@ -84,6 +84,7 @@ function operationCorrelationId(operation) {
 		localId: operation.localId,
 		action: operation.action,
 		payload: operation.payload,
+		...(operation.action === "comment" ? { intentId: operation.intentId } : {}),
 	});
 }
 
@@ -372,29 +373,6 @@ export async function runTrackerOperation({
 			!state.pendingOperations.some(candidate => candidate.correlationId === pending.correlationId)
 		);
 	};
-	const replacePendingIntent = async (pending, replacement) => {
-		const index = result.nextSyncState.pendingOperations.findIndex(candidate =>
-			candidate.correlationId === pending.correlationId
-		);
-		if (index === -1) throw new DurabilityError("Pending operation disappeared before its prepared intent was updated.");
-		const collision = result.nextSyncState.pendingOperations.find((candidate, candidateIndex) =>
-			candidateIndex !== index && candidate.correlationId === replacement.correlationId
-		);
-		if (collision) throw new DurabilityError(`Pending operation identity collision for ${replacement.localId}.`);
-		result.nextSyncState.pendingOperations[index] = replacement;
-		await persistSyncAndReadBack(state =>
-			state.pendingOperations.some(candidate =>
-				pendingMatches(candidate, replacement) &&
-				candidate.phase === "prepared" &&
-				candidate.localBeforeHash === replacement.localBeforeHash
-			) &&
-			(pending.correlationId === replacement.correlationId ||
-				!state.pendingOperations.some(candidate => candidate.correlationId === pending.correlationId))
-		);
-		return result.nextSyncState.pendingOperations.find(candidate =>
-			candidate.correlationId === replacement.correlationId
-		);
-	};
 	const persistReturned = async (pending, returnedId, returnedVersion) => {
 		const correlationId = pending.correlationId;
 		const current = result.nextSyncState.pendingOperations.find(candidate =>
@@ -617,6 +595,13 @@ export async function runTrackerOperation({
 		throw error;
 	}
 
+	if (
+		operation?.action === "comment"
+		&& (typeof operation.intentId !== "string" || operation.intentId.trim() === "")
+	) {
+		throw new TypeError("Comment operations require a stable caller-generated intentId.");
+	}
+
 	const effectiveOperation = operation ? {
 		...operation,
 		payload: sanitizeOperationPayload(operation.action, operation.payload),
@@ -625,14 +610,7 @@ export async function runTrackerOperation({
 		? operationCorrelationId(effectiveOperation)
 		: null;
 	const requestedPending = effectiveOperation ? {
-		correlationId: resolveCorrelationId(
-			effectiveOperation.action === "comment"
-				? hashField({
-					requestCorrelationId: sourceRequestCorrelationId,
-					intentId: crypto.randomUUID(),
-				})
-				: sourceRequestCorrelationId
-		),
+		correlationId: resolveCorrelationId(sourceRequestCorrelationId),
 		requestCorrelationId: sourceRequestCorrelationId,
 		localId: effectiveOperation.localId,
 		action: effectiveOperation.action,
@@ -670,15 +648,6 @@ export async function runTrackerOperation({
 		};
 	}
 	if (pending) effectiveOperation.payload = structuredClone(pending.payload);
-	try {
-		pending = await persistIntent(pending);
-	} catch (error) {
-		if (error instanceof DurabilityError) {
-			failDurability(error);
-			return result;
-		}
-		throw error;
-	}
 
 	if (freshPending) {
 		const mapping = result.nextSyncState.mappings[effectiveOperation.localId];
@@ -694,13 +663,12 @@ export async function runTrackerOperation({
 						false,
 					);
 					if (inspected.blocked) {
-						await cancelPending(pending);
 						return result;
 					}
 					effectiveOperation.payload = effectiveOperation.action === "comment"
 						? effectiveOperation.payload
 						: inspected.payload;
-					pending = await replacePendingIntent(pending, {
+					pending = {
 						correlationId: effectiveOperation.action === "comment"
 							? pending.correlationId
 							: resolveCorrelationId(operationCorrelationId(effectiveOperation)),
@@ -714,7 +682,7 @@ export async function runTrackerOperation({
 						phase: "prepared",
 						localBeforeHash: hashField(result.nextLocalStore[effectiveOperation.localId]),
 						requiresLocalVerification: typeof operation.isLocalApplied === "function",
-					});
+					};
 				}
 			} catch (error) {
 				if (error instanceof DurabilityError) {
@@ -725,6 +693,16 @@ export async function runTrackerOperation({
 			}
 		}
 	}
+	try {
+		pending = await persistIntent(pending);
+	} catch (error) {
+		if (error instanceof DurabilityError) {
+			failDurability(error);
+			return result;
+		}
+		throw error;
+	}
+
 
 	if (pendingPhase(pending) === "prepared") {
 		const currentLocalHash = hashField(result.nextLocalStore[pending.localId]);

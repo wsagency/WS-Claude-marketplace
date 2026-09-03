@@ -108,9 +108,13 @@ export function planBackfill(localTickets, syncState, config, repository) {
 		};
 		const sanitizedFields = sanitizeTicketFields(mappedFields);
 		const unsupportedFields = Object.keys(ticket.localMetadata || {});
-		const pending = syncState.pendingOperations?.find(operation =>
+		const pendingCreates = syncState.pendingOperations?.filter(operation =>
 			operation.action === "create" && operation.localId === localId
-		);
+		) ?? [];
+		if (pendingCreates.length > 1) {
+			throw new Error(`Pending Jira create correlation is ambiguous for ${localId}.`);
+		}
+		const pending = pendingCreates[0];
 		let correlation;
 		let previousCorrelationId;
 		if (pending) {
@@ -195,6 +199,18 @@ export async function executeBackfill({ plan, syncState, jiraAdapter, persistenc
 				|| correlation.marker !== item.correlationMarker
 			) {
 				throw new Error(`Backfill correlation ownership verification failed for ${item.localId}.`);
+			}
+			const pendingCreates = nextSyncState.pendingOperations.filter(operation =>
+				operation.action === "create" && operation.localId === item.localId
+			);
+			if (pendingCreates.length > 1) {
+				throw new Error(`Pending Jira create correlation is ambiguous for ${item.localId}.`);
+			}
+			if (
+				pendingCreates.length === 1
+				&& ![item.correlationId, item.previousCorrelationId].includes(pendingCreates[0].correlationId)
+			) {
+				throw new Error(`Pending Jira create correlation changed for ${item.localId}.`);
 			}
 			if (item.previousCorrelationId && item.previousCorrelationId !== item.correlationId) {
 				const legacyIndexes = nextSyncState.pendingOperations
