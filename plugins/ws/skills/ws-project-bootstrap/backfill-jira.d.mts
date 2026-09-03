@@ -20,6 +20,7 @@ export interface UnmappedTicket {
 	correlationId: string;
 	correlationToken: string;
 	correlationMarker: string;
+	previousCorrelationId?: string;
 }
 
 export interface BackfillPlan {

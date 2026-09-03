@@ -49,6 +49,9 @@ function cloneSyncState(state) {
 		pendingOperations: (state?.pendingOperations || []).map(pending => ({
 			...pending,
 			payload: structuredClone(sanitizeOperationPayload(pending.action, pending.payload)),
+			...(pending.localPatch !== undefined
+				? { localPatch: structuredClone(sanitizeTicketFields(pending.localPatch)) }
+				: {}),
 		})),
 	};
 }
@@ -62,11 +65,12 @@ function pendingMatches(candidate, expected) {
 		requestCorrelationId(candidate) === requestCorrelationId(expected) &&
 		candidate.localId === expected.localId &&
 		candidate.action === expected.action &&
-		hashField(candidate.payload) === hashField(expected.payload);
+		hashField(candidate.payload) === hashField(expected.payload) &&
+		hashField(candidate.localPatch || {}) === hashField(expected.localPatch || {});
 }
 
 function pendingRequestMatches(candidate, requested) {
-	return requestCorrelationId(candidate) === requested.correlationId &&
+	return requestCorrelationId(candidate) === requestCorrelationId(requested) &&
 		candidate.localId === requested.localId &&
 		candidate.action === requested.action;
 }
@@ -109,6 +113,7 @@ export async function runTrackerOperation({
 	jiraAdapter,
 	persistence,
 	conflictChoices = [],
+	correlationIdResolver,
 }) {
 	const result = {
 		nextLocalStore: cloneLocalStore(localStore),
@@ -181,6 +186,9 @@ export async function runTrackerOperation({
 
 	const replaceSyncState = state => {
 		const cloned = cloneSyncState(state);
+		if (cloned.repositoryIdentity !== undefined) {
+			result.nextSyncState.repositoryIdentity = cloned.repositoryIdentity;
+		}
 		result.nextSyncState.mappings = cloned.mappings;
 		result.nextSyncState.pendingOperations = cloned.pendingOperations;
 	};
@@ -211,6 +219,51 @@ export async function runTrackerOperation({
 		result.readiness = { ready: false, reason: error.message };
 		result.blockers.push(error.message);
 	};
+	const resolveCorrelationId = sourceCorrelationId => {
+		if (typeof correlationIdResolver !== "function") return sourceCorrelationId;
+		const resolved = correlationIdResolver(sourceCorrelationId);
+		if (typeof resolved !== "string" || resolved === "") {
+			throw new TypeError("Correlation identity resolver must return a non-empty string.");
+		}
+		return resolved;
+	};
+	const normalizePendingCorrelations = async () => {
+		if (typeof correlationIdResolver !== "function") return;
+		let changed = false;
+		const seen = new Set();
+		const normalized = result.nextSyncState.pendingOperations.map(pending => {
+			let correlationId;
+			try {
+				correlationId = resolveCorrelationId(pending.correlationId);
+			} catch (error) {
+				throw new DurabilityError(
+					`Pending operation correlation identity is invalid for ${pending.localId}.`,
+					error,
+				);
+			}
+			const candidate = correlationId === pending.correlationId
+				? pending
+				: {
+					...pending,
+					correlationId,
+					requestCorrelationId: pending.requestCorrelationId ?? pending.correlationId,
+				};
+			if (seen.has(candidate.correlationId)) {
+				throw new DurabilityError(`Pending operation correlation identity collision for ${pending.localId}.`);
+			}
+			seen.add(candidate.correlationId);
+			if (candidate !== pending) changed = true;
+			return candidate;
+		});
+		if (!changed) return;
+		result.nextSyncState.pendingOperations = normalized;
+		await persistSyncAndReadBack(state =>
+			state.pendingOperations.length === normalized.length &&
+			normalized.every(expected =>
+				state.pendingOperations.some(candidate => pendingMatches(candidate, expected))
+			)
+		);
+	};
 
 	const mergeLocalFields = (localId, payload) => {
 		const current = result.nextLocalStore[localId] || { id: localId, comments: [], localMetadata: {} };
@@ -224,7 +277,7 @@ export async function runTrackerOperation({
 	const conflictChoice = (localId, field) =>
 		conflictChoices.find(candidate => candidate.localId === localId && candidate.field === field);
 
-	const inspectMappedTicket = async (localId, mapping, jiraTicket, proposedPayload = {}) => {
+	const inspectMappedTicket = async (localId, mapping, jiraTicket, proposedPayload = {}, persist = true) => {
 		const localTicket = result.nextLocalStore[localId] || { id: localId };
 		const pulled = {};
 		const alignedHashes = {};
@@ -264,23 +317,25 @@ export async function runTrackerOperation({
 			}
 		}
 
-		if (blocked) return { blocked: true, payload: proposedPayload };
-		if (Object.keys(pulled).length > 0) {
-			mergeLocalFields(localId, pulled);
-			await persistLocalAndReadBack(store =>
-				Object.entries(pulled).every(([field, value]) => hashField(store[localId]?.[field]) === hashField(value))
-			);
+		if (blocked) return { blocked: true, payload: proposedPayload, localPatch: {} };
+		if (persist) {
+			if (Object.keys(pulled).length > 0) {
+				mergeLocalFields(localId, pulled);
+				await persistLocalAndReadBack(store =>
+					Object.entries(pulled).every(([field, value]) => hashField(store[localId]?.[field]) === hashField(value))
+				);
+			}
+			if (Object.keys(alignedHashes).length > 0 || mapping.jiraVersion !== jiraTicket.version) {
+				mapping.fieldHashes = { ...mapping.fieldHashes, ...alignedHashes };
+				mapping.jiraVersion = jiraTicket.version;
+				await persistSyncAndReadBack(state => {
+					const persisted = state.mappings[localId];
+					return persisted?.jiraVersion === jiraTicket.version &&
+						Object.entries(alignedHashes).every(([field, fieldHash]) => persisted.fieldHashes?.[field] === fieldHash);
+				});
+			}
 		}
-		if (Object.keys(alignedHashes).length > 0 || mapping.jiraVersion !== jiraTicket.version) {
-			mapping.fieldHashes = { ...mapping.fieldHashes, ...alignedHashes };
-			mapping.jiraVersion = jiraTicket.version;
-			await persistSyncAndReadBack(state => {
-				const persisted = state.mappings[localId];
-				return persisted?.jiraVersion === jiraTicket.version &&
-					Object.entries(alignedHashes).every(([field, fieldHash]) => persisted.fieldHashes?.[field] === fieldHash);
-			});
-		}
-		return { blocked: false, payload: proposedPayload };
+		return { blocked: false, payload: proposedPayload, localPatch: pulled };
 	};
 
 	const persistIntent = async pending => {
@@ -552,12 +607,33 @@ export async function runTrackerOperation({
 		return { conflict: false, outage: false, durabilityFailure: false };
 	};
 
+	try {
+		await normalizePendingCorrelations();
+	} catch (error) {
+		if (error instanceof DurabilityError) {
+			failDurability(error);
+			return result;
+		}
+		throw error;
+	}
+
 	const effectiveOperation = operation ? {
 		...operation,
 		payload: sanitizeOperationPayload(operation.action, operation.payload),
 	} : null;
+	const sourceRequestCorrelationId = effectiveOperation
+		? operationCorrelationId(effectiveOperation)
+		: null;
 	const requestedPending = effectiveOperation ? {
-		correlationId: operationCorrelationId(effectiveOperation),
+		correlationId: resolveCorrelationId(
+			effectiveOperation.action === "comment"
+				? hashField({
+					requestCorrelationId: sourceRequestCorrelationId,
+					intentId: crypto.randomUUID(),
+				})
+				: sourceRequestCorrelationId
+		),
+		requestCorrelationId: sourceRequestCorrelationId,
 		localId: effectiveOperation.localId,
 		action: effectiveOperation.action,
 		payload: effectiveOperation.payload,
@@ -568,7 +644,7 @@ export async function runTrackerOperation({
 		if (before.awaitingLocal) blockPreparedLocal(before.awaitingLocal, "has not been applied.");
 		return result;
 	}
-	if (completedRequestCorrelations.has(requestedPending.correlationId)) return result;
+	if (completedRequestCorrelations.has(requestCorrelationId(requestedPending))) return result;
 
 	let pending = result.nextSyncState.pendingOperations.find(candidate =>
 		pendingRequestMatches(candidate, requestedPending)
@@ -588,7 +664,6 @@ export async function runTrackerOperation({
 	if (!pending) {
 		pending = {
 			...requestedPending,
-			requestCorrelationId: requestedPending.correlationId,
 			phase: "prepared",
 			localBeforeHash: hashField(result.nextLocalStore[effectiveOperation.localId]),
 			requiresLocalVerification: typeof operation.isLocalApplied === "function",
@@ -616,6 +691,7 @@ export async function runTrackerOperation({
 						mapping,
 						jiraTicket,
 						effectiveOperation.action === "comment" ? {} : effectiveOperation.payload,
+						false,
 					);
 					if (inspected.blocked) {
 						await cancelPending(pending);
@@ -625,11 +701,16 @@ export async function runTrackerOperation({
 						? effectiveOperation.payload
 						: inspected.payload;
 					pending = await replacePendingIntent(pending, {
-						correlationId: operationCorrelationId(effectiveOperation),
+						correlationId: effectiveOperation.action === "comment"
+							? pending.correlationId
+							: resolveCorrelationId(operationCorrelationId(effectiveOperation)),
 						requestCorrelationId: requestCorrelationId(pending),
 						localId: effectiveOperation.localId,
 						action: effectiveOperation.action,
 						payload: effectiveOperation.payload,
+						...(Object.keys(inspected.localPatch).length > 0
+							? { localPatch: inspected.localPatch }
+							: {}),
 						phase: "prepared",
 						localBeforeHash: hashField(result.nextLocalStore[effectiveOperation.localId]),
 						requiresLocalVerification: typeof operation.isLocalApplied === "function",
@@ -661,7 +742,11 @@ export async function runTrackerOperation({
 						throw new TypeError("Tracker operation perform() must return the resulting Local store.");
 					}
 					result.nextLocalStore = cloneLocalStore(performedStore);
-				} else if (effectiveOperation.action === "comment") {
+				}
+				if (typeof operation.perform !== "function" && Object.keys(pending.localPatch || {}).length > 0) {
+					mergeLocalFields(pending.localId, pending.localPatch);
+				}
+				if (typeof operation.perform !== "function" && effectiveOperation.action === "comment") {
 					const current = result.nextLocalStore[effectiveOperation.localId] || {
 						id: effectiveOperation.localId,
 						comments: [],
@@ -676,8 +761,11 @@ export async function runTrackerOperation({
 						text: effectiveOperation.payload.text,
 					}];
 					result.nextLocalStore[effectiveOperation.localId] = { ...current, comments };
-				} else {
+				} else if (typeof operation.perform !== "function") {
 					mergeLocalFields(effectiveOperation.localId, effectiveOperation.payload);
+				}
+				if (typeof operation.perform === "function" && Object.keys(pending.localPatch || {}).length > 0) {
+					mergeLocalFields(pending.localId, pending.localPatch);
 				}
 
 				const expectedLocalHash = hashField(result.nextLocalStore[effectiveOperation.localId]);

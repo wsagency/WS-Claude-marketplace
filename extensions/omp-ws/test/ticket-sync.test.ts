@@ -7,6 +7,7 @@ import {
 	createJiraCorrelation,
 	resolveRepositoryIdentity,
 } from "../../../plugins/ws/skills/ws-project-bootstrap/correlation-identity.mjs";
+import { planBackfill } from "../../../plugins/ws/skills/ws-project-bootstrap/backfill-jira.mjs";
 import type { CanonicalProjectConfig } from "../../../plugins/ws/skills/ws-project-bootstrap/config.d.mts";
 import type { RunOptions, RunResult } from "../src/lib/exec";
 import type { RepositoryPolicyState } from "../src/lib/project-policy";
@@ -558,6 +559,16 @@ describe("native synchronization boundary", () => {
 		const state = await createTicketPersistence(root).readSyncState();
 		expect(state.pendingOperations).toHaveLength(1);
 		expect(state.pendingOperations[0]).toMatchObject({ localId, action: "create" });
+		expect(state.pendingOperations[0]?.correlationId).toMatch(/^wsc1:[a-f0-9]{64}:[a-f0-9]{64}$/);
+		expect(state.pendingOperations[0]?.requestCorrelationId).toMatch(/^[a-f0-9]{64}$/);
+		const backfill = planBackfill(
+			await createTicketPersistence(root).readLocalStore(),
+			state,
+			CONFIG,
+			{ root },
+		);
+		expect(backfill.unmapped[0]?.correlationId).toBe(state.pendingOperations[0]?.correlationId);
+		expect(backfill.unmapped[0]?.previousCorrelationId).toBeUndefined();
 		expect(jira.calls.some(call => call.args[1] === "create")).toBe(false);
 	});
 
@@ -587,8 +598,18 @@ describe("native synchronization boundary", () => {
 				},
 			},
 			pendingOperations: [
-				{ correlationId: "pending-update", localId, action: "update", payload: { title: "Recovered title" } },
-				{ correlationId: "pending-comment", localId, action: "comment", payload: { text: "Recovered comment" } },
+				{
+					correlationId: hashField({ localId, action: "update", payload: { title: "Recovered title" } }),
+					localId,
+					action: "update",
+					payload: { title: "Recovered title" },
+				},
+				{
+					correlationId: hashField({ localId, action: "comment", payload: { text: "Recovered comment" } }),
+					localId,
+					action: "comment",
+					payload: { text: "Recovered comment" },
+				},
 			],
 		});
 		const donePath = path.join(root, "dev-docs", "tickets", "done", `${localId}.md`);

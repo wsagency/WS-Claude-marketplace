@@ -32,6 +32,7 @@ export interface PendingSyncOperation {
 	requestCorrelationId?: string;
 	action: "create" | "update" | "comment" | "status";
 	payload: Record<string, unknown>;
+	localPatch?: Record<string, unknown>;
 	phase?: "prepared" | "local_applied";
 	localBeforeHash?: string;
 	requiresLocalVerification?: boolean;
@@ -93,6 +94,7 @@ export interface RunTrackerOperationArgs {
 	jiraAdapter: JiraAdapter;
 	persistence: TrackerPersistence;
 	conflictChoices?: ConflictChoice[];
+	correlationIdResolver?: (sourceCorrelationId: string) => string;
 }
 
 export interface RunTrackerOperationResult {

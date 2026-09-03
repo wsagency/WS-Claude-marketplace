@@ -319,6 +319,9 @@ function validateSyncState(value: unknown, fallbackRepositoryIdentity: string): 
 		) {
 			throw new Error(`Invalid request correlation identity for pending operation ${index + 1}.`);
 		}
+		if (candidate.localPatch !== undefined && !isUnknownRecord(candidate.localPatch)) {
+			throw new Error(`Invalid Local patch for pending operation ${index + 1}.`);
+		}
 		const phase = candidate.phase ?? "local_applied";
 		if (phase !== "prepared" && phase !== "local_applied") {
 			throw new Error(`Invalid phase for pending operation ${index + 1}.`);
@@ -346,6 +349,9 @@ function validateSyncState(value: unknown, fallbackRepositoryIdentity: string): 
 				: {}),
 			action: candidate.action as SyncState["pendingOperations"][number]["action"],
 			payload: structuredClone(candidate.payload),
+			...(candidate.localPatch !== undefined
+				? { localPatch: structuredClone(candidate.localPatch) }
+				: {}),
 			phase,
 			...(candidate.localBeforeHash !== undefined ? { localBeforeHash: candidate.localBeforeHash } : {}),
 			...(candidate.requiresLocalVerification !== undefined
@@ -816,11 +822,19 @@ export function createSynchronizedOperation(
 	return async ({ root, policy, operation }) => {
 		if (!policy.config) throw new Error("Canonical project policy is unavailable.");
 		const persistence = createTicketPersistence(root);
+		const jiraProject = policy.config.jira?.project;
+		if (!jiraProject) throw new Error("Missing Jira project in canonical policy.");
+		const syncState = await persistence.readSyncState();
+		const repositoryIdentity = resolveRepositoryIdentity({
+			root,
+			verifiedOrigin: repositoryOrigin(root),
+			persistedIdentity: syncState.repositoryIdentity,
+		});
 		let performedMessage: string | undefined;
 		const result = await runTrackerOperation({
 			config: policy.config,
 			localStore: await persistence.readLocalStore(),
-			syncState: await persistence.readSyncState(),
+			syncState,
 			operation: {
 				action: operation.action,
 				localId: operation.localId,
@@ -841,6 +855,8 @@ export function createSynchronizedOperation(
 			jiraAdapter: createJiraAdapter(root, policy.config, runExec, commentCorrelation),
 			persistence,
 			conflictChoices: [],
+			correlationIdResolver: sourceCorrelationId =>
+				resolveJiraCorrelation(repositoryIdentity, jiraProject, sourceCorrelationId).id,
 		});
 		if (result.readiness?.ready === false) throw new Error(result.readiness.reason ?? "Synchronization is not ready.");
 		if (Array.isArray(result.conflicts) && result.conflicts.length > 0) {

@@ -220,6 +220,76 @@ test("planBackfill retains repository-owned pending create intents for recovery"
 	assert.equal(plan.unmapped[0].correlationId, pendingOperations[0].correlationId);
 });
 
+test("migrates a bare native create intent before backfill recovery without losing journal state", async () => {
+	const localId = "LOCAL-NATIVE-PENDING";
+	const localTickets = {
+		[localId]: { id: localId, title: "Recover native intent", status: "open", type: "Task" },
+	};
+	const rawCorrelationId = hashField({
+		localId,
+		action: "create",
+		payload: { title: "Recover native intent", status: "open", type: "Task" },
+	});
+	const syncState = {
+		repositoryIdentity: TEST_REPOSITORY_IDENTITY,
+		mappings: {},
+		pendingOperations: [{
+			correlationId: rawCorrelationId,
+			localId,
+			action: "create",
+			payload: { title: "Recover native intent", status: "open", type: "Task" },
+			phase: "local_applied",
+			returnedId: "PROJ-9",
+			returnedVersion: 7,
+		}],
+	};
+	const plan = planBackfill(
+		localTickets,
+		syncState,
+		{ jira: { project: "TKT", default_issue_type: "Task" } },
+		TEST_REPOSITORY,
+	);
+	assert.equal(plan.unmapped[0].previousCorrelationId, rawCorrelationId);
+	assert.match(plan.unmapped[0].correlationId, /^wsc1:[a-f0-9]{64}:[a-f0-9]{64}$/);
+
+	const persistence = durablePersistence(syncState);
+	const jiraAdapter = new FakeJiraAdapter({
+		"PROJ-9": {
+			id: "PROJ-9",
+			version: 7,
+			title: "Recover native intent",
+			status: "open",
+			type: "Task",
+		},
+	});
+	jiraAdapter.simulateOutage(true);
+	const interrupted = await executeBackfill({
+		plan,
+		syncState,
+		jiraAdapter,
+		persistence,
+	});
+	assert.deepEqual(interrupted.pending, [localId]);
+	assert.equal(interrupted.errors.length, 1);
+	assert.deepEqual(persistence.snapshot().pendingOperations[0], {
+		...syncState.pendingOperations[0],
+		correlationId: plan.unmapped[0].correlationId,
+		requestCorrelationId: rawCorrelationId,
+	});
+
+	jiraAdapter.simulateOutage(false);
+	const resumed = await executeBackfill({
+		plan,
+		syncState: persistence.snapshot(),
+		jiraAdapter,
+		persistence,
+	});
+	assert.deepEqual(resumed.completed, [localId]);
+	assert.equal(resumed.nextSyncState.mappings[localId].jiraId, "PROJ-9");
+	assert.deepEqual(resumed.nextSyncState.pendingOperations, []);
+	assert.equal(jiraAdapter.getCallLog().filter(call => call.method === "createTicket").length, 0);
+});
+
 test("every create is followed by durable returned-key journaling, mapping persistence, and read-back", async () => {
 	const syncState = { mappings: {}, pendingOperations: [] };
 	const persistence = durablePersistence(syncState);

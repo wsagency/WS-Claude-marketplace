@@ -8,6 +8,21 @@ import {
 } from "./correlation-identity.mjs";
 import { MAPPED_TICKET_FIELDS, hashField, hashTicketFields, sanitizeTicketFields } from "./sync.mjs";
 
+function samePendingOperation(left, right) {
+	if (!left || !right) return false;
+	return left.correlationId === right.correlationId &&
+		left.requestCorrelationId === right.requestCorrelationId &&
+		left.localId === right.localId &&
+		left.action === right.action &&
+		hashField(left.payload) === hashField(right.payload) &&
+		hashField(left.localPatch || {}) === hashField(right.localPatch || {}) &&
+		(left.phase ?? "local_applied") === (right.phase ?? "local_applied") &&
+		left.localBeforeHash === right.localBeforeHash &&
+		left.requiresLocalVerification === right.requiresLocalVerification &&
+		left.returnedId === right.returnedId &&
+		left.returnedVersion === right.returnedVersion;
+}
+
 export async function auditBackfill(localTickets, syncState, jiraAdapter) {
 	const audit = {
 		missing: [],
@@ -97,11 +112,16 @@ export function planBackfill(localTickets, syncState, config, repository) {
 			operation.action === "create" && operation.localId === localId
 		);
 		let correlation;
+		let previousCorrelationId;
 		if (pending) {
-			if (!parseJiraCorrelationId(pending.correlationId)) {
-				throw new Error(`Pending Jira create for ${localId} does not have a repository-scoped correlation identity.`);
+			if (parseJiraCorrelationId(pending.correlationId)) {
+				correlation = resolveJiraCorrelation(repositoryIdentity, plan.project, pending.correlationId);
+			} else if (/^[a-f0-9]{64}$/i.test(pending.correlationId)) {
+				previousCorrelationId = pending.correlationId.toLowerCase();
+				correlation = createJiraCorrelation(repositoryIdentity, plan.project, previousCorrelationId);
+			} else {
+				throw new Error(`Pending Jira create for ${localId} does not have a recoverable correlation identity.`);
 			}
-			correlation = resolveJiraCorrelation(repositoryIdentity, plan.project, pending.correlationId);
 		} else {
 			const sourceCorrelationId = hashField({ localId, action: "create", payload: sanitizedFields });
 			correlation = createJiraCorrelation(repositoryIdentity, plan.project, sourceCorrelationId);
@@ -117,6 +137,7 @@ export function planBackfill(localTickets, syncState, config, repository) {
 			correlationId: correlation.id,
 			correlationToken: correlation.token,
 			correlationMarker: correlation.marker,
+			...(previousCorrelationId ? { previousCorrelationId } : {}),
 		});
 	}
 
@@ -174,6 +195,50 @@ export async function executeBackfill({ plan, syncState, jiraAdapter, persistenc
 				|| correlation.marker !== item.correlationMarker
 			) {
 				throw new Error(`Backfill correlation ownership verification failed for ${item.localId}.`);
+			}
+			if (item.previousCorrelationId && item.previousCorrelationId !== item.correlationId) {
+				const legacyIndexes = nextSyncState.pendingOperations
+					.map((operation, index) => ({ operation, index }))
+					.filter(({ operation }) =>
+						operation.action === "create" &&
+						operation.localId === item.localId &&
+						operation.correlationId === item.previousCorrelationId
+					);
+				const canonicalMatches = nextSyncState.pendingOperations.filter(operation =>
+					operation.action === "create" &&
+					operation.localId === item.localId &&
+					operation.correlationId === item.correlationId
+				);
+				if (legacyIndexes.length > 1 || canonicalMatches.length > 1 || (legacyIndexes.length && canonicalMatches.length)) {
+					throw new Error(`Pending Jira create correlation is ambiguous for ${item.localId}.`);
+				}
+				if (legacyIndexes.length === 1) {
+					if (nextSyncState.pendingOperations.some((operation, index) =>
+						index !== legacyIndexes[0].index && operation.correlationId === item.correlationId
+					)) {
+						throw new Error(`Pending Jira create correlation collides for ${item.localId}.`);
+					}
+					const legacy = legacyIndexes[0].operation;
+					const replacement = {
+						...legacy,
+						correlationId: item.correlationId,
+						requestCorrelationId: legacy.requestCorrelationId ?? item.previousCorrelationId,
+					};
+					nextSyncState.pendingOperations[legacyIndexes[0].index] = replacement;
+					await persistAndReadBack(state => {
+						const migrated = state.pendingOperations.find(operation =>
+							operation.action === "create" &&
+							operation.localId === item.localId &&
+							operation.correlationId === item.correlationId
+						);
+						return samePendingOperation(migrated, replacement) &&
+							!state.pendingOperations.some(operation =>
+								operation.correlationId === item.previousCorrelationId
+							);
+					});
+				} else if (canonicalMatches.length === 0) {
+					throw new Error(`Pending Jira create correlation disappeared for ${item.localId}.`);
+				}
 			}
 			if (nextSyncState.mappings[item.localId]) {
 				result.completed.push(item.localId);
