@@ -167,7 +167,7 @@ test("WS 5 release metadata, references, and migration guide stay aligned", asyn
 
 	const changelog = await source("CHANGELOG.md");
 	expect(await source("docs/changelog.md")).toBe(changelog);
-	expect(changelog).toContain("## [5.0.0] - 2026-09-02");
+	expect(changelog).toContain("## [5.0.0] - 2026-09-03");
 	expect(changelog).toContain("Upgrade native omp installations to `@wsagency/omp-ws` 0.7.0");
 	expect(changelog).toContain("sole `/ws-setup` entry point");
 
