@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { checkDocsRuntimeCleanupEligibility, discoverDocsRuntimeState, planDocsRuntimeMigration } from "./migration-docs-runtime.mjs";
+
+const SKILL_ROOT = path.dirname(fileURLToPath(import.meta.url));
 
 const releasedDocsConfig = `docs:
   initialized: 2026-08-01
@@ -170,6 +175,21 @@ test("released thin Claude import variant normalizes without a context conflict"
 	const crlf = discoverDocsRuntimeState({ "CLAUDE.md": released.replaceAll("\n", "\r\n") });
 	assert.equal(crlf.context.thinClaude, true);
 	assert.equal(crlf.context.fatClaude, false);
+});
+
+test("shipped hub CLAUDE.md template stays byte-identical to the canonical thin import", async () => {
+	const template = await readFile(path.join(SKILL_ROOT, "..", "..", "templates", "CLAUDE.md.tmpl"), "utf8");
+	const discovery = discoverDocsRuntimeState({
+		"AGENTS.md": "# Authored agent context\n",
+		"CLAUDE.md": template,
+	});
+	assert.equal(discovery.context.thinClaude, true);
+	assert.equal(discovery.context.fatClaude, false);
+	assert.equal(discovery.context.conflicting, false);
+	// Byte-parity with the canonical writer form: a hub scaffolded from the
+	// template must be an aligned no-op, never a normalization UPDATE.
+	const plan = planDocsRuntimeMigration(discovery, base());
+	assert.equal(plan.effects.find(e => e.target === "CLAUDE.md"), undefined);
 });
 
 test("unknown and malformed legacy documentation policy fails closed", () => {
