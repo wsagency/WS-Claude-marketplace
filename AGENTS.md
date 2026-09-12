@@ -59,3 +59,29 @@ This project uses the WS dual-track-docs convention (ws plugin — formerly docs
 - `/ws-docs` — status / audit
 - `/ws-docs <verb>` — init / audit / catchup / repair / write / adr / architecture / contributing / changelog / release-notes / explain / publish
 - Repo maintenance (vendored upstreams, tool/version audit): follow the `ws-repo-maintenance` skill
+
+<!-- WS-AGENT-SKILLS:START -->
+## Agent skills
+
+Repository machine policy is defined only in `.wsagency/config.yaml`.
+
+### Issue tracker
+
+Read `tracker.primary` before tracker operations. The recommended profile uses Local Markdown under `dev-docs/tickets/`; see `dev-docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Read the five semantic mappings under `triage.labels`; see `dev-docs/agents/triage-labels.md`.
+
+### Domain documentation
+
+Read `domain.layout`, then follow `dev-docs/agents/domain.md` and either root `CONTEXT.md` for `single_context` or root `CONTEXT-MAP.md` plus the relevant context file for `multi_context` before changing domain behavior.
+
+### Runtime policy
+
+The active harness must deliver the session discipline and dangerous-git guard required by `runtime` before reporting runtime readiness.
+
+# Documentation maintenance
+
+Documentation policy is read only from `.wsagency/config.yaml`. Run `/ws-docs` to inspect or maintain the configured tracks.
+<!-- WS-AGENT-SKILLS:END -->
