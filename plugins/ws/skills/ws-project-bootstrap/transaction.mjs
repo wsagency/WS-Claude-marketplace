@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseCanonicalConfigYaml, validateCanonicalConfig } from "./config.mjs";
 import { checkTrackerReadiness, getAdapterContent, parseOriginIdentity, planTrackerEffects } from "./trackers.mjs";
-import { DOCUMENTATION_CONTEXT_FRAGMENTS } from "../ws-docs-bootstrap/transaction.mjs";
+import { DOCUMENTATION_CONTEXT_FRAGMENTS, isKnownThinClaudeImport } from "../ws-docs-bootstrap/transaction.mjs";
 
 async function nearestExistingRealPath(target) {
 	let candidate = target;
@@ -409,9 +409,7 @@ function claudeEffect(order, discovery, desired) {
 	if (entry.kind === "missing") return baseEffect(order, target, "file", "CREATE", "Create the thin canonical import.", entry, desired);
 	if (entry.kind !== "file") return baseEffect(order, target, "file", "BLOCKING_CONFLICT", "A non-file entry occupies the Claude context path.", entry);
 	if (claudeContentAligned(entry.content, desired)) return baseEffect(order, target, "file", "NO-OP", "Thin import is already aligned.", entry, desired);
-	const normalized = entry.content.replaceAll("\r\n", "\n").trim();
-	const knownThinImport = normalized === "@AGENTS.md" || normalized === DOCUMENTATION_CONTEXT_FRAGMENTS.claude.trim();
-	if (knownThinImport) return baseEffect(order, target, "file", "UPDATE", "Update the generated thin canonical import.", entry, desired);
+	if (isKnownThinClaudeImport(entry.content)) return baseEffect(order, target, "file", "UPDATE", "Update the generated thin canonical import.", entry, desired);
 	return baseEffect(order, target, "file", "BLOCKING_CONFLICT", "A fat or conflicting Claude context requires reviewed migration.", entry);
 }
 

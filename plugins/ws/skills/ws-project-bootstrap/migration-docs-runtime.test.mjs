@@ -151,6 +151,27 @@ test("thin Claude import is recognized without a context conflict", () => {
 	assert.equal(planDocsRuntimeMigration(discovery, base()).conflicts.length, 0);
 });
 
+test("released thin Claude import variant normalizes without a context conflict", () => {
+	// Exact bytes emitted by the v5.0.0 / omp-ws 0.7.0 hub scaffold template.
+	const released = "@AGENTS.md\n<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n";
+	const discovery = discoverDocsRuntimeState({
+		"AGENTS.md": "# Authored agent context\n",
+		"CLAUDE.md": released,
+	});
+	assert.equal(discovery.context.thinClaude, true);
+	assert.equal(discovery.context.fatClaude, false);
+	const plan = planDocsRuntimeMigration(discovery, base());
+	assert.equal(plan.conflicts.length, 0);
+	assert.equal(plan.blockers.length, 0);
+	const claude = plan.effects.find(e => e.target === "CLAUDE.md");
+	assert.equal(claude.classification, "UPDATE");
+	assert.equal(claude.after, "<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n");
+
+	const crlf = discoverDocsRuntimeState({ "CLAUDE.md": released.replaceAll("\n", "\r\n") });
+	assert.equal(crlf.context.thinClaude, true);
+	assert.equal(crlf.context.fatClaude, false);
+});
+
 test("unknown and malformed legacy documentation policy fails closed", () => {
 	const unknown = planDocsRuntimeMigration(discoverDocsRuntimeState({ ".claude/docs-config.yaml": "docs:\n  mystery: true\n" }), base());
 	assert.match(unknown.blockers[0], /unknown legacy documentation fields/i);

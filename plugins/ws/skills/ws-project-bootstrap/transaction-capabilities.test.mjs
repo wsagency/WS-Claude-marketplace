@@ -51,6 +51,26 @@ test("disabled repository guard does not require guard capability", () => {
 	assert.equal(plan.effects.find(effect => effect.target === "runtime:dangerous_git_guard").classification, "NO-OP");
 });
 
+test("released thin CLAUDE.md variant is updated to canonical, not blocked", () => {
+	const discovered = discovery(null);
+	// Exact bytes emitted by the v5.0.0 / omp-ws 0.7.0 hub scaffold template.
+	discovered.entries["CLAUDE.md"] = {
+		kind: "file",
+		content: "@AGENTS.md\n<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n",
+		fingerprint: null,
+	};
+	const plan = buildPlan(discovered, choices(() => {}));
+	const claude = plan.effects.find(effect => effect.target === "CLAUDE.md");
+	assert.equal(claude.classification, "UPDATE");
+	assert.equal(claude.after, "<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n");
+	assert.equal(plan.effects.some(effect => effect.classification === "BLOCKING_CONFLICT"), false);
+
+	const fat = discovery(null);
+	fat.entries["CLAUDE.md"] = { kind: "file", content: "# Authored Claude context\n@AGENTS.md\n", fingerprint: null };
+	const fatPlan = buildPlan(fat, choices(() => {}));
+	assert.equal(fatPlan.effects.find(effect => effect.target === "CLAUDE.md").classification, "BLOCKING_CONFLICT");
+});
+
 test("docs selection remains an explicitly delegated worker effect", () => {
 	const plan = buildPlan(discovery(null), choices(config => {
 		config.docs = { user_track: "docs", dev_track: "dev-docs", default_audience: "ask", default_scope: "repo", adr_for_arch_changes: true };

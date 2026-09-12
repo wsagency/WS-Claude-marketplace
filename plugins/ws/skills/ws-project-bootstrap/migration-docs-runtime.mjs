@@ -1,5 +1,6 @@
 import { parseCanonicalConfigYaml } from "./config.mjs";
 import { flattenPaths, getPath, migrationEffect, normalizeMigrationEntry, setIfAbsent } from "./migration-primitives.mjs";
+import { DOCUMENTATION_CONTEXT_FRAGMENTS, isKnownThinClaudeImport } from "../ws-docs-bootstrap/transaction.mjs";
 
 const DOCS_CONFIG = ".claude/docs-config.yaml";
 const PROJECT_CONFIG = ".claude/ws-project.yaml";
@@ -39,7 +40,7 @@ function parseObject(entry, source) {
 
 function contextShape(agentsContent, claudeContent) {
 	const normalizedClaude = (claudeContent ?? "").replaceAll("\r\n", "\n").trim();
-	const thinClaude = normalizedClaude === "@AGENTS.md" || /^<!-- Canonical project context[^\n]*-->\n@AGENTS\.md$/.test(normalizedClaude);
+	const thinClaude = isKnownThinClaudeImport(claudeContent);
 	const fatClaude = Boolean(normalizedClaude) && !thinClaude;
 	const authoredAgents = Boolean((agentsContent ?? "").trim());
 	return { thinClaude, fatClaude, authoredAgents, conflicting: fatClaude && authoredAgents };
@@ -156,7 +157,7 @@ export function planDocsRuntimeMigration(discovery, currentCanonical = {}, resol
 		);
 	}
 
-	const THIN_CLAUDE = "<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n";
+	const THIN_CLAUDE = DOCUMENTATION_CONTEXT_FRAGMENTS.claude;
 	const resolvedContext = resolutions["context.source"];
 	const contextRequiresResolution = discovery.context.conflicting || discovery.context.fatClaude;
 	const claudeContent = discovery.entries["CLAUDE.md"]?.content ?? "";

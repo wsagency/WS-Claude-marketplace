@@ -52,6 +52,19 @@ export const DOCUMENTATION_CONTEXT_FRAGMENTS = Object.freeze({
 	claude: "<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n@AGENTS.md\n",
 });
 
+// Exact thin-import bytes emitted by the released v5.0.0 / omp-ws 0.7.0 hub
+// scaffold template (import line before the comment). Recognized as a known thin
+// variant so setup normalizes it to the canonical writer form without user resolution.
+export const RELEASED_THIN_CLAUDE_IMPORT = "@AGENTS.md\n<!-- Canonical project context lives in AGENTS.md (agent-neutral). Keep this file as a one-line import. -->\n";
+
+export function isKnownThinClaudeImport(content) {
+	if (typeof content !== "string") return false;
+	const normalized = content.replaceAll("\r\n", "\n").trim();
+	return normalized === "@AGENTS.md"
+		|| /^<!-- Canonical project context[^\n]*-->\n@AGENTS\.md$/.test(normalized)
+		|| normalized === RELEASED_THIN_CLAUDE_IMPORT.trim();
+}
+
 function documentationTargets(policy = {}) {
 	const docs = { ...DEFAULT_DOCUMENTATION_POLICY, ...(policy.docs ?? {}) };
 	const changelog = {

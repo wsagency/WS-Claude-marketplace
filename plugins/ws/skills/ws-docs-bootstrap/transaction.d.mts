@@ -28,6 +28,10 @@ export interface DocsContextFragments {
 
 export const DOCUMENTATION_CONTEXT_FRAGMENTS: Readonly<DocsContextFragments>;
 
+export const RELEASED_THIN_CLAUDE_IMPORT: string;
+
+export function isKnownThinClaudeImport(content: unknown): boolean;
+
 export interface DocsPlan {
 	hash: string;
 	scope: { root: string; projectShape: ProjectShape };
