@@ -22,7 +22,7 @@ OpenWiki was the hub knowledge-freshness mechanism across both harnesses: an opt
 
 - **One knowledge layer.** Authored truth in `dev-docs/` already wins on disagreement; a derived wiki duplicated it and had to be regenerated to stay useful.
 - **Dual-harness maintenance cost.** Every change to the concept pays twice — Claude Code hook plus omp hook, rule, and extension check — and the three detectors must stay in parity (they historically drifted).
-- **External tool dependency.** Hub setup required `openwiki` on PATH, deletion of its generated CI workflow, and marker/coverage-scope conventions, for a artifact agents consume by reading `dev-docs/` directly anyway.
+- **External tool dependency.** Hub setup required `openwiki` on PATH, deletion of its generated CI workflow, and marker/coverage-scope conventions, for an artifact agents consume by reading `dev-docs/` directly anyway.
 - **Breaking by nature, so cut once.** Removing a released public surface is breaking regardless; a partial removal would leave dangling pointers in hub scaffolds and doctor checks.
 
 ## Considered Options
@@ -66,7 +66,7 @@ Chosen option: "Remove entirely", because the derived wiki duplicated authored `
 
 ## More Information
 
-- Ticket: `dev-docs/tickets/open/42-remove-openwiki-from-the-ws-surface.md` (user request, 2026-09-14).
+- Ticket: `dev-docs/tickets/done/42-remove-openwiki-from-the-ws-surface.md` (user request, 2026-09-14).
 - ADR 0005 — cites `openwiki-freshness` as an example discipline rule; the naming rule itself stands, only the example is gone.
 - ADR 0006 — hub repo types; the semantics table's "OpenWiki coverage" column and the type-aware staleness detection are superseded; the `type: working | input | output` vocabulary and migration path are not.
 - ADR 0007 — progressive hub adoption; the standalone ruling that the repo's own `dev-docs/` IS the product knowledge root stands, only its OpenWiki staleness-walk clause is superseded.

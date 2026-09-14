@@ -2,7 +2,7 @@
 
 Verified ExtensionAPI behaviour: `session_stop` with `{continue, additionalContext,
 decision:"block"}` returns capped at 8 continuations, `tool_call` block
-fail-closed, `context` per-call message rewriting, `ui.setWidget` banners).
+fail-closed, `context` per-call message rewriting, and `ui.setWidget` banners.
 New hook ideas from the API deep-dive, feasibility-verified:
 
 - `session_stop` self-check continuation ("run tests before settling") — trivial
