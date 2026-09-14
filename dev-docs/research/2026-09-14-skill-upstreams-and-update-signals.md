@@ -188,11 +188,15 @@ exists.
   upstream file verbatim (no changes to state) and records provenance and the
   author's distribution statement in `herdr/UPSTREAM.md` ("License-bearing repo;
   skill distributed by the author for exactly this use — 'for agents without a
-  skill system, paste the file into instructions'"). What is *not* shipped is the
-  upstream LICENSE/NOTICE text itself in the skill directory; whether continued
-  vendoring should carry a licence copy alongside the skill is a compliance call
-  for the decision ticket (flagged, not judged here). The Apache-2.0 grant makes
-  the vendoring itself lawful either way.
+  skill system, paste the file into instructions'"). The upstream LICENSE/NOTICE
+  text itself is **not** shipped anywhere in `plugins/ws/`, which carries only
+  the MIT `LICENSE` of the ws-matt upstream. The §4(a) licence-copy obligation
+  is therefore **unmet today** — an unresolved compliance gap, not a judgement
+  call — tracked for remedy in
+  `dev-docs/tickets/open/40-ship-herdr-license-and-fix-upstream-refs.md`. The
+  Apache-2.0 grant makes the vendoring itself lawful; the missing notice is a
+  defect in how we redistribute, and the author's distribution statement does
+  not waive it.
 
 ### 4. Vendored sets with NO detectable upstream signal
 
@@ -239,11 +243,17 @@ The non-goals exclude recommendations; the table is inventory only.
    `evildmp/diataxis-documentation-framework`; the actual licence file was not
    classified. Irrelevant while the skill only links the framework, relevant if
    anyone ever copies diataxis.fr text into `references/`.
-4. **herdr upstream LICENSE/NOTICE propagation.** Apache-2.0 obligations (notice
-   retention, change-stating) are currently satisfied in substance (verbatim file,
-   provenance note) without shipping the upstream licence text; whether that
-   posture is the intended long-term one is a decision-ticket item, not a fact
-   this research can settle.
+4. **herdr upstream LICENSE/NOTICE propagation — unresolved gap.** Apache-2.0
+   §4(a) requires a copy of the licence to accompany redistributed work. The
+   vendored `herdr/SKILL.md` is a verbatim redistribution of an Apache-2.0
+   licensed file, and `plugins/ws/` ships only the MIT `LICENSE` of the ws-matt
+   upstream — no Apache licence text anywhere. That obligation is therefore
+   **not** met today; the verbatim copy and the provenance note in
+   `herdr/UPSTREAM.md` satisfy the change-stating expectation of §4(b) but do
+   not substitute for the licence copy. Remedy is tracked in
+   `dev-docs/tickets/open/40-ship-herdr-license-and-fix-upstream-refs.md`. The
+   Apache-2.0 grant makes the vendoring itself lawful; the missing notice is a
+   compliance defect to fix, not a licensing bar.
 5. **Upstream repo identity for herdr.** The move `ogulcancelik/herdr` →
    `herdrdev/herdr` makes every in-repo reference (UPSTREAM.md source URL, raw
    fetch URL, `npx skills add ogulcancelik/herdr` install command in

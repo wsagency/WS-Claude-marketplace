@@ -1,13 +1,13 @@
 # Extend WS to Codex and sustain its skill surface
 
 Label: wayfinder:map
-Status: draft — the destination and frontier below are derived from the preserved 2026-09-04 plan, NOT yet settled by the charting grill (steps 1-2). Do not start a work-through session until that grill has run and this map has been revised.
+Status: draft — the end state is settled by the grill (see Destination); the effort's boundary is not. Do not start a work-through session until the remaining scoping question is answered and this map is revised.
 
 ## Destination
 
-A locked set of decisions — ready to hand to `/ws-to-spec` — covering how the single `ws` plugin surface reaches Codex alongside Claude Code and omp, how the vendored ws-matt skill set stays current on a recurring cadence with named ownership, and how graph-engineering semantics are carried across every harness. Decisions only; no packaging, automation, or release work inside this map.
+A locked set of decisions covering how the single `ws` plugin surface reaches Codex alongside Claude Code and omp, how the vendored ws-matt skill set stays current on a recurring cadence with named ownership, and how graph-engineering semantics are carried across every harness. **Settled by the grill 2026-09-14: the end state is the decision lock itself — nothing here obliges a build.** The decisions may stay unrealized until every one of them has landed; implementation is a later, separate call once the whole set is resolved. Decisions only; no packaging, automation, or release work inside this map.
 
-**Unsettled:** this wording is a draft derived from the four preserved plan items. The grill must confirm or redraw it — in particular whether Codex distribution and skill-update cadence belong to one effort at all, and whether "ready to hand to `/ws-to-spec`" is the right end state.
+**Still unsettled:** whether Codex distribution and the recurring ws-matt cadence belong to one effort at all, or split into two maps. The frontier below assumes one; the breadth-first grill has not yet confirmed that boundary, so every decision ticket stays `needs-info` until it does.
 
 ## Notes
 
