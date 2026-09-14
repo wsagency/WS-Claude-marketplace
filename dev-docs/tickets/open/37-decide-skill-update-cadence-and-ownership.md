@@ -19,4 +19,6 @@ What recurring process keeps the vendored ws-matt skill set current, and who own
 
 **Adoption gate: newly surfaced constraint.** Taking a *new* upstream skill requires analysis and an eval before it lands, and that capability is deliberately not being built now. So a refresh may only carry deltas to already-vendored skills; new upstream skills stay unadopted regardless of what the delta shows, until an eval capability exists. That eval effort is out of scope for this map.
 
-Still open: which existing moment initiates a refresh, who is accountable, and whether the maintenance log alone is sufficient durable state.
+**Detection and adoption are separate decisions.** The procedure's Gates 0-2 (dirty tree, `pin..HEAD` delta, classification) plus a Gate 8 log line are cheap, bounded, and answer only "has upstream moved and how". Gates 3-8 (parallel audits, conscious porting through the rename map, graph and reference gates, omp rebuild, verification, pin bump) are the unbounded part: they can expand or block whatever work they land in. Any trigger decision must say which of the two it initiates; "refresh at moment X" is ambiguous and must not be recorded as the answer.
+
+Still open: whether the initiating moment runs a non-blocking detection pass that records and defers a contentful delta, or mandates the full refresh in place; who is accountable; and whether the maintenance log alone is sufficient durable state.
