@@ -12,7 +12,7 @@ A locked set of decisions covering how the single `ws` plugin surface reaches Co
 - Originating plan (2026-09-04 session): decide Codex distribution strategy; integrate graph engineering across WS work; chart the decisions on the canonical tracker.
 - Planning only: this map resolves decisions and does not implement packaging, automation, or a release.
 - Verified 2026-09-04 (primary docs): Codex runs parallel native subagents by default with built-ins `default`, `worker`, and `explorer`; delegation triggers on a direct request **or when `AGENTS.md`/skill instructions ask for it**. Our `## Graph node` fan-out edges can therefore drive Codex delegation directly. The earlier assumption "14 agents collapse into inline workers" is void and must not be re-derived.
-- Verified 2026-09-14 (ticket 34): Codex loads skills, custom subagent TOML, hooks, MCP servers, and experimental `.rules`; plugin marketplaces read the **legacy `.claude-plugin/marketplace.json`** and `codex plugin marketplace add` accepts GitHub, Git, local, and npm sources. `AGENTS.md` declares no surface, and slash prompts cannot ship from a repo.
+- Verified 2026-09-14 (ticket 34): Codex loads skills, custom subagent TOML, hooks, MCP servers, and experimental `.rules`; plugin marketplaces read the **legacy `.claude-plugin/marketplace.json`**. `codex plugin marketplace add` takes a marketplace location — `owner/repo`, a Git URL, or a local path — while `npm` is one of the `source` types (`local | url | git-subdir | npm`) a catalog entry may declare, not a CLI argument. `AGENTS.md` declares no surface, and slash prompts cannot ship from a repo.
 - Binding constraints: lockstep versioning across the marketplace (ADR 0002), exactly one shipped plugin (ADR 0003), invocation-aware node exit reports (ADR 0008), and orchestration-layer ownership (ADR 0009).
 - The native omp package is generated from `plugins/ws/` by `extensions/omp-ws/scripts/generate.ts`; any third target must keep that single-source property rather than forking the surface. `extensions/omp-ws/scripts/verify-release-artifacts.mjs` is today's release gate and sets the bar a Codex target inherits.
 - Consult `ws-graph-engineering`, `project-hub-conventions`, and `dual-track-docs` while resolving tickets.
@@ -21,7 +21,7 @@ A locked set of decisions covering how the single `ws` plugin surface reaches Co
 ## Decisions so far
 
 <!-- One line per resolved child ticket: linked title plus a one-line gist. -->
-- [Research what a third party can ship to Codex](../done/34-research-codex-extension-surface.md) — Codex loads skills, custom subagent TOML, hooks, MCP servers, and experimental `.rules`; plugin marketplaces read the legacy `.claude-plugin/marketplace.json` and `codex plugin marketplace add` accepts GitHub/Git/local/npm, while `AGENTS.md` declares nothing and slash prompts cannot ship from a repo; findings in `dev-docs/research/2026-09-14-codex-extension-surface.md`.
+- [Research what a third party can ship to Codex](../done/34-research-codex-extension-surface.md) — Codex loads skills, custom subagent TOML, hooks, MCP servers, and experimental `.rules`; plugin marketplaces read the legacy `.claude-plugin/marketplace.json`, `marketplace add` takes an `owner/repo`, Git URL, or local path, and `npm` is an entry `source` type rather than a CLI argument, while `AGENTS.md` declares nothing and slash prompts cannot ship from a repo; findings in `dev-docs/research/2026-09-14-codex-extension-surface.md`.
 
 ## Not yet specified
 
