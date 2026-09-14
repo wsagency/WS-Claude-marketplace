@@ -11,7 +11,9 @@ Blocked by: None — can start immediately.
 
 What extension surface does Codex actually load from a third party, and through which exact paths, manifests, and install channels? Establish from primary Codex documentation: whether skills, slash commands, agent definitions, hooks, and MCP servers are each supported; the file/directory layout and any manifest schema that declares them; how `AGENTS.md` relates to that surface; which install channel exists (npm, git, marketplace, manual copy); and what version or compatibility constraints a publisher must respect. Record what is explicitly unsupported, since absence decides how much of the WS surface can travel.
 
-## Answer
+## Comments
+
+### Resolution — 2026-09-14
 
 Findings: `dev-docs/research/2026-09-14-codex-extension-surface.md`
 

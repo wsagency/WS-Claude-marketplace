@@ -1,6 +1,6 @@
 # Vendored skill upstreams and their change-detection signals (`plugins/ws/skills/`)
 
-Research ticket: `dev-docs/tickets/open/35-research-vendored-skill-upstreams.md`
+Research ticket: `dev-docs/tickets/done/35-research-vendored-skill-upstreams.md`
 (map `extend-ws-to-codex-and-sustain-skills`). Investigated 2026-09-14 against
 in-repo evidence and live upstream sources. Read-only research: this file is the
 only artifact written; no repo files were edited.

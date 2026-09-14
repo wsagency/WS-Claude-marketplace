@@ -9,16 +9,16 @@ Blocked by: None — can start immediately.
 
 ## Question
 
-Which skill sets in `plugins/ws/skills/` are vendored from an upstream source rather than authored here, and what update signal does each upstream expose? For every vendored set, identify the upstream repository or distribution, the evidence in-repo that ties our copy to a specific upstream revision (version markers, vendoring notes, `ws-repo-maintenance` guidance), the release signal available for change detection (tags, releases, commit feed, package versions), and the licence or attribution constraint that continued vendoring must respect. Name each set that has no detectable upstream signal, since those force manual review cadence.
+Which upstream does the vendored ws-matt skill set track, how is our copy tied to a specific upstream revision, which change-detection signal does that upstream publish, and what licence or attribution constraint does continued vendoring carry? Scope is the ws-matt set, because the decision this unblocks is the recurring ws-matt update cadence; other vendored or convention-tracking skill sets are context only.
 
-## Answer
+## Comments
+
+### Resolution — 2026-09-14
 
 Findings: `dev-docs/research/2026-09-14-skill-upstreams-and-update-signals.md`
 
-Of 31 skill sets, 18 are vendored from exactly two upstreams and 13 are authored here. The vendored sets are the 17 ws-matt skills from `mattpocock/skills` (pin `ed37663`, 2026-07-21, MIT, `LICENSE` kept byte-identical) and `herdr` from `ogulcancelik/herdr` (pin `a979916`, 2026-07-27, Apache-2.0, verbatim). Provenance lives in `plugins/ws/UPSTREAM.md`, `plugins/ws/skills/herdr/UPSTREAM.md`, and dated `dev-docs/maintenance-log.md` audits, because git history is a single squash origin.
+The ws-matt set is 17 skills (16 engineering plus `ws-grilling`) vendored from `mattpocock/skills`, pinned at `ed37663` (2026-07-21, MIT), with the rename map, preserve list, and pin policy recorded in `plugins/ws/UPSTREAM.md` and dated audits in `dev-docs/maintenance-log.md`. Git history is a single squash origin, so those files are the durable provenance. The upstream publishes tags, GitHub releases, and a commit feed — all machine-checkable — and has advanced to v1.2.3 (2026-08-06, HEAD 2026-09-04). Our pin corresponds to no published tag, so currency can only be read by diffing `pin..HEAD`, which is exactly what the documented sync procedure does. MIT obligations are satisfied: `plugins/ws/LICENSE` is byte-identical to upstream.
 
-No vendored set lacks a machine-checkable signal: both upstreams publish tags, releases, and a commit feed. Both have drifted past our pins — `mattpocock/skills` is at v1.2.3 (2026-08-06, HEAD 2026-09-04) and herdr at v0.9.0 (2026-09-07, HEAD 2026-09-14) — and neither pin corresponds to a published tag, so currency can only be read by diffing `pin..HEAD`, exactly as the documented sync procedure does.
-
-Two facts the cadence decision must absorb: the herdr upstream moved to `herdrdev/herdr`, leaving every in-repo reference stale-but-redirected, and Apache-2.0 notice propagation for the vendored herdr file is currently satisfied in substance without shipping upstream licence text — a posture to confirm or change. Five in-house convention skills (adr, conventional-commits, diataxis, keep-a-changelog, style-guide) track external standards with weaker signals: MADR and Keep a Changelog publish releases, while Conventional Commits and Diátaxis offer only a commit feed and the Google/Microsoft style guides only dated HTML pages.
+The audit returned two adjacent facts that are load-bearing elsewhere and must not be lost. First, `herdr` is vendored verbatim from an Apache-2.0 upstream while `plugins/ws/` ships no Apache licence text — an **unresolved compliance gap**, not a satisfied posture; it is tracked as `40-ship-herdr-license-and-fix-upstream-refs` and is deliberately outside this map. Second, that upstream has moved to `herdrdev/herdr`, leaving every in-repo reference stale-but-redirected. The five convention skills (adr, conventional-commits, diataxis, keep-a-changelog, style-guide) are in-house distillations carrying no upstream licence burden; their signals range from GitHub releases (MADR, Keep a Changelog) to dated HTML pages only (Google and Microsoft style guides).
 
 **Status:** done
