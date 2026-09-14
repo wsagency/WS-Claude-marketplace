@@ -7,9 +7,8 @@ on omp — one install, zero marketplace coupling:
 - **Generated at build time** from `plugins/ws/` in the ws-claude-marketplace
   repo (single source of truth): `commands/` (7), `skills/` (30), `agents/`
   (14, with omp `@role` model aliases and Claude tool names remapped to
-  omp-resolvable ids), `rules/` (4 TTSR/always-apply rules), `templates/`
-  (including the hub-only `openwiki-freshness` rule under
-  `templates/omp/hub-rules/`), and three command/skill runtime helpers under
+  omp-resolvable ids), `rules/` (4 TTSR/always-apply rules), `templates/`,
+  and three command/skill runtime helpers under
   `scripts/`. Generated directories are gitignored, wiped and rewritten by
   `scripts/generate.ts`; helper copies sharing that directory are overwritten.
   Never hand-edit generated assets.
@@ -25,11 +24,7 @@ independent consumer distributions generated from the same source. The native
 package intentionally omits the source-checkout-only `ws-repo-maintenance`
 maintainer workflow.
 
-The hub-only `openwiki-freshness` rule carries `alwaysApply: true`, so it is
-deliberately NOT shipped under the auto-scanned `rules/` — it would otherwise
-inject hub-only OpenWiki discipline into every omp session. It is packaged at
-`templates/omp/hub-rules/` (outside omp's discovery scan) for `/ws-hub` to copy
-into each hub's `.omp/rules/` on init. Likewise, the `researcher` agent keeps
+The `researcher` agent keeps
 web/read capability under omp: `generate.ts` remaps the Claude tool names
 `WebSearch` → `web_search` and `WebFetch` → `read` (omp's tool resolver would
 otherwise silently drop them).
@@ -188,19 +183,6 @@ blocking stop hook to a visible reminder. It uses canonical changelog policy
 to detect uncommitted code changes without a configured changelog update,
 shows a warning notification and banner, and never returns
 `continue`/`decision: \"block\"`, so the turn always settles.
-
-### wiki-freshness (session_stop, non-blocking)
-
-Behavior-identical port of the per-project hook
-`plugins/ws/templates/omp/hooks/openwiki-freshness.ts`: warns when a
-`type: working` repo's `dev-docs/**` files are newer than
-`openwiki/.last-update.json` (repo types parsed from `project.yaml`, ADR
-0006 — input/output repos and the hub's own `dev-docs/` never trigger it;
-standalone repos without `project.yaml` walk their own `dev-docs/` plus each
-immediate sub-directory's, per ADR 0007 — with no hub, the repo's own
-`dev-docs/` IS the product knowledge root).
-Skips when `<cwd>/.omp/hooks/post/openwiki-freshness.ts` exists (no double
-banners).
 
 ## Tools
 

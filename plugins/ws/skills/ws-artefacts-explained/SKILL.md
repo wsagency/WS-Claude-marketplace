@@ -12,11 +12,11 @@ published through the [ws-artefacts](https://artefacts.wsagency.io) platform
 behind unguessable token links.
 
 **Audience: the product owner + the dev team.** They should never have to read
-`dev-docs/` or `openwiki/` directly — those serve AI agents. The explained repo
+`dev-docs/` directly — it serves AI agents. The explained repo
 is the human window into the same knowledge.
 
 **Explained is an OUTPUT, never a source of truth.** It is synthesized from the
-hub's `project.yaml`, `openwiki/` (the primary derived map), the hub's own
+hub's `project.yaml`, the hub's own
 `dev-docs/` (architecture, product ADRs), per-working-repo `dev-docs/`, and
 sub-repo READMEs. When it drifts, **regenerate it — never hand-edit**.
 Commits go to the explained repo itself (its own git; the hub ignores it like
@@ -25,7 +25,7 @@ any sub-repo).
 **Standalone repos (no hub).** With no `project.yaml`, there is no registered
 `type: output, purpose: explained` sub-repo, so generate the artefact directly
 in the standalone repo and synthesize it from that repo's own `dev-docs/` +
-`docs/` + README (and `openwiki/` if present) — the repo's own `dev-docs/` IS
+`docs/` + README — the repo's own `dev-docs/` IS
 the product knowledge root (ADR 0007). Adopting a hub later moves the source
 with the rest of the product `dev-docs/` and registers the explained sub-repo.
 
@@ -126,6 +126,6 @@ For the PO + dev audience, a full product artefact should cover:
    next.
 6. **Glossary** — domain terms, from `CONTEXT.md`.
 
-Sources, in order of preference: hub `project.yaml`, `openwiki/` (primary
-derived map), the hub's `dev-docs/` + working sub-repos' `dev-docs/`, sub-repo
+Sources, in order of preference: hub `project.yaml`, the hub's `dev-docs/` +
+working sub-repos' `dev-docs/`, sub-repo
 READMEs.

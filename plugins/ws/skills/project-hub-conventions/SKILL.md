@@ -101,7 +101,6 @@ ownership surfaces.
 │   ├── decisions/            # product ADRs
 │   ├── runbooks/             # product-level operational runbooks
 │   └── scoping/              # processed client deliveries (see Input repos)
-├── openwiki/                 # optional derived wiki (see below)
 ├── <project>-app/.git/       # type: working — own git, gitignored
 ├── <project>-design/.git/    # type: input — own git, gitignored
 ├── <project>-client/.git/    # type: input — own git, gitignored
@@ -136,16 +135,15 @@ repos:
 
 **Repo types** (ADR 0006) — every repo is exactly one of:
 
-| type | `/ws-docs` sweep | OpenWiki coverage | hub-architect analysis | what it is |
-|---|---|---|---|---|
-| `working` (default for legacy hubs) | yes | yes | yes | the product's software — where development happens |
-| `input` | no | no | no | material that FEEDS development from outside: client deliveries, design assets, data dumps |
-| `output` | no | no | no | artifacts DERIVED from the product: user docs (purpose `docs`), generated explainers (purpose `explained`) |
+| type | `/ws-docs` sweep | hub-architect analysis | what it is |
+|---|---|---|---|
+| `working` (default for legacy hubs) | yes | yes | the product's software — where development happens |
+| `input` | no | no | material that FEEDS development from outside: client deliveries, design assets, data dumps |
+| `output` | no | no | artifacts DERIVED from the product: user docs (purpose `docs`), generated explainers (purpose `explained`) |
 
 Knowledge flow is one-directional: `input` → processed into hub `dev-docs/` →
 built in `working` repos → derived into `output` repos. Nothing consumes an
-output as a source; inputs are processed, never indexed (OpenWiki maps
-as-built state — raw deliveries would mix "requested" with "built").
+output as a source; inputs are processed, never indexed.
 
 Legacy mapping (pre-v2 hubs): `role: docs` ≡ `type: output, purpose: docs`;
 `role: explained` ≡ `type: output, purpose: explained`; no role ≡ `type:
@@ -174,13 +172,11 @@ If multiple manifests are present, list all matches; if none match, leave `tech`
 ## Hub `dev-docs/` — the product knowledge root
 
 The hub carries its own `dev-docs/` — the ONLY place product-level internal
-documentation lives — beside `openwiki/` (the derived map). Authored truth is
-here; derived structure is there; both are fed by `working` repos.
+documentation lives. It is fed by `working` repos.
 
 ```
 dev-docs/
 ├── architecture.md      # cross-repo synthesis — hub-architect writes here
-│                        # (THIN when openwiki/ exists: boundaries + contracts + pointer)
 ├── contracts.md         # optional — shared cross-repo contracts, when they exist
 ├── deployment.md        # optional — deploy topology, when deployment files exist
 ├── decisions/           # PRODUCT ADRs (two-tier; concern >1 repo or the client)
@@ -274,7 +270,7 @@ but nothing is scaffolded there.
 
 Generated human-facing visual documentation (ws-artefacts HTML) — see the
 `ws-artefacts-explained` skill. Synthesized FROM the hub's `project.yaml`,
-`openwiki/`, hub `dev-docs/`, and working-repo `dev-docs/` + READMEs.
+hub `dev-docs/`, and working-repo `dev-docs/` + READMEs.
 
 ## `.gitignore` managed block
 
@@ -305,18 +301,9 @@ Hub tooling is **harness-agnostic**. Commands and generated files never assume a
 
 ## Context-file cascade
 
-`AGENTS.md` is the canonical, agent-neutral context file at every level — hub and sub-repos alike. Each `CLAUDE.md` is a thin import containing only `@AGENTS.md` plus one comment line, kept because Claude Code always reads `CLAUDE.md` and the `@import` guarantees the same content loads everywhere. Why AGENTS.md is canonical: omp finds `AGENTS.md` by walking up from the cwd but **never reads a root-level `CLAUDE.md`** — content left in a fat CLAUDE.md is invisible to omp. Keep all content in `AGENTS.md`; never fatten the thin `CLAUDE.md`. One permitted exception: **tool-managed marker blocks** (e.g. OpenWiki's `<!-- OPENWIKI:START/END -->`) that a tool rewrites idempotently on its own runs — leave those alone in both files.
+`AGENTS.md` is the canonical, agent-neutral context file at every level — hub and sub-repos alike. Each `CLAUDE.md` is a thin import containing only `@AGENTS.md` plus one comment line, kept because Claude Code always reads `CLAUDE.md` and the `@import` guarantees the same content loads everywhere. Why AGENTS.md is canonical: omp finds `AGENTS.md` by walking up from the cwd but **never reads a root-level `CLAUDE.md`** — content left in a fat CLAUDE.md is invisible to omp. Keep all content in `AGENTS.md`; never fatten the thin `CLAUDE.md`.
 
-## Knowledge wiki (OpenWiki) — hub level
-
-A hub MAY carry an [OpenWiki](https://github.com/langchain-ai/openwiki) at `<hub>/openwiki/` — the knowledge repository for the whole product. Detection is filesystem presence (no config flag). Conventions:
-
-- Initialized once at the hub root (`openwiki --init`; `/ws-hub init` step 5a offers it, and the same flow retrofits an existing hub). Init also writes the **coverage scope into `openwiki/INSTRUCTIONS.md`** (all registered `type: working` sub-repos, each a separate nested git repo — without this OpenWiki tends to document only the largest repo) and **deletes the generated CI workflow**.
-- Every sub-repo's `AGENTS.md` carries a "Hub knowledge wiki" pointer section at `../openwiki/quickstart.md` — consult the wiki BEFORE exploring code or answering cross-repo questions. `/ws-hub add` writes the pointer for new repos (and adds `type: working` repos to the INSTRUCTIONS.md scope).
-- **Refresh is AI-driven — no CI**: agents run it occasionally, before major cross-repo work when the wiki is stale (`openwiki/.last-update.json` vs recent sub-repo activity) and after completing major changes. It is always prompted — `openwiki --update "Refresh; re-scan sub-repos: <list>"` — because sub-repo commits are invisible to the hub's git (plain `--update` would skip as "no changes"). `/ws-hub docs` offers this after generating cross-repo docs.
-- Generated pages are never hand-edited; the wiki is a DERIVED index, never the source of truth — authored truth lives in the dual-track docs (hub `dev-docs/` + per-repo `dev-docs/`); when wiki and dev-docs disagree, dev-docs wins and the wiki gets regenerated. The wiki is internal (not part of the `docs/` Outline track).
-- The wiki indexes `type: working` repos only — never inputs (raw, unprocessed) and never outputs (derived).
-- **Standalone repos count too (ADR 0007):** with no hub, the repo's own `dev-docs/` IS the product knowledge root, so the freshness detectors walk it (plus any immediate sub-directory `dev-docs/`) for staleness — excluding `openwiki/` and `dev-docs/tickets/`. In hub-root mode the hub's own `dev-docs/` is excluded (authored truth is not wiki input) and only `type: working` repos are walked.
+One exception to "never fatten the thin `CLAUDE.md`": marker blocks maintained by another tool are owned by that tool and left alone. Never hand-edit or strip them, and when such a tool is retired from a hub, remove only the WS-authored prose and WS-installed assets — report the tool's own blocks and directories so the owner retires them through that tool.
 
 ## omp preset — conventions as enforcement
 
@@ -327,23 +314,11 @@ Hubs used with omp carry a project `.omp/` preset written by `/ws-hub init`:
   and bash guard patterns default to off (commented deny/prompt examples);
   `/ws-hub init` asks about both, plus whether to fill the per-project
   `modelRoles` block. Earlier compaction is on by default.
-- `.omp/hooks/post/openwiki-freshness.ts` — a native omp TypeScript hook: on
-  every session settle it compares `type: working` repos' `dev-docs/**` mtimes
-  (excluding `dev-docs/tickets/`) against `openwiki/.last-update.json` and
-  shows a persistent banner + toast with the exact prompted `openwiki
-  --update` command (working-repo list parsed from project.yaml).
-  Non-blocking; omp-only (Claude Code uses the plugin's shell Stop hook for
-  the same purpose).
-  Caveat: never park loose `.ts`/`.sh` files in `.claude/hooks/pre|post/`
-  directories — omp's Claude-compat provider scans them.
 - `.omp/rules/` — the per-hub WS rules pack, TTSR stream-interrupting rules:
   `ws-guard-git` (destructive git ops), `ws-commit-format` (Conventional
   Commits + ticket key + WS trailer, reminded per commit attempt),
-  `ws-generated-files` (never hand-edit openwiki pages / changelog mirror /
-  explained artefacts — fix the source), and `openwiki-freshness` (the
-  per-hub freshness rule — installed by `/ws-hub init` step 5b alongside the
-  omp freshness hook above, whether or not OpenWiki is initialized, so every omp
-  hub carries it). ws-matt's `omp-edge-discipline` is NOT part of this per-hub
+  `ws-generated-files` (never hand-edit the changelog mirror or explained
+  artefacts — fix the source). ws-matt's `omp-edge-discipline` is NOT part of this per-hub
   pack: it ships GLOBALLY with the `@wsagency/omp-ws` native extension's own
   `rules/` (alwaysApply, applies project-wide), so init never copies it into
   `.omp/rules/`. These rules turn WS conventions from prose into enforcement in

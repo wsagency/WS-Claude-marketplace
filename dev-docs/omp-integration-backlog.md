@@ -1,7 +1,6 @@
 # omp integration backlog
 
-Shipped v3.11.0: project `.omp/hooks/post/openwiki-freshness.ts` (native TS
-hook — verified ExtensionAPI: `session_stop` with `{continue, additionalContext,
+Verified ExtensionAPI behaviour: `session_stop` with `{continue, additionalContext,
 decision:"block"}` returns capped at 8 continuations, `tool_call` block
 fail-closed, `context` per-call message rewriting, `ui.setWidget` banners).
 New hook ideas from the API deep-dive, feasibility-verified:

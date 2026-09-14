@@ -6,7 +6,7 @@ Every artifact these commands generate — specs, tickets, ADRs, changelog entri
 
 ## /ws-help
 
-One-screen orientation guide to the WS system (start here: /ws-matt grill). Adapts to the project — hub, OpenWiki, omp keywords sections appear only when applicable. Display-only.
+One-screen orientation guide to the WS system (start here: /ws-matt grill). Adapts to the project — hub and omp keywords sections appear only when applicable. Display-only.
 
 ---
 
@@ -107,7 +107,7 @@ remain governed by each materialized child config.
 
 ### /ws-hub init
 
-Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register — each with a **type** (`working` / `input` / `output` + `purpose`, ADR 0006). Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml` (with the `conventions` version marker), `AGENTS.md` (+ thin `CLAUDE.md` import), `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), the hub `dev-docs/` knowledge root (decisions/runbooks/scoping), and vendors `.claude/skills/project-hub-conventions/`. Optionally scaffolds a client input repo (`<project>-client`, `type: input`) and a product docs repo (`<project>-docs`, `type: output, purpose: docs` — user track only), initializes a hub-level OpenWiki knowledge wiki (coverage: `type: working` repos), and sets up herdr (global skill install). Registration details (schema, types, managed block, tech inference, repo layouts) are defined in the project-hub-conventions skill.
+Initialize a new project hub. Interactive: prompts for project name, description, and which detected sibling/subfolder git repos to register — each with a **type** (`working` / `input` / `output` + `purpose`, ADR 0006). Each can be moved into the hub, registered in place, cloned fresh, or skipped. Generates `project.yaml` (with the `conventions` version marker), `AGENTS.md` (+ thin `CLAUDE.md` import), `invoke-ai.sh`, `README.md`, `.gitignore` (with managed block), the hub `dev-docs/` knowledge root (decisions/runbooks/scoping), and vendors `.claude/skills/project-hub-conventions/`. Optionally scaffolds a client input repo (`<project>-client`, `type: input`) and a product docs repo (`<project>-docs`, `type: output, purpose: docs` — user track only), and sets up herdr (global skill install). Registration details (schema, types, managed block, tech inference, repo layouts) are defined in the project-hub-conventions skill.
 
 Invoked inside an already-initialized hub (detected via `project.yaml`), it does not re-scaffold — it offers the **doctor** flow instead. Invoked from a sub-repo of an existing hub (`project.yaml` found in an ancestor), it reports the ancestor hub path and asks to rerun there — it never scaffolds a second hub from inside a sub-repo.
 
@@ -120,7 +120,7 @@ Invoked inside an already-initialized hub (detected via `project.yaml`), it does
 
 ### /ws-hub doctor
 
-Diagnose and repair an existing hub: pull the hub and every sub-repo (`--ff-only`, clean repos only), offer clones for registered-but-missing repos, verify registry integrity (repo types, `.gitignore` block, AGENTS.md markers, thin CLAUDE.md), compare the `conventions` version marker against the latest (points at `/ws-hub update` when behind), refresh drifted generated files (`invoke-ai.sh`, vendored skill, omp rules/hooks), check OpenWiki freshness (against `type: working` repos only), and end with a ready-for-development verdict. Diagnose-only posture available; dirty/diverged repos and user-owned config are never touched — only reported.
+Diagnose and repair an existing hub: pull the hub and every sub-repo (`--ff-only`, clean repos only), offer clones for registered-but-missing repos, verify registry integrity (repo types, `.gitignore` block, AGENTS.md markers, thin CLAUDE.md), compare the `conventions` version marker against the latest (points at `/ws-hub update` when behind), refresh drifted generated files (`invoke-ai.sh`, vendored skill, omp rules/hooks), and end with a ready-for-development verdict. Diagnose-only posture available; dirty/diverged repos and user-owned config are never touched — only reported.
 
 **Example:**
 ```
@@ -209,7 +209,7 @@ Refresh `description` and `tech` fields in `project.yaml` by reading each sub-re
 
 ### /ws-hub docs
 
-Generate cross-repo documentation (architecture, contracts, deployment topology) via the `hub-architect` agent, written into the hub's own `dev-docs/` (the product knowledge root; hubs never carry `docs/`). Analyzes `type: working` repos only. When the hub has an OpenWiki (`<hub>/openwiki/`), offers a prompted wiki refresh afterwards (sub-repo commits are invisible to hub git, so the refresh names the working sub-repos explicitly).
+Generate cross-repo documentation (architecture, contracts, deployment topology) via the `hub-architect` agent, written into the hub's own `dev-docs/` (the product knowledge root; hubs never carry `docs/`). Analyzes `type: working` repos only.
 
 **Example:**
 ```
@@ -220,7 +220,7 @@ Generate cross-repo documentation (architecture, contracts, deployment topology)
 
 ### /ws-hub explained
 
-Generate/refresh the product explainer artefact — a self-contained HTML page (ws-artefacts contract: all inline, WS chrome palette, inline-SVG diagrams) + tokenless `meta.json`, audience product owner + dev team. Routes by project shape: at the **hub root** it writes into the `type: output, purpose: explained` repo (offering to create + register `<project>-explained` first); run from a **sub-repo** it names the ancestor hub and asks to rerun there (never scaffolds a second hub); with **no hub anywhere** (standalone) it defaults to `<repo-name>-explained.html` (or `<topic>.html`) plus `meta.json` at the current repo root, with no `project.yaml` or hub registration. Both shapes validate the output location before writing: a valid ws-artefacts manifest is merged while preserving unrelated entries; only HTML it names is known generated output; authored/unknown collisions require an explicit validated dedicated subdirectory (reported as registration `path`), replace, or cancel choice. Hub-root sources: OpenWiki, hub `dev-docs/`, and working repos; standalone sources: current repo only.
+Generate/refresh the product explainer artefact — a self-contained HTML page (ws-artefacts contract: all inline, WS chrome palette, inline-SVG diagrams) + tokenless `meta.json`, audience product owner + dev team. Routes by project shape: at the **hub root** it writes into the `type: output, purpose: explained` repo (offering to create + register `<project>-explained` first); run from a **sub-repo** it names the ancestor hub and asks to rerun there (never scaffolds a second hub); with **no hub anywhere** (standalone) it defaults to `<repo-name>-explained.html` (or `<topic>.html`) plus `meta.json` at the current repo root, with no `project.yaml` or hub registration. Both shapes validate the output location before writing: a valid ws-artefacts manifest is merged while preserving unrelated entries; only HTML it names is known generated output; authored/unknown collisions require an explicit validated dedicated subdirectory (reported as registration `path`), replace, or cancel choice. Hub-root sources: the hub's `dev-docs/` and working repos; standalone sources: current repo only.
 
 **Arguments:**
 | Name | Required | Description |

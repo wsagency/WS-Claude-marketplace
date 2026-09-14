@@ -330,16 +330,7 @@ describe("generate runtime assets", () => {
 			);
 			expect(edgeRule).toContain("One owner per work unit");
 			expect(edgeRule).toContain("English artifacts");
-			// Hub-only openwiki-freshness rule: packaged for /ws-hub to copy into
-			// a hub's .omp/rules/, but OUTSIDE the auto-discovered rules/ dir.
-			expect(counts.hubRules).toBe(1);
-			const hubRule = await fs.readFile(
-				path.join(outRoot, "templates", "omp", "hub-rules", "openwiki-freshness.md"),
-				"utf8",
-			);
-			expect(hubRule).toContain("alwaysApply: true");
 			const packagedRules = await fs.readdir(path.join(outRoot, "rules"));
-			expect(packagedRules).not.toContain("openwiki-freshness.md");
 			expect(packagedRules).toContain("omp-edge-discipline.md");
 		} finally {
 			await fs.rm(outRoot, { recursive: true, force: true });

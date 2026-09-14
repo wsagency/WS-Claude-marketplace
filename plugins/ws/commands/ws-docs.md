@@ -128,7 +128,7 @@ Verb behavior at the hub root:
 - **no verb (discovery)** — one `docs-doctor` per working repository with its
   child policy, plus product rows from hub policy. Render configured
   `dev_track`, changelog path, and config readiness per child; then render the
-  registered docs output, hub `dev_track`, and `openwiki/` freshness. Do not
+  registered docs output and hub `dev_track`. Do not
   render a local user-track row for working repositories.
 - **audit** — for every policy-ready working repository, fan out one
   `docs-doctor` (`mode: audit`), `public-api-watcher`, and `arch-watcher`.
@@ -269,8 +269,7 @@ changelog source is `config.changelog.path`; its user-facing mirror is
 configured track paths and resolved scope. Stage only paths written in this
 run and skip the commit when the write set is empty. Use the last version tag
 when one exists, otherwise the SHA of the last commit that changed the
-configured changelog. In a hub with `openwiki/`, offer refresh only after
-significant internal documentation changes.
+configured changelog.
 
 ### verb = repair
 
@@ -326,16 +325,12 @@ zero-padded filename, dispatch `adr-writer`, and report the configured path.
 Use the lightweight ADR by default and full MADR only for a breaking,
 costly-to-undo, or genuinely multi-option decision.
 
-In a hub with `openwiki/`, significant dev-docs changes warrant an OpenWiki refresh (see the hub AGENTS.md; AI-driven).
-
 ### verb = architecture
 
 Resolve repository or product policy first. Generate into a scratch directory,
 diff against `<resolved dev_track>/architecture.md`, and ask
 **proceed | cancel** before copying. Product scope delegates to
-`hub-architect`; repository scope uses `architecture-documenter`. When an
-OpenWiki exists, keep the architecture document thin: intended boundaries,
-contracts, and invariants with a pointer to the derived map.
+`hub-architect`; repository scope uses `architecture-documenter`.
 
 ### verb = contributing
 

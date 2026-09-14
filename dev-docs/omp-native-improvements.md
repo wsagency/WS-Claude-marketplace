@@ -75,13 +75,8 @@ carries no TS); versions are tagged to match the marketplace repo release.
    silently.
 4. **Docs-drift stop nudge** — `session_stop` + `additionalContext` (capped):
    port of `enforce-stop.sh` — uncommitted CHANGELOG drift, ADR candidates.
-5. **OpenWiki freshness, global** — promote the per-hub
-   `.omp/hooks/post/openwiki-freshness.ts` into the extension (detect
-   `project.yaml` + `openwiki/` at cwd). The per-project copy remains as the
-   plugin-less fallback; the extension skips when the local hook already ran
-   (marker check) to avoid double banners.
 
-Maintenance rule: the package stays THIN (no business logic beyond the five
+Maintenance rule: the package stays THIN (no business logic beyond the four
 behaviors) because omp's ExtensionAPI moves fast — every omp minor gets a
 smoke test (headless `omp -e <built-extension> --no-session -p ...` run — see
 the recipe in `extensions/omp-ws/README.md`; never `--no-extensions`, which
@@ -127,7 +122,7 @@ not speculative).
 6. **Per-spawn effort** — introduced in 17.1.6 and schema-gated behind
    `task.enableEffort`; hub presets enable it and fan-out sites choose
    `hi|med|lo` per task item without multiplying model definitions.
-7. Cataloged for later: `.mcp.json` bundling (jira/OpenWiki MCP zero-setup),
+7. Cataloged for later: `.mcp.json` bundling (jira MCP zero-setup),
    `askDialog` rich forms, `registerShortcut`/`registerFlag`, memory API
    (`ctx.memory.save`), `resources_discover` conditional skill packs,
    `before_agent_start` per-turn prompt shaping, and `user_bash` interception.

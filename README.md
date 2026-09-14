@@ -10,7 +10,7 @@ One plugin ([ws](./plugins/ws)), one workflow:
 
 - **Work enters through the ws-matt skill graph** (`/ws-matt`) — idea → `grill` (interview) → `to-spec` → `to-tickets` → `implement` (TDD + review). Tickets live **locally in `dev-docs/tickets/`** (fastest for agents; optional Jira mirror via jira-cli).
 - **Every branch closes through the git flows** (`/ws-commit`) — Conventional Commits with the Jira key, worklog, CHANGELOG at PR time (`/ws-commit pr`).
-- **Knowledge maintains itself in three layers**: authored truth in `dev-docs/` (ADRs, runbooks, scoping docs distilled from client deliveries — written as decisions happen), a derived **OpenWiki** at the hub level (the map agents read *before* exploring code, refreshed by agents — no CI), and generated outputs for humans (user docs → Outline via `/ws-docs publish`; product explainer via `/ws-hub explained`).
+- **Knowledge maintains itself in two layers**: authored truth in `dev-docs/` (ADRs, runbooks, scoping docs distilled from client deliveries — written as decisions happen), and generated outputs for humans (user docs → Outline via `/ws-docs publish`; product explainer via `/ws-hub explained`).
 - **Multi-repo products live in a hub** (`/ws-hub`) — one meta-repo registering all sub-repos, with an agent-picker launcher and, on omp, a config preset + stream-interrupting convention rules.
 - **Artifacts are English.** Every artifact the suite generates — specs, tickets, ADRs, changelog entries, commit and PR bodies, review findings, research notes, generated docs and HTML — is written in English regardless of the conversation language. Translations are derived copies, never the original.
 
@@ -58,7 +58,7 @@ On omp, install the **native package** `@wsagency/omp-ws` — it carries the
 COMPLETE suite (all commands, skills, and agents, generated from the same
 source as the Claude plugin — ADR 0004) plus omp-only capabilities: a
 **fail-safe git guard**, TTSR convention rules, the opt-in changelog gate, a
-**Jira session dashboard widget**, docs-drift and OpenWiki-freshness nudges,
+**Jira session dashboard widget**, a docs-drift nudge,
 compaction preservation, and the schema-validated `ws_ticket` /
 `ws_changelog` / `ws_adr` tools:
 
@@ -211,11 +211,11 @@ Because a standalone repo's `dev-docs/` already uses the hub layout, adopting a 
 - `/ws-hub docs` — Generate cross-repo architecture/contracts/deployment docs (hub-architect agent; written into the hub's own `dev-docs/`; analyzes `type: working` repos only)
 - `/ws-hub explained` — Generate the product explainer artefact (ws-artefacts format): at a hub root into the `type: output, purpose: explained` repo, or standalone (no hub) into the current repo. In **both shapes** it validates the output location before writing — merging a valid manifest and requiring an explicit dedicated subdirectory / replace / cancel choice for authored collisions — audience: product owner + dev team
 
-One sub-repo per hub can be marked `type: output, purpose: docs` — the product docs repo (`<project>-docs`), source of truth for the USER track only (synced to Outline via `/ws-docs publish`); cross-repo internal docs live in the hub's own `dev-docs/`. `/ws-hub init` offers to scaffold it — plus optional hub-level [OpenWiki](https://github.com/langchain-ai/openwiki) (one knowledge wiki for all sub-repos, referenced from every sub-repo's AGENTS.md, refreshed via `/ws-hub docs`) and [herdr](https://herdr.dev) fleet setup (the ws plugin ships the vendored `herdr` skill; works with Claude Code and omp).
+One sub-repo per hub can be marked `type: output, purpose: docs` — the product docs repo (`<project>-docs`), source of truth for the USER track only (synced to Outline via `/ws-docs publish`); cross-repo internal docs live in the hub's own `dev-docs/`. `/ws-hub init` offers to scaffold it — plus optional [herdr](https://herdr.dev) fleet setup (the ws plugin ships the vendored `herdr` skill; works with Claude Code and omp).
 
 Herdr is the **outer** orchestration layer — one agent session per repo or subsystem lane, and the backend of choice once `HERDR_ENV=1` and two or more such lanes are genuinely in play (parallel edits there need `herdr worktree`). The plugin's agents fan out **inner** workers inside a single session (omp's batched `task`; the Task tool on Claude Code). The same unit of work is never scheduled at both layers.
 
-On omp, `/ws-hub init` also writes a project preset: `.omp/config.yml` (yolo approval by default — init asks; per-project model roles), the **WS TTSR rules pack** (stream-interrupting rules for dangerous git ops, commit format, and hand-edits of generated files) and a native TypeScript hook that shows a banner when dev-docs changed since the last OpenWiki refresh.
+On omp, `/ws-hub init` also writes a project preset: `.omp/config.yml` (yolo approval by default — init asks; per-project model roles) and the **WS TTSR rules pack** (stream-interrupting rules for dangerous git ops, commit format, and hand-edits of generated files).
 
 Launching a hub is not a command: `cd <hub> && ./invoke-ai.sh` (hinted by `/ws-hub status`).
 

@@ -343,7 +343,7 @@ export async function generate(
 	sourceRoot: string,
 	outRoot: string,
 	options: GenerateOptions,
-): Promise<{ commands: number; skills: number; agents: number; rules: number; hubRules: number; runtimeScripts: number; releaseFiles: number }> {
+): Promise<{ commands: number; skills: number; agents: number; rules: number; runtimeScripts: number; releaseFiles: number }> {
 	const sharedSurface: Array<Pick<ReleaseSurfaceFile, "surface" | "source" | "target">> = [];
 	for (const dir of GENERATED_DIRS) {
 		const target = path.join(outRoot, dir);
@@ -402,14 +402,11 @@ export async function generate(
 
 	// rules (verbatim: TTSR templates + the always-apply edge discipline)
 	const packagedPluginRules = ["omp-edge-discipline.md"];
-	// Hub-only rules: packaged under templates/omp/hub-rules/ for /ws-hub to copy
-	// into each hub's .omp/rules/, but kept OUT of the auto-applied rules/ dir.
-	const excludedPluginRules = ["openwiki-freshness.md"];
 	const pluginRules = await listMarkdown(path.join(sourceRoot, "rules"));
-	const unaccountedRules = pluginRules.filter(name => !packagedPluginRules.includes(name) && !excludedPluginRules.includes(name));
+	const unaccountedRules = pluginRules.filter(name => !packagedPluginRules.includes(name));
 	if (unaccountedRules.length > 0) {
 		throw new Error(
-			`rules unaccounted for in generate.ts — add each to packagedPluginRules or excludedPluginRules:\n  - ${unaccountedRules.join("\n  - ")}`,
+			`rules unaccounted for in generate.ts — add each to packagedPluginRules:\n  - ${unaccountedRules.join("\n  - ")}`,
 		);
 	}
 	const ruleSources = [
@@ -427,14 +424,6 @@ export async function generate(
 	// Runtime assets referenced by generated commands and skills.
 	await fs.cp(path.join(sourceRoot, "templates"), path.join(outRoot, "templates"), { recursive: true });
 
-	// Hub-only rule packaged for /ws-hub to copy into a hub's .omp/rules/ —
-	// deliberately OUTSIDE the auto-discovered rules/ dir so it never applies
-	// globally (it carries alwaysApply: true). templates/omp/rules/ IS globbed
-	// into rules/ above, so we ship this at templates/omp/hub-rules/ instead.
-	await fs.mkdir(path.join(outRoot, "templates", "omp", "hub-rules"), { recursive: true });
-	for (const name of excludedPluginRules) {
-		await fs.copyFile(path.join(sourceRoot, "rules", name), path.join(outRoot, "templates", "omp", "hub-rules", name));
-	}
 	await fs.mkdir(path.join(outRoot, "scripts"), { recursive: true });
 	for (const name of RUNTIME_SCRIPT_FILES) {
 		await fs.copyFile(path.join(sourceRoot, "scripts", name), path.join(outRoot, "scripts", name));
@@ -446,7 +435,6 @@ export async function generate(
 		skills: skillEntries.length,
 		agents: agentFiles.length,
 		rules: ruleSources.length,
-		hubRules: excludedPluginRules.length,
 		runtimeScripts: RUNTIME_SCRIPT_FILES.length,
 		releaseFiles: releaseManifest.files.length,
 	};
@@ -459,7 +447,7 @@ async function main(): Promise<void> {
 	const marketplaceCommit = resolveMarketplaceCommit(marketplaceRoot, process.env.WS_MARKETPLACE_COMMIT);
 	const counts = await generate(sourceRoot, outRoot, { marketplaceCommit });
 	console.log(
-		`omp-ws generate: ${counts.commands} commands, ${counts.skills} skills, ${counts.agents} agents, ${counts.rules} rules, ${counts.hubRules} hub-only rules, templates, ${counts.runtimeScripts} runtime scripts, ${counts.releaseFiles} checksummed shared files at ${marketplaceCommit} (from ${sourceRoot})`,
+		`omp-ws generate: ${counts.commands} commands, ${counts.skills} skills, ${counts.agents} agents, ${counts.rules} rules, templates, ${counts.runtimeScripts} runtime scripts, ${counts.releaseFiles} checksummed shared files at ${marketplaceCommit} (from ${sourceRoot})`,
 	);
 }
 

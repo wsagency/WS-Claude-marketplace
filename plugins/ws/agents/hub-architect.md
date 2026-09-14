@@ -37,12 +37,7 @@ Write only to the caller's scratch directory or the validated hub
 `docs.dev_track`. Never write a hub user track, docs output repository, or any
 working/input/output child.
 
-1. **`architecture.md`** — Cross-repo boundaries and contracts. When the hub has
-   an OpenWiki (`<hub>/openwiki/` exists), keep this THIN and curated — the
-   living structural map is the wiki's job; open with a pointer to
-   `openwiki/architecture/` and record only what a derived map cannot:
-   intended boundaries, cross-repo contracts, invariants, deploy order.
-   Without an OpenWiki, produce the fuller map:
+1. **`architecture.md`** — Cross-repo boundaries and contracts:
    - One section per working sub-repo with: purpose, primary tech, entry points, public interfaces
    - A "How they connect" section: API boundaries, shared types/contracts, package dependencies between repos, deploy order
    - A simple ASCII diagram if the topology is non-trivial

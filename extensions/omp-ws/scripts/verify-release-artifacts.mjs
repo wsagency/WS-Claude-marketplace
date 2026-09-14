@@ -18,7 +18,6 @@ const EXPECTED_CLAUDE_HOOK_ASSETS = Object.freeze([
 	"hooks/docs-policy.mjs",
 	"hooks/enforce-changelog.sh",
 	"hooks/enforce-stop.sh",
-	"hooks/openwiki-freshness.sh",
 	"hooks/session-discipline.sh",
 	"hooks/session-start-dashboard.mjs",
 ]);
@@ -26,7 +25,6 @@ const EXPECTED_OMP_HOOK_EVENTS = Object.freeze([
 	"session.compacting",
 	"session_start",
 	"session_start",
-	"session_stop",
 	"session_stop",
 	"tool_call",
 	"tool_call",

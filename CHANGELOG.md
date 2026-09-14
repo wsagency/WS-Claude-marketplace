@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING:** Remove OpenWiki entirely (ADR 0011) — the Claude Stop hook (`openwiki-freshness.sh`), the omp per-project hook template, the hub-only always-apply `openwiki-freshness` rule, the `@wsagency/omp-ws` freshness check, the `/ws-hub init` `openwiki/` hub scaffold, and the `/ws-hub doctor` knowledge-freshness check are gone; a hub's own `dev-docs/` remains the product knowledge root, now without staleness detection
+
 ### Fixed
 
 - Fix thin `CLAUDE.md` handling across setup: the hub scaffold template now emits the canonical comment-first import, and `/ws-setup` discovery plus core setup recognize the exact import-first bytes released in v5.0.0/omp-ws 0.7.0 as a known thin variant and normalize them to the canonical form on rerun, without a spurious `context.source` resolution

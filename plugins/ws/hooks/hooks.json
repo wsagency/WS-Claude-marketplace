@@ -1,5 +1,5 @@
 {
-  "description": "ws plugin hooks — docs maintenance from .wsagency/config.yaml, OpenWiki freshness reminders, Jira session dashboard, and session discipline.",
+  "description": "ws plugin hooks — docs maintenance from .wsagency/config.yaml, Jira session dashboard, and session discipline.",
   "hooks": {
     "SessionStart": [
       {
@@ -42,10 +42,6 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/enforce-stop.sh",
             "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/openwiki-freshness.sh"
           }
         ]
       }

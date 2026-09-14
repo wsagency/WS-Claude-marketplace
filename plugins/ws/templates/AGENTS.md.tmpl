@@ -56,7 +56,7 @@ but artifacts never follow it; user-facing translations are derived copies
 (originals stay English) and proper nouns keep their spelling.
 
 Product-level INTERNAL documentation lives in this hub's own `dev-docs/` —
-the knowledge root beside `openwiki/`: cross-repo architecture (written by
+the product knowledge root: cross-repo architecture (written by
 `/ws-hub docs`), product ADRs (`decisions/`), runbooks, and processed client
 deliveries (`scoping/`). Repo-specific dev docs stay in each working
 sub-repo's own `dev-docs/`. This hub knowledge root is always present,
@@ -72,25 +72,6 @@ are unavailable until `/ws-hub add` registers one; product-internal targets
 <!-- Prune the sentence below if this hub has no `type: input` repo. -->
 Raw external deliveries (client materials, design assets) live in `type:
 input` repos and are processed into `dev-docs/scoping/` via `/ws-hub intake`.
-
-## Knowledge wiki (OpenWiki)
-
-<!-- Prune this section if the hub was initialized without OpenWiki. -->
-
-This hub maintains an OpenWiki at `openwiki/` — the knowledge repository for the
-WHOLE product (all sub-repos). Entry point: `openwiki/quickstart.md`. **Consult it
-before exploring code or answering cross-repo questions**; every sub-repo's
-AGENTS.md points here too.
-
-Refreshing is **AI-driven — no CI**: agents run it occasionally, BEFORE starting
-major cross-repo work when the wiki is stale (compare `openwiki/.last-update.json`
-against recent sub-repo activity) and AFTER completing major changes. Sub-repo
-commits are invisible to the hub's git, so a refresh is ALWAYS prompted with the
-sub-repo list — `openwiki --update "Refresh; re-scan sub-repos: <name>, <name>, ..."`
-(`/ws-hub docs` offers this). Coverage scope lives in `openwiki/INSTRUCTIONS.md`.
-Do not hand-edit generated pages; the `<!-- OPENWIKI:START/END -->` blocks in
-AGENTS.md/CLAUDE.md are tool-managed (a permitted exception to the
-thin-CLAUDE.md rule).
 
 ## Herdr
 

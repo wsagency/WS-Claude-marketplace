@@ -36,8 +36,7 @@ The distinction is **audience**, not technical complexity. An API reference for 
 │
 └── dev-docs/                 ← INTERNAL docs
     ├── index.md
-    ├── architecture.md       ← THIN when an OpenWiki exists: curated boundaries
-    │                           + contracts + pointer to openwiki/ (the map)
+    ├── architecture.md       ← cross-repo boundaries and contracts
     ├── development.md
     ├── decisions/            ← ADRs (two-tier: lightweight default, MADR for big)
     ├── scoping/             ← processed external deliveries (one dated doc per

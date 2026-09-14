@@ -47,7 +47,7 @@ bash:
 
 Personal standing rules belong in `~/.omp/agent/RULES.md` (for example, “Never commit or push unless asked”). The native `@wsagency/omp-ws` package auto-discovers `omp-edge-discipline.md`, so every WS session receives the graph and artifact policy without a project-local installer. `/ws-setup` verifies this active runtime capability against the repository's `.wsagency/config.yaml`.
 
-`/ws-hub init` installs the hub-specific TTSR pack (`ws-guard-git`, `ws-commit-format`, and `ws-generated-files`). Its OpenWiki flow also installs `openwiki-freshness`. These hub rules remain project-local because they depend on hub shape.
+`/ws-hub init` installs the hub-specific TTSR pack (`ws-guard-git`, `ws-commit-format`, and `ws-generated-files`). These hub rules remain project-local because they depend on hub shape.
 
 ## Features worth switching on (one-liners)
 
@@ -104,7 +104,7 @@ ws plugin surface** — all 7 commands, 30 skills, 14 agents (generated from the
 same source as the Claude plugin; only the source-checkout maintenance workflow
 is excluded), TTSR rules, PLUS what only a native package can do:
 fail-safe git guard, opt-in changelog gate, Jira dashboard widget,
-docs-drift nudge, OpenWiki freshness, compaction preservation, and the
+docs-drift nudge, compaction preservation, and the
 `ws_ticket`/`ws_changelog`/`ws_adr` tools. This is the only WS plugin you
 install in omp; the Claude marketplace plugin is a separate distribution.
 

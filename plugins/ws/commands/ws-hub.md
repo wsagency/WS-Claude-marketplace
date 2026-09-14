@@ -65,7 +65,7 @@ verb list and stop (write nothing):
   repos <pull|clone>  one git operation across all registered repos
   add [--scan]        register a sub-repo (clone / adopt / sibling / mark output)
   describe            refresh description/tech fields from repo contents
-  docs                cross-repo docs via hub-architect (+ wiki refresh offer)
+  docs                cross-repo docs via hub-architect
   explained           generate the purpose: explained product artefacts
 ```
 
@@ -249,30 +249,11 @@ later). 4c is on request only — it has no Yes/No branch.
 `/ws-hub explained` verb, which creates and registers `<project>-explained`
 on first run.
 
-#### 5. Knowledge & fleet tooling (optional)
+#### 5. Harness & fleet tooling (optional)
 
-**5a — OpenWiki (hub-level knowledge wiki).** Ask (AskUserQuestion): "Initialize OpenWiki at the hub level — one knowledge wiki covering ALL sub-repos?"
+**5a — omp preset.** Ask FIRST (AskUserQuestion; default **Yes** when `command -v omp` succeeds, else **No**): "Write the omp preset — `.omp/` config and WS rules pack?" **No** → skip the whole preset (`.omp/` is never created; the global `omp-edge-discipline` rule from the `@wsagency/omp-ws` native extension still applies). **Yes** → write `.omp/config.yml` from `${CLAUDE_PLUGIN_ROOT}/templates/omp/config.yml.tmpl` (skip if one exists — never overwrite user config), and copy the WS rules pack into `.omp/rules/`: `${CLAUDE_PLUGIN_ROOT}/templates/omp/rules/*.md` (ws-guard-git, ws-commit-format, ws-generated-files — TTSR rules that interrupt the model's stream on dangerous git ops, non-conventional commits, and hand-edits of generated files; the global `omp-edge-discipline` rule is NOT copied here, it ships with the native extension). Then ASK the user (AskUserQuestion, defaults first): (1) approval posture — **yolo** (default, omp's own default) or `write` for cautious client repos; (2) bash guard patterns — **off** (default) or on; (3) whether to fill the per-project `modelRoles` block now (the template documents the WS class mapping and thinking-level suffixes — each project can run different providers). Uncomment/adjust the template blocks per their answers. Note: the TTSR `condition`/`scope` patterns may need tuning against their omp version — they are conventions-as-enforcement, verify once live.
 
-- **Yes** → verify `command -v openwiki` (missing → print `npm install -g openwiki` and let the user install first). Run `openwiki --init` at the hub root — it is interactive (provider/model onboarding); let the user drive it. It generates `openwiki/` and maintains its own `<!-- OPENWIKI:START/END -->` block in the hub's `AGENTS.md` AND `CLAUDE.md` — the CLAUDE.md block is a permitted tool-managed exception to the thin-import rule (see the skill's "Context-file cascade"). Then, immediately after init:
-  1. **Write the coverage scope into `openwiki/INSTRUCTIONS.md`** (append a "Coverage scope" section): the wiki documents the product across ALL registered **`type: working`** sub-repos — enumerate them from `project.yaml` (`type: input` repos are raw external deliveries and `type: output` repos are derived artifacts — both are excluded) — each a SEPARATE git repository nested in this hub and invisible to the hub's git; always scan them all; the hub root itself is a thin meta repo (its `dev-docs/` is authored truth, not wiki input). Without this, OpenWiki tends to document only the largest repo it finds.
-  2. **Delete the generated CI workflow** (`.github/workflows/openwiki-update.yml`) if openwiki created one — the WS convention is AI-DRIVEN refresh (agents run a prompted refresh occasionally, before and/or after major work), not scheduled CI. Freshness is enforced softly: the plugin's Stop hook reminds when dev-docs changed since the last refresh (Claude Code); the omp freshness hook + rule are written by step 5b when the omp preset is chosen.
-  3. For EVERY registered sub-repo, append this pointer to the sub-repo's `AGENTS.md` (creating it, plus a thin `CLAUDE.md`, if missing; adjust the relative path for sibling repos):
-
-  ```markdown
-  ## Hub knowledge wiki
-
-  The parent hub maintains an OpenWiki for the whole product at `../openwiki/`
-  (entry point: `../openwiki/quickstart.md`). Consult it BEFORE exploring other
-  sub-repos or answering cross-repo questions — it covers every repo in this hub.
-  Refresh happens at hub level (see the hub's AGENTS.md; AI-driven, no CI).
-  ```
-
-  Keep the template's "Knowledge wiki (OpenWiki)" section in the hub AGENTS.md (it documents the prompted-refresh pattern — sub-repo commits are invisible to hub git, so refresh is always `openwiki --update "Refresh; re-scan sub-repos: <list>"`).
-- **No** → prune the template's "Knowledge wiki (OpenWiki)" section from the hub AGENTS.md; the flow can be re-run later (documented in the skill — detection is simply the presence of `<hub>/openwiki/`).
-
-**5b — omp preset.** Ask FIRST (AskUserQuestion; default **Yes** when `command -v omp` succeeds, else **No**): "Write the omp preset — `.omp/` config, freshness hook, and WS rules pack?" **No** → skip the whole preset (`.omp/` is never created; the global `omp-edge-discipline` rule from the `@wsagency/omp-ws` native extension still applies). **Yes** → write `.omp/config.yml` from `${CLAUDE_PLUGIN_ROOT}/templates/omp/config.yml.tmpl` (skip if one exists — never overwrite user config), copy `${CLAUDE_PLUGIN_ROOT}/templates/omp/hooks/openwiki-freshness.ts` into `.omp/hooks/post/` (native TS freshness hook — banner + exact update command on session settle), and copy the WS rules pack into `.omp/rules/`: `${CLAUDE_PLUGIN_ROOT}/templates/omp/rules/*.md` (ws-guard-git, ws-commit-format, ws-generated-files — TTSR rules that interrupt the model's stream on dangerous git ops, non-conventional commits, and hand-edits of generated files) PLUS the freshness rule `${CLAUDE_PLUGIN_ROOT}/templates/omp/hub-rules/openwiki-freshness.md` — falling back to `${CLAUDE_PLUGIN_ROOT}/rules/openwiki-freshness.md` under the Claude Code plugin layout, where `templates/omp/hub-rules/` does not exist — installed per-hub here so every omp hub carries it whether or not OpenWiki is initialized (it is NOT part of the 5a-Yes branch; the global `omp-edge-discipline` rule is NOT copied here, it ships with the native extension). Then ASK the user (AskUserQuestion, defaults first): (1) approval posture — **yolo** (default, omp's own default) or `write` for cautious client repos; (2) bash guard patterns — **off** (default) or on; (3) whether to fill the per-project `modelRoles` block now (the template documents the WS class mapping and thinking-level suffixes — each project can run different providers). Uncomment/adjust the template blocks per their answers. Note: the TTSR `condition`/`scope` patterns may need tuning against their omp version — they are conventions-as-enforcement, verify once live.
-
-**5c — herdr (agent fleet multiplexer).** Ask: "Set up herdr for this hub?"
+**5b — herdr (agent fleet multiplexer).** Ask: "Set up herdr for this hub?"
 
 - **Yes** → the ws plugin SHIPS the vendored `herdr` skill (`plugins/ws/skills/herdr`, self-guarded by `HERDR_ENV=1`), so no per-repo or global skill install is needed where the plugin is installed. Verify `command -v herdr`; if the binary is missing print the install options (`curl -fsSL https://herdr.dev/install.sh | sh`, or `brew install herdr`). On machines WITHOUT the ws plugin, install the skill globally instead: `npx skills add ogulcancelik/herdr --skill herdr -g` (covers every repo and every agent that reads `~/.claude/skills/` — Claude Code and omp). Keep the template's "Herdr" section in the hub AGENTS.md (workspace-per-sub-repo pattern). Tell the user the resulting layer split: once `HERDR_ENV=1` and two or more working sub-repos are genuinely in play, Herdr panes are the outer backend without them naming Herdr again; parallel edits need `herdr worktree` (shared-cwd panes are coordination-only); a per-repo agent may still fan out inner `task` workers over its own repo's disjoint slices, and no sub-repo is scheduled at both layers.
 - **No** → prune the template's "Herdr" section from the hub AGENTS.md. Without herdr, multi-repo work stays inner: one batched same-session `task` call.
@@ -298,8 +279,7 @@ Then initialize the hub's own git — the region generation MUST precede the com
 cd <hub-dir>
 git init -q
 git add .gitignore .claude README.md AGENTS.md CLAUDE.md project.yaml invoke-ai.sh dev-docs
-git add openwiki .github 2>/dev/null || true   # present only if step 5a ran
-git add .omp 2>/dev/null || true   # present only if step 5b ran
+git add .omp 2>/dev/null || true   # present only if step 5a ran
 git commit -q -m "chore: initialize <project> hub"
 ```
 
@@ -309,13 +289,13 @@ Verify with `git status` that no sub-repo content shows up as untracked (the .gi
 
 - Path to created hub
 - Each registered repo: name, where it ended up (nested/sibling/cloned)
-- OpenWiki / herdr status (initialized / skipped)
+- herdr status (set up / skipped)
 - Suggested commits — the hub and each touched sub-repo commit separately (each is its own git): the hub's initial commit is already made (step 6); for every repo a step-3b lift dirtied (its product `dev-docs/` moved out), name the repo and the suggested commit message (`docs: lift product dev-docs into <project>-main hub`). init never commits on the user's behalf.
 - Next steps:
   - `cd <hub> && ./invoke-ai.sh` to launch
   - `/ws-hub repos clone` if any registered repos aren't on disk
   - `/ws-hub add` to register more
-  - `/ws-hub docs` to generate cross-repo docs (and refresh OpenWiki when initialized)
+  - `/ws-hub docs` to generate cross-repo docs
   - Each sub-repo should keep repo-specific rules in its own `AGENTS.md`, with a thin `CLAUDE.md` containing only `@AGENTS.md`. Harness notes:
     - Claude Code — auto-loads it when the repo is mounted via `--add-dir`
     - omp — does not auto-load sub-repo context; read it when entering the sub-repo
@@ -358,8 +338,9 @@ version forever):
 | from→to | name | what it does |
 |---|---|---|
 | 1→2 | repo types + hub knowledge root (ADR 0006) | `role:`→`type:`/`purpose:` rename; scaffold hub `dev-docs/`; move product dev-docs out of the docs repo; move client materials into an input repo; refresh generated + harness files |
+| 2→3 | remove OpenWiki (ADR 0011) | delete the WS-installed OpenWiki integration: `.omp/hooks/post/openwiki-freshness.ts` and `.omp/rules/openwiki-freshness.md`. Remove the WS-authored OpenWiki prose: the hub `AGENTS.md`'s "Knowledge wiki (OpenWiki)" section and the `## Hub knowledge wiki` pointer that init appended to each sub-repo's `AGENTS.md`. Then refresh the generated + harness files so the hub matches the current templates. **Touch nothing OpenWiki owns**: the `openwiki/` directory and its pages, the `<!-- OPENWIKI:START/END -->` blocks in `AGENTS.md`/`CLAUDE.md` (tool-managed, owned by their tool), and the coverage-scope section inside `openwiki/INSTRUCTIONS.md` are all left exactly as they are. Report each of them with its path so the hub owner can retire the wiki and its markers through OpenWiki itself, and state plainly that WS no longer manages or refreshes any of it |
 
-Latest conventions version: **2**.
+Latest conventions version: **3**.
 
 **Flow:**
 
@@ -513,8 +494,9 @@ this run's migration is suppressed this run and re-offered next run.
    entries with neither `type` nor `role` → `type: working`. For any OTHER
    legacy `role:` value, use the type (`working` / `input` / `output`) and,
    when output, purpose choice resolved in the read-only Flow step 2; then DROP
-   the `role:` field — a surviving `role:` would leave the repo permanently
-   non-working in the freshness detectors. Via `Edit`, preserve
+   the `role:` field — a surviving `role:` leaves the entry permanently
+   untyped, and the typed-registry gates (doctor, intake) keep flagging it.
+   Via `Edit`, preserve
    comments/formatting. After the rename, enforce the skill's known-purpose
    uniqueness rule (Output repos section): a malformed legacy hub with two
    `role: docs` must not migrate into two `purpose: docs`; Flow step 2 resolves
@@ -625,10 +607,55 @@ this run's migration is suppressed this run and re-offered next run.
    Never overwrite a path step 3 filled.
 6. **Generated + harness refresh** — offer the same refreshes as the
    vendored-skill and harness-assets doctor checks (invoke-ai.sh, vendored
-   skill, `.omp/rules/` pack incl. the type-aware `openwiki-freshness` rule,
-   `.omp/hooks/post/openwiki-freshness.ts`).
+   skill, `.omp/rules/` pack).
 7. Regenerate the `AGENTS.md` `ws-hub:repos` marker region (repo blocks now
    carry the `type`/`purpose` line).
+
+**Migration 2→3 steps:**
+
+1. **Pre-flight (unified, extended scope).** This migration edits WS-authored
+   pointers inside EVERY registered sub-repo's `AGENTS.md`, so the Flow step 3
+   unified pre-flight must include every sub-repo worktree that still carries
+   such a pointer, not only the hub. Detect them read-only first (grep each
+   sub-repo's `AGENTS.md` for a `## Hub knowledge wiki` section) and list them
+   in the step 2 plan; a dirty or non-git sub-repo is reported there and the
+   user decides per the existing pre-flight rules. A sub-repo with no pointer
+   is never touched and never pre-flighted.
+2. **Remove WS-installed omp assets** — delete `.omp/hooks/post/openwiki-freshness.ts`
+   and `.omp/rules/openwiki-freshness.md` when present. Absent is success, not
+   a failure: this step is idempotent and a hub initialized without the omp
+   preset simply has nothing to remove. Leave the rest of `.omp/` alone.
+3. **Remove WS-authored hub prose** — delete the `## Knowledge wiki (OpenWiki)`
+   section from the hub's `AGENTS.md` via `Edit`, matching the section heading
+   through the line before the next `##` heading, and repair any sentence that
+   referenced `openwiki/` as a neighbour of the knowledge root (the hub
+   `dev-docs/` stands alone now). Re-running finds no section and changes
+   nothing.
+4. **Remove WS-authored sub-repo pointers** — in each sub-repo identified in
+   step 1, delete the `## Hub knowledge wiki` section from its `AGENTS.md`,
+   leaving its thin `CLAUDE.md` untouched. Nothing is committed in any
+   sub-repo; report the edited paths so the user commits them per repo.
+5. **Remove the WS-authored scaffold snippets** — two generated-at-init lines
+   that no refresh in step 7 covers. In the hub's `README.md`, delete the
+   directory-tree line for `openwiki/` (the `├── openwiki/ # optional derived
+   wiki (only if initialized)` entry as init wrote it) and nothing else in that
+   tree. In `project.yaml`, in the commented `type` legend, drop `indexed by
+   OpenWiki` from the `working` description while keeping the rest of the
+   comment intact. Match the exact generated wording only: if either snippet was
+   customized by the user, leave it and report it instead of guessing. Both
+   edits are no-ops on re-run.
+6. **Report what WS no longer manages, and touch none of it** — the `openwiki/`
+   directory and its pages, the `<!-- OPENWIKI:START/END -->` blocks in the
+   hub's `AGENTS.md` and `CLAUDE.md`, and the WS-written "Coverage scope"
+   section inside `openwiki/INSTRUCTIONS.md` are all owned by OpenWiki or live
+   inside its directory. Print each path that exists and state that retiring
+   them is done through OpenWiki itself (or by deleting the directory by hand),
+   that WS no longer refreshes or reminds about any of it, and that leaving
+   them in place is a valid choice with no WS consequence.
+7. **Generated + harness refresh** — offer the same refreshes as the
+   vendored-skill and harness-assets doctor checks (invoke-ai.sh, vendored
+   skill, `.omp/rules/` pack), so the hub matches the current templates.
+8. Regenerate the `AGENTS.md` `ws-hub:repos` marker region.
 
 **update safety rules** — never overwrite user-authored content without an
 explicit confirm; the only replaceable destinations are known, untouched
@@ -861,17 +888,6 @@ for d in ../*/; do [ "$(cd "$d" && pwd)" = "$PWD" ] && continue; [ -d "$d/.git" 
 ```
 The hub root (`$PWD`) is NEVER a registration candidate: the sibling glob expands to every child of the hub's parent, which includes the hub directory (it has had its own `.git` since init), so the `$PWD` filter above is mandatory — never list, scan, or offer to move/register the hub into itself.
 
-**OpenWiki pointer (when the hub has one):** if `<hub>/openwiki/` exists,
-every newly registered sub-repo's `AGENTS.md` gets the "Hub knowledge wiki"
-pointer section (same text the init verb's step 5a writes — pointing at
-`../openwiki/quickstart.md`, path adjusted for sibling repos; create AGENTS.md
-+ a thin CLAUDE.md if the repo has neither). Update the coverage-scope list in
-`openwiki/INSTRUCTIONS.md` by type: add `type: working` repos; never add
-`type: input` or `type: output` repos, and remove one if mark-as-output changes
-it from working. Apply this after a new repo lands in `project.yaml`; for
-mark-as-output, apply the removal in that mode's step 3 because it skips the
-registration flow.
-
 1. The project-shape dispatch above has already handled sub-repo and standalone
    invocations. Continue only at a hub root; if `./project.yaml` disappeared
    after dispatch, abort without suggesting another hub.
@@ -892,11 +908,8 @@ registration flow.
 1. List the repos already registered in `project.yaml` and let the user pick one.
 2. Ask the purpose: **docs** (product user-docs repo) or **explained** (generated visual explainer). For known purposes, enforce the skill's known-purpose uniqueness rule (Output repos section) against every entry OTHER than the one selected — refuse with a message naming the other entry that already holds it. When the selected entry already carries the chosen purpose, report "already marked `purpose: <chosen>` — nothing to change" and stop (the idempotent re-run is a no-op, not a self-referential refusal).
 3. Set `type: output` + `purpose: <chosen>` on the chosen entry via `Edit`
-   (preserve formatting). If `<hub>/openwiki/` exists and the repo counted as
-   working (`type: working`, or a legacy entry with neither `type` nor `role`),
-   remove it from the coverage list in
-   `openwiki/INSTRUCTIONS.md`. Then regenerate the `AGENTS.md` marker region as
-   in registration step 4.
+   (preserve formatting). Then regenerate the `AGENTS.md` marker region as in
+   registration step 4.
 4. No clone, move, or `.gitignore` change — the repo is already registered. Then run "Finish" below.
 
 #### With `--scan`: discover, then register
@@ -923,10 +936,6 @@ For each repo to register:
      design assets, data dumps), or **output** (derived artifact — then also
      the `purpose`: **docs** or **explained**; before writing a known purpose,
      enforce the skill's known-purpose uniqueness rule (Output repos section)).
-     Input and output repos are excluded from the OpenWiki coverage scope —
-     when the hub has `openwiki/`, update `openwiki/INSTRUCTIONS.md`
-     accordingly (add working repos to the scope; never add input/output
-     repos).
 
 2. Append the entry to `project.yaml` under `repos:` using `Edit` (preserve formatting and comments).
 
@@ -941,12 +950,9 @@ For each repo to register:
 
 #### add safety rules
 
-- Do not modify sub-repo contents except to write the "Hub knowledge wiki"
-  pointer section in a newly registered repo's `AGENTS.md` and, only when that
-  repo has neither context file, create its thin `CLAUDE.md`; only `mv` a repo's
-  containing folder when the user chose "move", confirmed first.
-- Hub writes are limited to `project.yaml`, `AGENTS.md`, `.gitignore`, and —
-  when OpenWiki exists — its `openwiki/INSTRUCTIONS.md` coverage list.
+- Do not modify sub-repo contents; only `mv` a repo's containing folder when
+  the user chose "move", confirmed first.
+- Hub writes are limited to `project.yaml`, `AGENTS.md`, and `.gitignore`.
 - Do not commit hub changes — let the user review and commit themselves.
 
 ### verb = describe
@@ -1033,18 +1039,6 @@ gather wave followed by one `hub-architect` synthesis.
 
 6. Relay the agent's report to the user: files written, key cross-repo findings,
    and anything flagged for human attention.
-
-After the cross-repo docs are generated: if `<hub>/openwiki/` exists, offer to
-refresh the hub knowledge wiki. Refresh MUST use an explicit prompt (sub-repo
-commits are invisible to hub git, so plain `--update` would skip as "no
-changes"): build the **`type: working`** sub-repo list from `project.yaml` (legacy hubs: entries with neither `type` nor `role`) and run
-`openwiki --update "Refresh the wiki; re-scan these sub-repos for changes: <name>, <name>, ..."`.
-Report what OpenWiki changed (it prints its own summary) and remind that the
-`<!-- OPENWIKI:START/END -->` context-file blocks are tool-managed. Refresh is
-AI-driven by convention (no CI): also offer it proactively when the wiki is
-stale before major cross-repo work (`openwiki/.last-update.json` vs recent
-sub-repo commits), and after any significant dev-docs change — not only after
-doc-generation runs.
 
 Product-internal outputs always use the hub policy's configured `dev_track`.
 They never go into a working repository, the product docs output, or a hub
@@ -1143,22 +1137,17 @@ below must satisfy it.
 
 Gather sources, by shape:
 
-- **Hub root** — if `<hub>/openwiki/` exists and looks stale
-  (`openwiki/.last-update.json` vs recent sub-repo commits), offer to refresh
-  it first — refresh MUST use an explicit prompt, per the hub convention:
-  `openwiki --update "Refresh the wiki; re-scan these sub-repos for changes: <name>, <name>, ..."`.
-  Synthesize from: `project.yaml`, `openwiki/` (primary derived map), the
-  hub's own `dev-docs/` (architecture, product ADRs), per-`type: working` repo
-  (legacy hubs: entries with neither `type` nor `role`) `dev-docs/` and READMEs,
-  fan out one read-only inventory per repo by default through the
+- **Hub root** — Synthesize from: `project.yaml`, the hub's own `dev-docs/`
+  (architecture, product ADRs), and per-`type: working` repo (legacy hubs:
+  entries with neither `type` nor `role`) `dev-docs/` and READMEs; fan out one
+  read-only inventory per repo by default through the
   `ws-graph-engineering` chooser: Herdr repo lanes for substantial long-lived
   work, otherwise one batched omp `task` call (one `researcher` item per repo,
   worded as ONE scoped question and carrying a per-item `outputSchema`
   returning `{ purpose, tech, keyFlows, notableDecisions, artifact }`) or
   equivalent Claude Code Task calls in one message. Never scan the same repo at
   both layers.
-- **Standalone** — if `./openwiki/` exists and looks stale, offer the same
-  prompted refresh. Synthesize from the current repo only: its README, `docs/`,
+- **Standalone** — Synthesize from the current repo only: its README, `docs/`,
   `dev-docs/` (architecture, decisions), `CONTEXT.md`, and any other
   glossary/context files. No sub-repo fan-out (single repo).
 
@@ -1250,14 +1239,13 @@ Run the checks in order:
 
 1. **Hub repo freshness** — `git fetch` in the hub (skip gracefully when there is no remote). Clean and behind upstream → `git pull --ff-only`. Dirty, diverged, or on a non-default branch → report; touch nothing.
 2. **Sub-repos on disk** — for every repo in `project.yaml`: folder missing but `url` present → offer to clone (same behavior as the `repos clone` verb); present → fetch, and when clean and behind, `git pull --ff-only`. Dirty, diverged, or detached → report with branch names; touch nothing.
-3. **Registry integrity** — `project.yaml` parses; every entry carries a `type` (entries without one, or with a legacy `role:` field, are registry drift — report and point at `/ws-hub update`, whose version-independent remediation repairs missing `type:` / legacy `role:` even when the marker is already latest, so this never loops); enforce the skill's known-purpose uniqueness rule (Output repos section); every nested (`./`) repo appears in the `.gitignore` managed block; the `ws-hub:repos` marker region in `AGENTS.md` matches `project.yaml` (drifted → regenerate the region, it is machine-managed); `CLAUDE.md` is the thin `@AGENTS.md` import (tool-managed marker blocks are the only permitted extras) — if fattened, move the content to `AGENTS.md`.
+3. **Registry integrity** — `project.yaml` parses; every entry carries a `type` (entries without one, or with a legacy `role:` field, are registry drift — report and point at `/ws-hub update`, whose version-independent remediation repairs missing `type:` / legacy `role:` even when the marker is already latest, so this never loops); enforce the skill's known-purpose uniqueness rule (Output repos section); every nested (`./`) repo appears in the `.gitignore` managed block; the `ws-hub:repos` marker region in `AGENTS.md` matches `project.yaml` (drifted → regenerate the region, it is machine-managed); `CLAUDE.md` is the thin `@AGENTS.md` import — if fattened, move the content to `AGENTS.md`, EXCEPT for marker blocks another tool maintains: those are owned by that tool, are not fat content, and are never moved or stripped by doctor — report them as tool-managed and leave them.
 4. **Conventions version** — compare `project.conventions` in `project.yaml` against the latest conventions version in the `update` verb's migration table. Behind (or missing) → report: "hub conventions are vN, latest is vM — run `/ws-hub update`". Never apply migrations from doctor.
 5. **Generated files up to date** — compare the hub's `invoke-ai.sh` against `${CLAUDE_PLUGIN_ROOT}/templates/invoke-ai.sh.tmpl` and the vendored `.claude/skills/project-hub-conventions/SKILL.md` against the plugin's copy (plugin-root fallback rule as in Context). Differences → summarize the diff and offer a refresh, warning explicitly that both files are generated and hand edits will be lost.
 6. **Harness assets** — one bullet per harness; extend this list when a new harness joins:
    - Claude Code — the vendored skill (compared in the vendored-skill check) is the only hub-side asset; nothing else to verify.
-   - omp — when `.omp/` exists: the rules pack (`.omp/rules/ws-*.md`, `openwiki-freshness.md` — the latter is now installed per-hub by init step 5b from `${CLAUDE_PLUGIN_ROOT}/templates/omp/hub-rules/openwiki-freshness.md`, falling back to `${CLAUDE_PLUGIN_ROOT}/rules/openwiki-freshness.md` under the Claude Code plugin layout, so every omp hub carries it) and `.omp/hooks/post/openwiki-freshness.ts` are present and match the plugin templates (offer refresh, copying from the same resolved source path as step 5b); `.omp/config.yml` present (report-only — user config is never overwritten). When `.omp/` is absent, ASK the user the same trigger question init step 5b does ("Write the omp preset?", default Yes when `command -v omp` succeeds) rather than assuming they use omp — if Yes, offer the init verb's step-5b omp preset flow. Also check for the `@wsagency/omp-ws` native extension (`omp plugin list`); when absent, mention it (guard + enforcement parity — see docs/how-to/omp-setup.md) without treating it as a failure.
-7. **Knowledge freshness** — when `openwiki/` exists: compare `type: working` (legacy hubs: entries with neither `type` nor `role`) sub-repo `dev-docs/` mtimes (excluding `dev-docs/tickets/`; input/output repos and the hub's own `dev-docs/` are never compared — the wiki does not index them) against `openwiki/.last-update.json`. Stale → print the exact prompted refresh command (`openwiki --update "Refresh; re-scan sub-repos: <working-repo list from project.yaml>"`) and ask before running it — a refresh costs tokens.
-8. **Verdict** — render one line per check (`✓` ok / `~` fixed / `✗` needs the user), then: what was fixed, what was deliberately left alone and why, and a closing line — either `Ready for development — cd <hub> && ./invoke-ai.sh` or `Not ready: <blocking items>`.
+   - omp — when `.omp/` exists: the rules pack (`.omp/rules/ws-*.md`) is present and matches the plugin templates (offer refresh); `.omp/config.yml` present (report-only — user config is never overwritten). When `.omp/` is absent, ASK the user the same trigger question init step 5a does ("Write the omp preset?", default Yes when `command -v omp` succeeds) rather than assuming they use omp — if Yes, offer the init verb's step-5a omp preset flow. Also check for the `@wsagency/omp-ws` native extension (`omp plugin list`); when absent, mention it (guard + enforcement parity — see docs/how-to/omp-setup.md) without treating it as a failure.
+7. **Verdict** — render one line per check (`✓` ok / `~` fixed / `✗` needs the user), then: what was fixed, what was deliberately left alone and why, and a closing line — either `Ready for development — cd <hub> && ./invoke-ai.sh` or `Not ready: <blocking items>`.
 
 ## When you finish
 
@@ -1289,5 +1277,4 @@ just run (ADR 0008):
 - **`repos` / `add` / `describe` / `status` / `docs` / `explained`** → state
   what changed and where, then point at the natural follow-up for that verb
   (`/ws-hub status` after `repos`/`add`; `/ws-hub doctor` after `describe`; the
-  OpenWiki refresh offer after `docs`; the ws-artefacts registration block after
-  `explained`).
+  ws-artefacts registration block after `explained`).

@@ -1,6 +1,6 @@
 ---
 name: ws-repo-maintenance
-description: "AI-driven maintenance process for the ws-claude-marketplace repo itself. Use when asked to update/refresh this repo, sync vendored upstreams (Matt Pocock skills, herdr), audit external tool versions and their docs (jira-cli, tea, omp, herdr, openwiki, bun), or adopt new omp capabilities. Maintainer-facing; runs from a checkout of the marketplace repo."
+description: "AI-driven maintenance process for the ws-claude-marketplace repo itself. Use when asked to update/refresh this repo, sync vendored upstreams (Matt Pocock skills, herdr), audit external tool versions and their docs (jira-cli, tea, omp, herdr, bun), or adopt new omp capabilities. Maintainer-facing; runs from a checkout of the marketplace repo."
 ---
 
 # WS Repo Maintenance
@@ -100,7 +100,7 @@ take upstream verbatim (no WS-local adaptations by policy), update the pin.
 
 ## 2. External tools — versions and doc drift
 
-Fan this audit out by default rather than looping the seven tools serially.
+Fan this audit out by default rather than looping the six tools serially.
 Each check is read-only and touches a disjoint set of docs, so run one worker
 per tool in a single batched `task` call — `{ context, tasks: [...] }`, one
 item per tool and, when the active task schema exposes it, `effort: lo`
@@ -118,7 +118,6 @@ Herdr panes.
 | tea | `tea --version` vs gitea/tea releases | `tea pr create --title --description --base` (ws-commit pr) |
 | omp | `omp --version` vs omp.sh releases | plugin dir conventions, ExtensionAPI events, `/marketplace`/`plugin upgrade` verbs (docs/how-to/omp-setup.md, use-with-omp.md, extensions/omp-ws) |
 | herdr | `herdr --version` vs herdr.dev | skill + workspace commands (hub init 5b, herdr skill) |
-| openwiki | `openwiki --version` vs upstream | `--init`, prompted `--update` semantics, INSTRUCTIONS.md scope, `.last-update.json` marker (hub flows, freshness hooks) |
 | bun | `bun --version` | build scripts in extensions/omp-ws |
 | skills CLI | `npx skills --version` | `npx skills add <repo> --skill <name> [-g]` (herdr install path) |
 
