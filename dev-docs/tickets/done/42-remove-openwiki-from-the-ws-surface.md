@@ -23,7 +23,7 @@ Blocked by: None.
 - [x] Root `CHANGELOG.md` carries a `**BREAKING:**` entry under `[Unreleased]`; `docs/changelog.md` is refreshed by copying the root file, never hand-edited.
 - [x] A new ADR records the removal and supersedes the OpenWiki parts of ADRs 0005, 0006, and 0007. Those ADRs, dated specs, and closed tickets are historical records and are NOT rewritten.
 - [x] The native package is rebuilt from a clean commit; `bun run test`, `bun run typecheck`, the node bootstrap suites, and `verify-release-artifacts.mjs` all pass against the new expectations.
-- [x] A case-insensitive search for `openwiki` returns hits only in historical records (ADRs, dated specs, closed tickets, changelog history).
+- [x] A case-insensitive search for `openwiki` returns hits only in four expected classes, with no active feature reference left anywhere else: (1) the active `/ws-hub update` v2→v3 migration in `plugins/ws/commands/ws-hub.md`, which must name the assets it removes; (2) closeout records of this change — ADR 0011 and the `[Unreleased]` changelog entry plus its mirror; (3) historical records — ADRs 0005/0006/0007, dated specs, closed tickets, released changelog sections; (4) the three frozen migration fixtures listed above.
 
 ## Comments
 
