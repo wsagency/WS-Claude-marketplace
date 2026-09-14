@@ -4,7 +4,7 @@ Label: maintenance
 Status: resolved
 Blocked by: None.
 
-**Requested by the user (2026-09-14):** "izbacio bih openwiki skroz" — remove OpenWiki entirely. This is a breaking change to public surface across both harnesses, so it gets its own effort rather than riding along with unrelated work.
+**Requested by the user (2026-09-14):** remove OpenWiki entirely. This is a breaking change to public surface across both harnesses, so it gets its own effort rather than riding along with unrelated work.
 
 **Scope questions — answered by evidence before work started:**
 
