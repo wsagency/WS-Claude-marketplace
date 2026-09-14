@@ -9,7 +9,10 @@ Blocked by: None.
 **Scope questions — answered by evidence before work started:**
 
 - The hub's `dev-docs/` remains the product knowledge root; only OpenWiki and its staleness detection are gone.
-- The fixture mentions are **inputs**, not generated output: the current `ws-project-bootstrap` adapter templates emit no OpenWiki text, so those fixtures describe released repository state and stay verbatim.
+- The fixture mentions are **inputs**, not generated output, and the code contract settles it rather than a scope call: `plugins/ws/UPSTREAM.md` designates `ws-project-bootstrap/fixtures/pre-5-engineering/` as frozen, byte-preserved pre-5 migration evidence that must never become runtime content, and `fixtures/released-repositories/local/repository/dev-docs/agents/issue-tracker.md` is a migration input snapshot of a released repository. Corroborating evidence: the current adapter templates emit no OpenWiki text, so nothing regenerates these strings. The three files below therefore keep their OpenWiki mentions verbatim and are expected residue of any OpenWiki sweep — only active or generated output references were removed:
+  - `plugins/ws/skills/ws-project-bootstrap/fixtures/pre-5-engineering/issue-tracker-local.md`
+  - `plugins/ws/skills/ws-project-bootstrap/fixtures/pre-5-engineering/issue-tracker-local-jira.md`
+  - `plugins/ws/skills/ws-project-bootstrap/fixtures/released-repositories/local/repository/dev-docs/agents/issue-tracker.md`
 - [x] Claude hook removed: `plugins/ws/hooks/openwiki-freshness.sh` deleted and its registration dropped from `plugins/ws/hooks/hooks.json`.
 - [x] omp delivery removed: `plugins/ws/templates/omp/hooks/openwiki-freshness.ts` and the always-apply rule `plugins/ws/rules/openwiki-freshness.md` deleted.
 - [x] Extension implementation removed: `extensions/omp-ws/src/wiki-freshness.ts`, its registration in `src/index.ts`, and `test/wiki-freshness.test.ts` deleted.
