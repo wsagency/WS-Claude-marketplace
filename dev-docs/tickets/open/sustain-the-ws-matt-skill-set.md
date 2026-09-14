@@ -11,7 +11,7 @@ A locked decision for the recurring process that keeps the vendored ws-matt skil
 - Settled by the grill 2026-09-14: the end state is a decision lock (no build obligation), and this is one of two maps. The Codex distribution effort is the sibling map [Extend WS to Codex](./extend-ws-to-codex.md). The split exists because the two efforts have independent purposes and share no blocking edge; this one is small and resolvable in a single session, so it does not need to travel with the Codex branch.
 - Originating plan (2026-09-04 session): design recurring Matt skill updates.
 - Planning only: this map decides the process; it does not perform a refresh or write automation.
-- Verified 2026-09-14 (ticket 35): the ws-matt set is 17 skills vendored from `mattpocock/skills` at pin `ed37663` (2026-07-21, MIT, `plugins/ws/LICENSE` byte-identical, obligations met). The upstream publishes machine-checkable tags, releases, and a commit feed, and has advanced to v1.2.3 (2026-08-06, HEAD 2026-09-04). Our pin matches no published tag, so currency can only be read by diffing `pin..HEAD`.
+- Verified 2026-09-14 by [Research the skill upstreams and their update signals](../done/35-research-vendored-skill-upstreams.md): the ws-matt set is 17 skills vendored from `mattpocock/skills` at pin `ed37663` (2026-07-21, MIT, `plugins/ws/LICENSE` byte-identical, obligations met). The upstream publishes machine-checkable tags, releases, and a commit feed, and has advanced to v1.2.3 (2026-08-06, HEAD 2026-09-04). Our pin matches no published tag, so currency can only be read by diffing `pin..HEAD`.
 - Provenance is carried by `plugins/ws/UPSTREAM.md` (source, pin, rename map, preserve list, pin policy), `plugins/ws/skills/ws-repo-maintenance/SKILL.md` (gate sequence and refresh procedure), and dated audits in `dev-docs/maintenance-log.md` — git history is a single squash origin and proves nothing about provenance.
 - Scope is the ws-matt set named in the originating plan. `herdr` and the convention-tracking skills (adr, conventional-commits, diataxis, keep-a-changelog, style-guide) are out of scope; their signals are recorded in the findings if that scope is ever redrawn.
 - Consult `ws-repo-maintenance` and `keep-a-changelog` while resolving tickets.
@@ -24,8 +24,7 @@ A locked decision for the recurring process that keeps the vendored ws-matt skil
 
 ## Not yet specified
 
-<!-- In-scope fog: questions that cannot be stated sharply until a frontier decision resolves. -->
-- None recorded. The repository-state question — whether a tracked upstream manifest is needed and where it lives — is already inside [Decide the recurring ws-matt skill update cadence and ownership](./37-decide-skill-update-cadence-and-ownership.md). Fog graduates here as that decision resolves.
+<!-- In-scope fog: questions that cannot be stated sharply until a frontier decision resolves. None recorded — the repository-state question (whether a tracked upstream manifest is needed, and where it lives) is already inside "Decide the recurring ws-matt skill update cadence and ownership". Fog graduates here as that decision resolves. -->
 
 ## Out of scope
 
