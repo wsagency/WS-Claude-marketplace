@@ -15,16 +15,17 @@ A locked set of decisions — ready to hand to `/ws-to-spec` — covering how th
 - Installed-artifact verification (`extensions/omp-ws/scripts/verify-release-artifacts.mjs`) is the release gate today; a third target inherits that bar.
 - Consult `ws-graph-engineering`, `ws-repo-maintenance`, `project-hub-conventions`, and `dual-track-docs` while resolving tickets.
 - Tracker: local Markdown. Child ticket order is the numeric filename prefix.
+- Stale-but-redirected herdr upstream references (`ogulcancelik/herdr` → `herdrdev/herdr`) exist in `UPSTREAM.md`, `ws-repo-maintenance`, and `project-hub-conventions`. Correcting them is `ws-repo-maintenance` work, not this map's; the cadence decision only has to account for identity drift happening at all.
 
 ## Decisions so far
 
 <!-- One line per resolved child ticket: linked title plus a one-line gist. -->
+- [Research what a third party can ship to Codex](../done/34-research-codex-extension-surface.md) — Codex loads skills, custom subagent TOML, hooks, MCP servers, and experimental `.rules`; plugin marketplaces read the legacy `.claude-plugin/marketplace.json` and `codex plugin marketplace add` accepts GitHub/Git/local/npm, while `AGENTS.md` declares nothing and slash prompts cannot ship from a repo; findings in `dev-docs/research/2026-09-14-codex-extension-surface.md`.
+- [Research the skill upstreams and their update signals](../done/35-research-vendored-skill-upstreams.md) — 18 of 31 skill sets are vendored from two upstreams (`mattpocock/skills` pin `ed37663`, `herdr` pin `a979916`); both publish machine-checkable tags/releases, both have drifted past our untagged pins, and the herdr upstream has moved org; findings in `dev-docs/research/2026-09-14-skill-upstreams-and-update-signals.md`.
 
 ## Not yet specified
 
 <!-- In-scope fog: questions that cannot be stated sharply until a frontier decision resolves. -->
-- Whether a Codex target needs its own version lane or joins marketplace lockstep — hangs on the distribution-channel decision.
-- How installed-surface verification extends to a Codex target, and what its absence gates are — hangs on what Codex can actually load.
 - Whether recurring skill updates need a tracked upstream manifest in-repo, and where it lives — hangs on the cadence and ownership decision.
 
 ## Out of scope
