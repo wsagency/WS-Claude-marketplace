@@ -8,7 +8,7 @@ A locked set of decisions covering how the single `ws` plugin surface reaches Co
 
 ## Notes
 
-- Settled by the grill 2026-09-14: the end state is a decision lock (no build obligation), and this effort is **one of two maps**. The recurring ws-matt update cadence lives in `sustain-the-ws-matt-skill-set` because the two efforts have independent purposes and share no blocking edge — that cadence decision is resolvable on its own in a single session, and bundling it here would only make this map's handoff wait on an unrelated answer.
+- Settled by the grill 2026-09-14: the end state is a decision lock (no build obligation), and this effort is **one of two maps**. The recurring ws-matt update cadence lives in [Sustain the ws-matt skill set](./sustain-the-ws-matt-skill-set.md) because the two efforts have independent purposes and share no blocking edge — that cadence decision is resolvable on its own in a single session, and bundling it here would only make this map's handoff wait on an unrelated answer.
 - Originating plan (2026-09-04 session): decide Codex distribution strategy; integrate graph engineering across WS work; chart the decisions on the canonical tracker.
 - Planning only: this map resolves decisions and does not implement packaging, automation, or a release.
 - Verified 2026-09-04 (primary docs): Codex runs parallel native subagents by default with built-ins `default`, `worker`, and `explorer`; delegation triggers on a direct request **or when `AGENTS.md`/skill instructions ask for it**. Our `## Graph node` fan-out edges can therefore drive Codex delegation directly. The earlier assumption "14 agents collapse into inline workers" is void and must not be re-derived.
@@ -26,12 +26,12 @@ A locked set of decisions covering how the single `ws` plugin surface reaches Co
 ## Not yet specified
 
 <!-- In-scope fog: questions that cannot be stated sharply until a frontier decision resolves. -->
-- How Codex's trust-gated project layers (`.codex/` requiring per-project trust, per-hash hook review) change what a repository can ship versus what a user must opt into — cannot be phrased as a decision until the distribution channel fixes which layers we write at all.
+- None recorded. Every question stated sharply so far is a live ticket, including Codex's trust-gated layers, which [Decide the Codex distribution channel](./36-decide-codex-distribution-channel.md) now carries. Fog graduates here as that decision resolves.
 
 ## Out of scope
 
 - Implementing Codex packaging, writing sync automation, or cutting any release during this map.
 - Changing Claude Code or omp distribution mechanics beyond what a third target strictly requires.
 - Redesigning the ws-matt graph node set itself; only how its semantics are carried across harnesses is in scope.
-- The recurring ws-matt update cadence — sibling map `sustain-the-ws-matt-skill-set`.
-- Closing the herdr Apache-2.0 licence gap and correcting its upstream references — maintenance work tracked in `40-ship-herdr-license-and-fix-upstream-refs`.
+- The recurring ws-matt update cadence — sibling map [Sustain the ws-matt skill set](./sustain-the-ws-matt-skill-set.md).
+- Closing the herdr Apache-2.0 licence gap and correcting its upstream references — maintenance work tracked in [Ship the herdr Apache-2.0 licence text and correct its upstream references](./40-ship-herdr-license-and-fix-upstream-refs.md).

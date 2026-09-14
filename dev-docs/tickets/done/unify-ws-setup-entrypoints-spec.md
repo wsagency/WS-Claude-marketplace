@@ -277,7 +277,7 @@ Migrate every known pre-5 repository format through deterministic, fixture-backe
 ## Further Notes
 
 - This is a multi-session specification. It intentionally carries no `ready-for-agent` state role; `ws-to-tickets` must split it into tracer-bullet implementation tickets and apply `ready-for-agent` to executable slices.
-- The source Wayfinder map is `unify-ws-setup-entrypoints`; its ten resolved child tickets are the decision authority for this synthesis.
+- The source Wayfinder map is [Unify WS setup entry points](./unify-ws-setup-entrypoints.md); its ten resolved child tickets are the decision authority for this synthesis.
 - The first-run and recovery UX was validated on the throwaway `prototype/ws-setup-ux` branch at commit `47a8593`. The prototype is intentionally absent from the main branch; the decision-rich output, not its implementation, informs this spec.
 - Existing accepted architecture remains in force: one consolidated WS plugin, one generated full-native omp package sourced from marketplace content, lockstep marketplace release versioning, and one scheduling owner per work unit.
 - The confirmed primary behavioral test seam is the deterministic manifest transaction contract. Installed harness checks remain thin package and discovery proof rather than a second behavioral implementation.

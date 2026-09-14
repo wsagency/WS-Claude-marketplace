@@ -8,7 +8,7 @@ A locked decision for the recurring process that keeps the vendored ws-matt skil
 
 ## Notes
 
-- Settled by the grill 2026-09-14: the end state is a decision lock (no build obligation), and this is one of two maps. The Codex distribution effort is the sibling map `extend-ws-to-codex`. The split exists because the two efforts have independent purposes and share no blocking edge; this one is small and resolvable in a single session, so it does not need to travel with the Codex branch.
+- Settled by the grill 2026-09-14: the end state is a decision lock (no build obligation), and this is one of two maps. The Codex distribution effort is the sibling map [Extend WS to Codex](./extend-ws-to-codex.md). The split exists because the two efforts have independent purposes and share no blocking edge; this one is small and resolvable in a single session, so it does not need to travel with the Codex branch.
 - Originating plan (2026-09-04 session): design recurring Matt skill updates.
 - Planning only: this map decides the process; it does not perform a refresh or write automation.
 - Verified 2026-09-14 (ticket 35): the ws-matt set is 17 skills vendored from `mattpocock/skills` at pin `ed37663` (2026-07-21, MIT, `plugins/ws/LICENSE` byte-identical, obligations met). The upstream publishes machine-checkable tags, releases, and a commit feed, and has advanced to v1.2.3 (2026-08-06, HEAD 2026-09-04). Our pin matches no published tag, so currency can only be read by diffing `pin..HEAD`.
@@ -25,10 +25,10 @@ A locked decision for the recurring process that keeps the vendored ws-matt skil
 ## Not yet specified
 
 <!-- In-scope fog: questions that cannot be stated sharply until a frontier decision resolves. -->
-- Whether recurring ws-matt updates need a tracked upstream manifest in-repo, and where it lives — hangs on the cadence and ownership decision.
+- None recorded. The repository-state question — whether a tracked upstream manifest is needed and where it lives — is already inside [Decide the recurring ws-matt skill update cadence and ownership](./37-decide-skill-update-cadence-and-ownership.md). Fog graduates here as that decision resolves.
 
 ## Out of scope
 
 - Performing an actual ws-matt refresh, bumping the pin, or writing sync automation during this map.
 - Extending the mechanism to `herdr` or the convention-tracking skills.
-- Closing the herdr Apache-2.0 licence gap and correcting its upstream references — maintenance work tracked in `40-ship-herdr-license-and-fix-upstream-refs`.
+- Closing the herdr Apache-2.0 licence gap and correcting its upstream references — maintenance work tracked in [Ship the herdr Apache-2.0 licence text and correct its upstream references](./40-ship-herdr-license-and-fix-upstream-refs.md).
