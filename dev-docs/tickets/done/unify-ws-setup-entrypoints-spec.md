@@ -281,3 +281,9 @@ Migrate every known pre-5 repository format through deterministic, fixture-backe
 - The first-run and recovery UX was validated on the throwaway `prototype/ws-setup-ux` branch at commit `47a8593`. The prototype is intentionally absent from the main branch; the decision-rich output, not its implementation, informs this spec.
 - Existing accepted architecture remains in force: one consolidated WS plugin, one generated full-native omp package sourced from marketplace content, lockstep marketplace release versioning, and one scheduling owner per work unit.
 - The confirmed primary behavioral test seam is the deterministic manifest transaction contract. Installed harness checks remain thin package and discovery proof rather than a second behavioral implementation.
+
+## Outcome
+
+Implemented and released. This specification was split into implementation tickets 01-33 (all in `dev-docs/tickets/done/`) and shipped as marketplace `5.0.0` with native `@wsagency/omp-ws@0.7.0` at commit `81a79e3`; release identity and installed-surface parity are recorded in `33-release-ws-5-and-omp-ws-0-7`. Closed as delivered.
+
+**Status:** done
