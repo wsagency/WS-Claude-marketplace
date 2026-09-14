@@ -42,6 +42,6 @@ A buildable specification for replacing `/ws-init` and `/ws-matt setup` with one
 
 ## Outcome
 
-Destination reached. The ten resolved decision tickets were collapsed into `unify-ws-setup-entrypoints-spec`, split into implementation tickets 01-33, and shipped as marketplace `5.0.0` with native `@wsagency/omp-ws@0.7.0` (commit `81a79e3`, GitHub release v5.0.0, registry artifact verified). Nothing remained in **Not yet specified**, so the map is closed rather than carried forward; the follow-on effort is charted in `extend-ws-to-codex-and-sustain-skills`.
+Destination reached. The ten resolved decision tickets were collapsed into `unify-ws-setup-entrypoints-spec`, split into implementation tickets 01-33, and shipped as marketplace `5.0.0` with native `@wsagency/omp-ws@0.7.0` (commit `81a79e3`, GitHub release v5.0.0, registry artifact verified). Nothing remained in **Not yet specified**, so the map is closed rather than carried forward; the follow-on efforts are charted in `extend-ws-to-codex` and `sustain-the-ws-matt-skill-set`.
 
 **Status:** done

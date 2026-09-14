@@ -1,6 +1,6 @@
 # Codex extension surface for third parties — what Codex loads, from where, and how it ships
 
-Ticket: `dev-docs/tickets/done/34-research-codex-extension-surface.md` (map: extend-ws-to-codex-and-sustain-skills).
+Ticket: `dev-docs/tickets/done/34-research-codex-extension-surface.md` (map: extend-ws-to-codex).
 Researched 2026-09-14 against official OpenAI/Codex documentation (learn.chatgpt.com / developers.openai.com) and the `openai/codex` source repository. Repo paths like `codex-rs/ext/skills/src/host_roots.rs` refer to `https://github.com/openai/codex` at `main`.
 
 ## Summary

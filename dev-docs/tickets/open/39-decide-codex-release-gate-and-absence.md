@@ -1,9 +1,9 @@
 # Decide the Codex release gate and absence verification
 
-Map: extend-ws-to-codex-and-sustain-skills
+Map: extend-ws-to-codex
 Label: wayfinder:grilling
 Type: grilling
-Status: needs-info
+Status: ready-for-human
 Blocked by: 36-decide-codex-distribution-channel
 
 ## Question
@@ -12,4 +12,3 @@ What does the release gate verify for a Codex target, given that `verify-release
 
 Graduated from the map's fog once `34-research-codex-extension-surface` established what Codex actually loads.
 
-Draft: pending the destination grill (charting steps 1-2).

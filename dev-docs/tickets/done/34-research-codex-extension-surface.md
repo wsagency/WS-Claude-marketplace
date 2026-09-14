@@ -1,6 +1,6 @@
 # Research what a third party can ship to Codex
 
-Map: extend-ws-to-codex-and-sustain-skills
+Map: extend-ws-to-codex
 Label: wayfinder:research
 Type: research
 Status: resolved

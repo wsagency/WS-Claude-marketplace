@@ -1,6 +1,6 @@
 # Research the skill upstreams and their update signals
 
-Map: extend-ws-to-codex-and-sustain-skills
+Map: sustain-the-ws-matt-skill-set
 Label: wayfinder:research
 Type: research
 Status: resolved
