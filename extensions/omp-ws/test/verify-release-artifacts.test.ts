@@ -68,7 +68,7 @@ async function ompRuntimeFixture() {
 		path.join(root, "dist", "index.js"),
 		[
 			"export default function probe(pi) {",
-			'  for (const event of ["session.compacting", "session_start", "session_start", "session_stop", "session_stop", "tool_call", "tool_call"]) pi.on(event, () => {});',
+			'  for (const event of ["session.compacting", "session_start", "session_start", "session_stop", "tool_call", "tool_call"]) pi.on(event, () => {});',
 			'  for (const name of ["ws_adr", "ws_changelog", "ws_ticket"]) pi.registerTool({ name, execute() {} });',
 			"}",
 			"",
@@ -208,7 +208,7 @@ describe("isolated runtime delivery probes", () => {
 		await fs.cp(path.join(REPO_ROOT, "plugins", "ws", "hooks"), path.join(root, "hooks"), { recursive: true });
 		const evidence = await probeClaudeRuntime(root);
 		expect(evidence.plugin).toBe("ws");
-		expect(evidence.registrations).toHaveLength(5);
+		expect(evidence.registrations).toHaveLength(4);
 		expect(evidence.assets.map(asset => asset.path)).toContain("hooks/docs-policy.mjs");
 		expect(evidence.assets.every(asset => asset.sha256.length === 64)).toBe(true);
 	});
@@ -228,7 +228,6 @@ describe("isolated runtime delivery probes", () => {
 			"session.compacting",
 			"session_start",
 			"session_start",
-			"session_stop",
 			"session_stop",
 			"tool_call",
 			"tool_call",
