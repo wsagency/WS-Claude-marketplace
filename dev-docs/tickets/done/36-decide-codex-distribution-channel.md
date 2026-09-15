@@ -3,7 +3,7 @@
 Map: extend-ws-to-codex
 Label: wayfinder:grilling
 Type: grilling
-Status: ready-for-human
+Status: resolved
 Blocked by: 34-research-codex-extension-surface
 
 ## Question
@@ -35,3 +35,23 @@ Still open, and NOT to be inferred — the surface matrix, one ruling per surfac
 - **Hooks** — each hook: travel as a plugin-bundled hook (per-hash trust), or omit?
 - **Native tools** (`ws_ticket`, `ws_changelog`, `ws_adr`) — omit, or replace with a bundled MCP server?
 - **Agents** — the 14 agents cannot be plugin-bundled; translate into skill-invoked instructions, have an installer write `agents/*.toml` at a user or trusted-project layer, or omit in the first step?
+
+### Resolution — 2026-09-15 (surface matrix decided by the agent, at the user's direction)
+
+The three axes were settled by the user; the per-surface matrix was delegated. Rulings, each with the reason it beats the alternative:
+
+**Catalog entry (the axis-2 caveat).** The existing `.claude-plugin/marketplace.json` is reused as the catalog FILE, with a **second entry** whose source resolves the generated Codex target. The current entry keeps resolving `./plugins/ws` for Claude Code; one entry cannot serve both, and adding an entry is cheaper than a second catalog or a separate registry.
+
+**Commands (7) — converted to skills, not omitted.** Codex cannot ship repository slash prompts at all, and the seven commands ARE the product surface, so omitting them would gut the target. They are already prose-driven flows, so each generates as a skill under the same name (`ws-setup`, `ws-docs`, `ws-commit`, `ws-hub`, `ws-help`, `ws-matt`, `ws-status`); no name collides with the existing 30. Consequence to document: on Codex these are invoked by name in conversation, not with a slash.
+
+**Skills — all travel, minus the exclusion the omp target already applies.** They are Codex's native unit and need no translation. The source-checkout maintenance workflow stays excluded exactly as it is for omp; the spec verifies that exclusion list rather than restating a count.
+
+**Hooks — travel as plugin-bundled `hooks/hooks.json`, enforcement first.** The dangerous-git guard and the changelog gate are required, because they are the enforcement the suite exists for; the Jira dashboard is optional and may land later. Per-hash trust applies to every non-managed hook including bundled ones, so the spec states what degrades when trust is withheld rather than assuming silent coverage. Mapping each WS hook to a Codex lifecycle event is mechanical spec work, not a further decision.
+
+**Native tools (`ws_ticket`, `ws_changelog`, `ws_adr`) — bundled MCP server.** Codex documents no way to add native built-in tools, but a plugin may bundle MCP servers through `mcp.json`, and these three are thin wrappers over file conventions, which is exactly what an MCP server carries well. Omission was the alternative and remains the fallback if the effort proves disproportionate: the tools are optional conveniences by design, and the prose conventions stay authoritative either way.
+
+**Agents (14) — do not travel in the first step.** They cannot be plugin-bundled at all: custom subagents load only from `~/.codex/agents/` or a trusted project `.codex/agents/`, and the format is documented as liable to evolve. Codex already runs native `default`/`worker`/`explorer` subagents and delegates when `AGENTS.md` or skill instructions ask, so the `## Graph node` fan-out edges drive delegation directly. Having an installer write TOML into a trust-gated layer buys little and couples us to an unstable format.
+
+**Rules — not as Codex `.rules`.** That mechanism is documented experimental. The always-apply content (edge discipline, English artifacts, git guard) is delivered through the committed per-project layer instead, which is also what carries the plugin through git per the axis-3 decision.
+
+**Status:** done

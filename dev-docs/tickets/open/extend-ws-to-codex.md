@@ -22,6 +22,7 @@ A locked set of decisions covering how the single `ws` plugin surface reaches Co
 
 <!-- One line per resolved child ticket: linked title plus a one-line gist. -->
 - [Research what a third party can ship to Codex](../done/34-research-codex-extension-surface.md) — Codex loads skills, custom subagent TOML, hooks, MCP servers, and experimental `.rules`; plugin marketplaces read the legacy `.claude-plugin/marketplace.json`, `marketplace add` takes an `owner/repo`, Git URL, or local path, and `npm` is an entry `source` type rather than a CLI argument, while `AGENTS.md` declares nothing and slash prompts cannot ship from a repo; findings in `dev-docs/research/2026-09-14-codex-extension-surface.md`.
+- [Decide the Codex distribution channel](../done/36-decide-codex-distribution-channel.md) — a Codex-specific target generated from `plugins/ws/`, listed as a second entry in the existing marketplace catalog under lockstep versioning, carried through git via the committed per-project layer with plugin-bundled assets primary; commands convert to skills, skills travel, enforcement hooks bundle, the three tools become a bundled MCP server, the 14 agents and the TTSR rules do not travel in the first step.
 
 ## Not yet specified
 

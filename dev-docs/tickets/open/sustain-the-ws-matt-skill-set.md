@@ -21,6 +21,7 @@ A locked decision for the recurring process that keeps the vendored ws-matt skil
 
 <!-- One line per resolved child ticket: linked title plus a one-line gist. -->
 - [Research the skill upstreams and their update signals](../done/35-research-vendored-skill-upstreams.md) — the ws-matt set (17 skills) is pinned at `ed37663` against `mattpocock/skills`, whose tags and releases are machine-checkable and have advanced to v1.2.3; the pin matches no published tag, so currency needs a `pin..HEAD` diff, and MIT obligations are met; findings in `dev-docs/research/2026-09-14-skill-upstreams-and-update-signals.md`.
+- [Decide the recurring ws-matt skill update cadence and ownership](../done/37-decide-skill-update-cadence-and-ownership.md) — no standing cadence: detection only (Gates 0-2 plus a log entry) at the start of new-release development on a clean HEAD, owned by that release's developer; a contentful or inventory delta becomes its own ticket and never expands the release, new upstream skills stay out until an eval capability exists, and the maintenance log plus the `UPSTREAM.md` pin are the whole durable state.
 
 ## Not yet specified
 

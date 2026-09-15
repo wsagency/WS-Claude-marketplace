@@ -8,10 +8,12 @@ Blocked by: None — but the open questions below must be answered before work s
 
 **Settled by the user (2026-09-14):** the WS plugin itself tells the user when a newer version exists — the notice is ours to deliver, not something to inherit from a harness, because we WANT users to upgrade. Harness-native notices are therefore corroborating research, not a gate on this ticket.
 
+**Version source of truth: settled (2026-09-15) — our own public repositories.** The check reads the released version from the WS public repos, not from a registry or a harness API. The marketplace release version is the anchor; the native package version is reported alongside it when it differs.
+
 **Not settled — do not infer:**
 
 - Whether Claude Code and omp already surface plugin or package update notices natively — now only to avoid a double notice, since WS delivers its own either way.
-- What the version source of truth is: the marketplace release version, the native package version, or both (they move on separate lanes).
+
 - How often it may appear (once per session, once per version, or on explicit request) and what the user considers nagging.
 - Whether the notice belongs to the marketplace release, the native package version, or both.
 

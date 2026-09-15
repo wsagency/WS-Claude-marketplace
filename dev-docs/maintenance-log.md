@@ -1,5 +1,32 @@
 # Maintenance Log
 
+## 2026-09-15 — ws-matt bounded detection pass (late adoption, one time)
+
+### Scope
+
+| Area | Result |
+|---|---|
+| ws-matt vendored set | `inventory` delta — port deferred to its own ticket |
+| Trigger | First application of the cadence rule settled in ticket 37 |
+
+### Outcome
+
+- `pin_before`: `ed37663cc5fbef691ddfecd080dff42f7e7e350d` (2026-07-21, vendored 2026-07-24)
+- `candidate_head`: `959a8e9f1edc3adbe2f7e3054bb6fbefa6696260` (2026-09-15)
+- `class`: **`inventory`** — `skills/engineering/wizard/` was added upstream, and the `inventory` row is applied before `contentful` per the classification table in `plugins/ws/UPSTREAM.md`
+- `skills_touched`: 37 paths in the vendored subset (every vendored engineering skill plus `productivity/grilling`); 66 upstream commits touched `skills/` in the range; added directories `wizard` and `ask-matt/PHASE-BOUNDARIES.md`
+- `pin_after`: **unchanged** — this was a detection pass only. The pin records the last contentful source actually applied, and nothing was ported.
+
+### Late adoption
+
+The cadence rule settled in ticket 37 requires detection at the start of new-release development, on a clean HEAD before release edits begin. The 6.0.0 release already carried `[Unreleased]` implementation edits when the rule was adopted, so the ordering could not be met retroactively. This pass was run before any FURTHER release work, on a clean tree, and is recorded here as a one-time late adoption. From the next release onward the ordering is enforced normally.
+
+### Evidence
+
+- Gate 0: `git status --porcelain` empty before the pass.
+- Gate 1: full clone of `https://github.com/mattpocock/skills`; `git diff --name-status <pin> <candidate>` over the complete range and over the vendored subset (`skills/engineering skills/productivity/grilling LICENSE`).
+- Gate 2: classified `inventory`; the run stops here by the cadence rule — a contentful or inventory delta becomes its own ticket and never expands a release in flight.
+
 ## 2026-08-01 — Herdr and omp orchestration architecture audit
 
 ### Scope

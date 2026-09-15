@@ -3,7 +3,7 @@
 Map: sustain-the-ws-matt-skill-set
 Label: wayfinder:grilling
 Type: grilling
-Status: ready-for-human
+Status: resolved
 Claimed by: work-through session 2026-09-14
 Blocked by: 35-research-vendored-skill-upstreams
 
@@ -31,4 +31,18 @@ What recurring process keeps the vendored ws-matt skill set current, and who own
 
 **Late adoption, one time only.** The release now in preparation already carries `[Unreleased]` implementation edits, so it cannot satisfy this rule's "detection before release edits begin" ordering retroactively. If the rule is adopted now, run the bounded pass before any FURTHER release work and record it in the maintenance log as a one-time late adoption; the ordering is enforced normally from the following release onward.
 
-Still open, and NOT to be inferred: whether the initiating moment runs only the bounded detection pass and defers a contentful delta to its own ticket, or mandates the full refresh in place. The answer "developer" was recorded as the owner above; it does not resolve this scope question.
+### Resolution — 2026-09-15
+
+**There is no standing cadence, and that is the decision.** No SLA, no scheduled signal check, no session-time drift nudge. The pin is deliberately conservative, upstream drift carried no measured cost, and a new upstream skill needs analysis and an eval before it could be adopted anyway.
+
+**The trigger is the start of new-release development, and it runs detection only.** Whoever begins developing the next release runs Gates 0-2 on a clean HEAD before any release edits — `git status --porcelain`, a full clone, `pin..HEAD` delta, classification — and records a dated `dev-docs/maintenance-log.md` entry with `pin_before` / `candidate_head` / `class` / `skills_touched` / `pin_after`. A `no-delta` or docs-only outcome ends there. A contentful or inventory delta becomes its own maintenance ticket and never expands the release in flight; a "nothing to port" outcome is still logged. Gates 3-8 — audits, conscious porting through the rename map, graph and reference gates, omp rebuild, verification, pin bump — run as their own deliberate session on that ticket.
+
+**New upstream skills stay out** until an analysis-and-eval capability exists; a refresh carries only changes to already-vendored skills. That capability is a separate effort, deliberately not started.
+
+**Ownership follows the release.** The developer driving the new release's development owns the detection pass. There is deliberately no standing owner between releases, because there is no standing process to own.
+
+**Durable state is already sufficient.** The dated maintenance-log entry plus the pin in `plugins/ws/UPSTREAM.md` make the process resumable from the repository alone. No additional tracked upstream manifest is introduced — which also settles the map's former fog on that question.
+
+**First application, recorded.** The rule was exercised immediately: the 2026-09-15 bounded detection pass classified the delta `inventory` (candidate `959a8e9`, 37 vendored paths, new upstream `wizard` skill), left the pin untouched, and handed the port to `43-refresh-the-vendored-ws-matt-set`. Because the 6.0.0 release already carried `[Unreleased]` edits when the rule was adopted, that pass is logged as a one-time late adoption; the ordering is enforced normally from the next release.
+
+**Status:** done
