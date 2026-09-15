@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Make the herdr refresh contract actually carry the licence. Both the `ws-repo-maintenance` procedure and `plugins/ws/skills/herdr/UPSTREAM.md` now fetch `SKILL.md` **and** `LICENSE` from the same upstream ref, forbid mixing `master` with the pin, require a `NOTICE` check, and require verifying both vendored files before the pin is updated. Until this landed, the contract replaced `SKILL.md` alone, so the next sync would have silently dropped the licence and restored the section 4(a) breach that 6.0.0 fixed
+- State the three licence scopes under `plugins/ws/` separately, instead of describing everything outside the herdr directory as MIT: Apache-2.0 for the vendored herdr file, the ws-matt upstream's MIT notice in `plugins/ws/LICENSE` for the 17 vendored ws-matt skills only, and the repository's root MIT `LICENSE` for WS-authored content. The previous wording misattributed WS-authored code to the ws-matt upstream's copyright notice
+
 ## [6.0.0] - 2026-09-15
 
 ### Removed
@@ -15,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Ship the vendored herdr skill's Apache-2.0 licence text at `plugins/ws/skills/herdr/LICENSE`, beside the file it covers, as Apache-2.0 section 4(a) requires of redistribution. The skill was vendored in v4.3.0, so the releases that shipped it without the licence text are marketplace v4.3.0, v4.4.0 and v5.0.0, and published native packages 0.6.0 and 0.7.0; releases predating v4.3.0 never contained the file. `UPSTREAM.md` scopes the licence to that directory alone and separates the three coexisting scopes — Apache-2.0 for herdr, the ws-matt upstream's MIT notice in `plugins/ws/LICENSE` for the 17 vendored ws-matt skills, and the repository's root MIT `LICENSE` for WS-authored content — records that upstream ships no `NOTICE`, and states the section 4(b) position: byte-verbatim apart from the conventional trailing newline. A refresh now re-fetches the licence with the skill, so the obligation cannot lapse on the next sync. The upstream identity is corrected from `ogulcancelik/herdr` to `herdrdev/herdr` across the active surface
+- Ship the vendored herdr skill's Apache-2.0 licence text at `plugins/ws/skills/herdr/LICENSE`, beside the file it covers, as Apache-2.0 section 4(a) requires of redistribution. The skill was vendored in v4.3.0, so the releases that shipped it without the licence text are marketplace v4.3.0, v4.4.0 and v5.0.0, and published native packages 0.6.0 and 0.7.0; releases predating v4.3.0 never contained the file. `UPSTREAM.md` records the Apache-2.0 licence, that upstream ships no `NOTICE`, and the section 4(b) position: byte-verbatim apart from the conventional trailing newline. The upstream identity is corrected from `ogulcancelik/herdr` to `herdrdev/herdr` across the active surface
 
 - Fix thin `CLAUDE.md` handling across setup: the hub scaffold template now emits the canonical comment-first import, and `/ws-setup` discovery plus core setup recognize the exact import-first bytes released in v5.0.0/omp-ws 0.7.0 as a known thin variant and normalize them to the canonical form on rerun, without a spurious `context.source` resolution
 
