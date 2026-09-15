@@ -90,7 +90,7 @@ in English regardless of the conversation language.
 ## WS stack wiring
 
 ```bash
-omp plugin install @wsagency/omp-ws@0.7.0
+omp plugin install @wsagency/omp-ws@0.8.0
 ```
 
 MCP: existing `.claude`/`.mcp.json` configs are discovered automatically.

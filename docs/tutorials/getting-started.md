@@ -106,7 +106,7 @@ The same install already includes the git workflow commands for commit and PR au
 On omp, install the native `@wsagency/omp-ws` package. It contains the same generated commands, skills, agents, schema, templates, and migration support plus the native runtime layer:
 
 ```bash
-omp plugin install @wsagency/omp-ws@0.7.0
+omp plugin install @wsagency/omp-ws@0.8.0
 ```
 
 Do not also enable `ws@ws-marketplace` in omp because the complete surface

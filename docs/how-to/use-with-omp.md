@@ -14,7 +14,7 @@ repository-maintenance workflow stays source-checkout-only) plus the native
 layer: guard, TTSR rules, dashboard, nudges, and `ws_*` tools.
 
 ```bash
-omp plugin install @wsagency/omp-ws@0.7.0
+omp plugin install @wsagency/omp-ws@0.8.0
 ```
 
 Restart open omp sessions after installation. Do not combine the package with

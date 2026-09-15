@@ -157,15 +157,24 @@ test("WS 5 release metadata, references, and migration guide stay aligned", asyn
 	const packageManifest = JSON.parse(await source("extensions/omp-ws/package.json"));
 	expect(marketplace.plugins).toHaveLength(1);
 	expect(marketplace.plugins[0].name).toBe("ws");
-	expect(marketplace.plugins[0].version).toBe("5.0.0");
+	// Lockstep (ADR 0002): the marketplace version equals the newest released
+	// CHANGELOG heading, so a release that forgets one of them fails here.
+	const releasedChangelog = await source("CHANGELOG.md");
+	const newestRelease = releasedChangelog.match(/^## \[(\d+\.\d+\.\d+)\] - /m);
+	expect(newestRelease).not.toBeNull();
+	expect(marketplace.plugins[0].version).toBe(newestRelease![1]);
 	expect(marketplace.plugins[0].description).toBe(plugin.description);
 	expect(plugin).not.toHaveProperty("version");
 	expect(packageManifest.name).toBe("@wsagency/omp-ws");
-	expect(packageManifest.version).toBe("0.7.0");
+	// The published package version and every omp install instruction in the
+	// user docs move together; drift between them is what users hit first.
+	for (const guide of ["docs/how-to/omp-setup.md", "docs/how-to/use-with-omp.md", "docs/tutorials/getting-started.md"]) {
+		expect(await source(guide)).toContain(`omp plugin install @wsagency/omp-ws@${packageManifest.version}`);
+	}
 	expect(packageManifest.omp.extensions).toEqual(["./dist/index.js"]);
 	expect(packageManifest.files).toEqual(expect.arrayContaining(["dist", "commands", "skills", "agents", "rules", "release-manifest.json", "templates"]));
 
-	const changelog = await source("CHANGELOG.md");
+	const changelog = releasedChangelog;
 	expect(await source("docs/changelog.md")).toBe(changelog);
 	expect(changelog).toContain("## [5.0.0] - 2026-09-03");
 	expect(changelog).toContain("Upgrade native omp installations to `@wsagency/omp-ws` 0.7.0");
