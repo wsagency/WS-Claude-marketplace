@@ -55,3 +55,11 @@ The three axes were settled by the user; the per-surface matrix was delegated. R
 **Rules — not as Codex `.rules`.** That mechanism is documented experimental. The always-apply content (edge discipline, English artifacts, git guard) is delivered through the committed per-project layer instead, which is also what carries the plugin through git per the axis-3 decision.
 
 **Status:** done
+
+### Correction — 2026-09-15 (supersedes the catalog-entry ruling above)
+
+The "second entry in `.claude-plugin/marketplace.json`" ruling is withdrawn. That catalog is Claude Code's registry, and ADR 0003 plus `AGENTS.md` fix this repository at exactly one shipped plugin, `ws`. A second entry there would either expose a second Claude marketplace plugin or force another architectural cutover — neither was intended by the axis-2 decision.
+
+**Corrected ruling.** The Codex target is listed in a Codex-native `.agents/plugins/marketplace.json` pointing at the generated Codex output, committed to the repository so it still travels through git exactly as the axis-3 decision requires. `.claude-plugin/marketplace.json` keeps its single `ws` entry untouched.
+
+**Gate before implementation.** This introduces a third distribution artifact alongside the Claude plugin and the native omp package, which is an architectural pattern, not a detail. An ADR must record it — the artifact set, which catalog owns which harness, and how lockstep versioning applies across three targets — before any implementation starts. That ADR is the first task of the spec this map hands off, not something to settle inside a ticket.

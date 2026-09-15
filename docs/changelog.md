@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ship the vendored herdr skill's Apache-2.0 licence text at `plugins/ws/skills/herdr/LICENSE`, beside the file it covers, as Apache-2.0 section 4(a) requires of redistribution — every artifact published before this release redistributed that file without it. `UPSTREAM.md` scopes the licence to that directory (the rest of `plugins/ws/` stays MIT), records that upstream ships no `NOTICE`, and states the section 4(b) position: byte-verbatim apart from the conventional trailing newline. A refresh now re-fetches the licence with the skill, so the obligation cannot lapse on the next sync. The upstream identity is corrected from `ogulcancelik/herdr` to `herdrdev/herdr` across the active surface
+
 - Fix thin `CLAUDE.md` handling across setup: the hub scaffold template now emits the canonical comment-first import, and `/ws-setup` discovery plus core setup recognize the exact import-first bytes released in v5.0.0/omp-ws 0.7.0 as a known thin variant and normalize them to the canonical form on rerun, without a spurious `context.source` resolution
 
 ## [5.0.0] - 2026-09-03

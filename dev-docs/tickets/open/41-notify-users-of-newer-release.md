@@ -10,6 +10,8 @@ Blocked by: None — but the open questions below must be answered before work s
 
 **Version source of truth: settled (2026-09-15) — our own public repositories.** The check reads the released version from the WS public repos, not from a registry or a harness API. The marketplace release version is the anchor; the native package version is reported alongside it when it differs.
 
+**Bootstrap constraint — structural, not a choice.** A notifier introduced in a future release cannot notify anyone running an earlier one: users on 6.0.0 have no notifier code. Whatever is built here covers releases AFTER the notifier ships. The first upgrade into the notifier-bearing release therefore still depends on out-of-band or harness-native discovery, so that path must be documented rather than assumed away — and it is the reason the harness-native question below is worth answering even though WS delivers its own notice.
+
 **Not settled — do not infer:**
 
 - Whether Claude Code and omp already surface plugin or package update notices natively — now only to avoid a double notice, since WS delivers its own either way.
