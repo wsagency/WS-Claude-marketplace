@@ -94,9 +94,22 @@ log `candidate`.
 ### herdr skill
 
 `plugins/ws/skills/herdr/` is vendored from `herdrdev/herdr` (`SKILL.md` at
-repo root; pin recorded in `plugins/ws/skills/herdr/UPSTREAM.md`). Fetch
-`https://raw.githubusercontent.com/herdrdev/herdr/master/SKILL.md`, diff,
-take upstream verbatim (no WS-local adaptations by policy), update the pin.
+repo root; pin recorded in `plugins/ws/skills/herdr/UPSTREAM.md`). The
+directory holds TWO vendored files and a refresh carries both, from the SAME
+upstream commit:
+
+- `https://raw.githubusercontent.com/herdrdev/herdr/<ref>/SKILL.md`
+- `https://raw.githubusercontent.com/herdrdev/herdr/<ref>/LICENSE`
+
+Fetch both, diff, take upstream verbatim (no WS-local adaptations by policy),
+then update the pin. Upstream is Apache-2.0, so shipping `LICENSE` beside the
+file it covers is a section 4(a) obligation, not a courtesy: a refresh that
+replaces `SKILL.md` without re-fetching `LICENSE` — or that drops `LICENSE`
+because upstream moved it — leaves the repository redistributing Apache-2.0
+work without its licence. Verify BOTH files exist in the vendored directory
+before the phase is called done, and check whether upstream has gained a
+`NOTICE` file (it had none at pin `a979916`); a new one must be vendored too.
+If upstream ever relicenses, stop and raise it rather than syncing.
 
 ## 2. External tools — versions and doc drift
 

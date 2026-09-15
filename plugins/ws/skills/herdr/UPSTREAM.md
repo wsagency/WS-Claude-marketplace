@@ -4,9 +4,14 @@
   The repository moved from `ogulcancelik/herdr`; old URLs still redirect, but this is the canonical path.
 - License: **Apache-2.0**. `LICENSE` in this directory is the upstream licence
   text, shipped beside the vendored file it covers, as Apache-2.0 section 4(a)
-  requires of any redistribution. It governs `SKILL.md` in this directory only;
-  the rest of `plugins/ws/` is MIT (see `plugins/ws/LICENSE`). Upstream ships no
-  `NOTICE` file, so there is none to propagate.
+  requires of any redistribution. It governs `SKILL.md` in THIS directory only.
+  Three licence scopes coexist under `plugins/ws/` and must not be conflated:
+  this directory is Apache-2.0 (herdr upstream); `plugins/ws/LICENSE` is the
+  MIT notice of the ws-matt upstream, retained byte-identical for the 17
+  vendored ws-matt skills and covering those only; everything WS authored is
+  governed by the repository's root `LICENSE` (MIT, (c) WEB Solutions Ltd.), not by
+  either vendored notice.
+  Upstream ships no `NOTICE` file, so there is none to propagate.
 - Modifications: **none**. `SKILL.md` is byte-verbatim upstream apart from the
   conventional trailing newline, which is the section 4(b) change statement in
   full. Any future WS edit to that file must be stated here explicitly.

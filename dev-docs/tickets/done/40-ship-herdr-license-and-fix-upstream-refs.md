@@ -21,7 +21,7 @@ Evidence: `dev-docs/research/2026-09-14-skill-upstreams-and-update-signals.md` (
 
 Closed before the 6.0.0 publication, because publishing 0.8.0 with the gap open would knowingly republish an Apache-2.0 section 4(a) violation.
 
-`plugins/ws/skills/herdr/LICENSE` now carries the upstream Apache 2.0 text beside the vendored `SKILL.md` it covers, and `UPSTREAM.md` scopes it explicitly (that directory only; the rest of `plugins/ws/` stays MIT), records that upstream ships no `NOTICE`, and states the section 4(b) change position: byte-verbatim apart from the conventional trailing newline. Refresh now re-fetches `LICENSE` with `SKILL.md`, so the obligation cannot silently lapse on the next sync.
+`plugins/ws/skills/herdr/LICENSE` now carries the upstream Apache 2.0 text beside the vendored `SKILL.md` it covers, and `UPSTREAM.md` scopes it explicitly (that directory only), and separates the three coexisting scopes: Apache-2.0 here, the ws-matt upstream's MIT notice in `plugins/ws/LICENSE` for the vendored ws-matt skills only, and the repository's root MIT `LICENSE` for WS-authored content, records that upstream ships no `NOTICE`, and states the section 4(b) change position: byte-verbatim apart from the conventional trailing newline. Refresh now re-fetches `LICENSE` with `SKILL.md`, so the obligation cannot silently lapse on the next sync.
 
 The upstream move to `herdrdev/herdr` is applied across the active surface — `UPSTREAM.md` source and raw-fetch URL, `ws-repo-maintenance`, `project-hub-conventions`, and `ws-hub.md` (including the `npx skills add` command) — with the old owner named once as history rather than relied upon as a redirect. Recorded in `dev-docs/maintenance-log.md`; the pin stays `a979916` because nothing was refreshed.
 

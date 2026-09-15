@@ -17,8 +17,7 @@ Blocked by: None — but the open questions below must be answered before work s
 - Whether Claude Code and omp already surface plugin or package update notices natively — now only to avoid a double notice, since WS delivers its own either way.
 
 - How often it may appear (once per session, once per version, or on explicit request) and what the user considers nagging.
-- Whether the notice belongs to the marketplace release, the native package version, or both.
 
-**Next step:** a research pass on harness-native update notification (to avoid duplicate notices) plus the version-source and frequency answers, then acceptance criteria. They are deliberately not written yet, because writing them now would invent the very choices this ticket must ask.
+**Next step:** a research pass on harness-native update notification — needed both to avoid a duplicate notice and to document the out-of-band path for the first upgrade into the notifier-bearing release — plus the frequency answer, then acceptance criteria. They are deliberately not written yet, because writing them now would invent the very choices this ticket must ask.
 
 Context: [Decide the recurring ws-matt skill update cadence and ownership](./37-decide-skill-update-cadence-and-ownership.md).
