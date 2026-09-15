@@ -1,5 +1,27 @@
 # Maintenance Log
 
+## 2026-09-15 — herdr Apache-2.0 compliance and upstream identity
+
+### Scope
+
+| Area | Result |
+|---|---|
+| herdr vendored skill | Apache-2.0 `LICENSE` now shipped beside the vendored `SKILL.md` |
+| herdr upstream identity | `ogulcancelik/herdr` → `herdrdev/herdr` across the active surface |
+
+### Outcome
+
+- The gap found by the 2026-09-14 upstream audit is closed: `plugins/ws/skills/herdr/` redistributed an Apache-2.0 licensed file while `plugins/ws/` carried only the MIT licence of the ws-matt upstream, so the section 4(a) licence-copy obligation was unmet. The upstream `LICENSE` (Apache 2.0, 201 lines, fetched from `herdrdev/herdr@master`) now sits in that directory, scoped in `UPSTREAM.md` to the file it covers.
+- Upstream publishes no `NOTICE`, so there is nothing to propagate; recorded explicitly rather than left ambiguous.
+- Section 4(b) change-stating is now explicit: `SKILL.md` is byte-verbatim apart from the conventional trailing newline, and any future WS edit must be stated in `UPSTREAM.md`.
+- The repository move is reflected in `UPSTREAM.md` (source and raw-fetch URL), `ws-repo-maintenance`, `project-hub-conventions`, and `ws-hub.md`; the old owner path is mentioned once, as history. Refresh now re-fetches `LICENSE` alongside `SKILL.md`.
+- Pin unchanged (`a979916`): this was a compliance and identity fix, not an upstream refresh.
+
+### Evidence
+
+- `curl` of `https://raw.githubusercontent.com/herdrdev/herdr/master/LICENSE` returned the Apache 2.0 text; `NOTICE` returned HTTP 404.
+- A search for `ogulcancelik` across `plugins/` and the user docs returns only the historical note in `herdr/UPSTREAM.md`.
+
 ## 2026-09-15 — ws-matt bounded detection pass (late adoption, one time)
 
 ### Scope

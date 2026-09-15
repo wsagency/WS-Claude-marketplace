@@ -93,9 +93,9 @@ log `candidate`.
 
 ### herdr skill
 
-`plugins/ws/skills/herdr/` is vendored from `ogulcancelik/herdr` (`SKILL.md` at
+`plugins/ws/skills/herdr/` is vendored from `herdrdev/herdr` (`SKILL.md` at
 repo root; pin recorded in `plugins/ws/skills/herdr/UPSTREAM.md`). Fetch
-`https://raw.githubusercontent.com/ogulcancelik/herdr/master/SKILL.md`, diff,
+`https://raw.githubusercontent.com/herdrdev/herdr/master/SKILL.md`, diff,
 take upstream verbatim (no WS-local adaptations by policy), update the pin.
 
 ## 2. External tools — versions and doc drift
