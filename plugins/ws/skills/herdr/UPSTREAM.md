@@ -18,11 +18,18 @@
 - The author distributes the skill for exactly this use ("for agents without a
   skill system, paste the file into instructions")
 - Pinned commit: `a979916` (master, 2026-07-27)
-- Policy: vendored VERBATIM — no WS-local adaptations. Refreshing replaces
-  `SKILL.md` wholesale AND re-fetches `LICENSE` from the same pin. On refresh
-  (ws-repo-maintenance skill, phase 1): fetch
-  `https://raw.githubusercontent.com/herdrdev/herdr/master/SKILL.md`,
-  replace `SKILL.md` wholesale, update the pin here.
+- Policy: vendored VERBATIM — no WS-local adaptations. This directory holds TWO
+  vendored files and a refresh carries both, from the SAME upstream ref (never
+  one from `master` and the other from the pin). On refresh
+  (ws-repo-maintenance skill, phase 1) fetch:
+  - `https://raw.githubusercontent.com/herdrdev/herdr/<ref>/SKILL.md`
+  - `https://raw.githubusercontent.com/herdrdev/herdr/<ref>/LICENSE`
+
+  Replace both wholesale, check whether upstream has gained a `NOTICE` file
+  (none at pin `a979916`) and vendor it too if it appears, verify both files
+  exist here afterwards, then update the pin below. A refresh that replaces
+  `SKILL.md` without its `LICENSE` puts the repository back in breach of
+  section 4(a).
 - Shipping the skill in the ws plugin makes it available in every WS project
   (Claude Code and omp); the global `npx skills add herdrdev/herdr
   --skill herdr -g` install remains only for machines WITHOUT the plugin.
