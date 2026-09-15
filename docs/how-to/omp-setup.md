@@ -103,9 +103,9 @@ Since 0.2.0 (ADR 0004) the native package carries the **entire consumer-facing
 ws plugin surface** — all 7 commands, 30 skills, 14 agents (generated from the
 same source as the Claude plugin; only the source-checkout maintenance workflow
 is excluded), TTSR rules, PLUS what only a native package can do:
-fail-safe git guard, opt-in changelog gate, Jira dashboard widget,
-docs-drift nudge, compaction preservation, and the
-`ws_ticket`/`ws_changelog`/`ws_adr` tools. This is the only WS plugin you
+fail-safe git guard, opt-in changelog gate, Jira dashboard widget, docs-drift
+nudge, compaction preservation, and the `ws_ticket`/`ws_changelog`/`ws_adr`
+tools. This is the only WS plugin you
 install in omp; the Claude marketplace plugin is a separate distribution.
 
 Do NOT also run the marketplace `ws` plugin in omp — everything would load

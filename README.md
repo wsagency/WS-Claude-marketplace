@@ -10,7 +10,7 @@ One plugin ([ws](./plugins/ws)), one workflow:
 
 - **Work enters through the ws-matt skill graph** (`/ws-matt`) — idea → `grill` (interview) → `to-spec` → `to-tickets` → `implement` (TDD + review). Tickets live **locally in `dev-docs/tickets/`** (fastest for agents; optional Jira mirror via jira-cli).
 - **Every branch closes through the git flows** (`/ws-commit`) — Conventional Commits with the Jira key, worklog, CHANGELOG at PR time (`/ws-commit pr`).
-- **Knowledge maintains itself in two layers**: authored truth in `dev-docs/` (ADRs, runbooks, scoping docs distilled from client deliveries — written as decisions happen), and generated outputs for humans (user docs → Outline via `/ws-docs publish`; product explainer via `/ws-hub explained`).
+- **Knowledge lives in two layers**: authored truth in `dev-docs/` (ADRs, runbooks, scoping docs distilled from client deliveries — written as decisions happen), and generated outputs for humans (user docs → Outline via `/ws-docs publish`; product explainer via `/ws-hub explained`).
 - **Multi-repo products live in a hub** (`/ws-hub`) — one meta-repo registering all sub-repos, with an agent-picker launcher and, on omp, a config preset + stream-interrupting convention rules.
 - **Artifacts are English.** Every artifact the suite generates — specs, tickets, ADRs, changelog entries, commit and PR bodies, review findings, research notes, generated docs and HTML — is written in English regardless of the conversation language. Translations are derived copies, never the original.
 
@@ -58,9 +58,9 @@ On omp, install the **native package** `@wsagency/omp-ws` — it carries the
 COMPLETE suite (all commands, skills, and agents, generated from the same
 source as the Claude plugin — ADR 0004) plus omp-only capabilities: a
 **fail-safe git guard**, TTSR convention rules, the opt-in changelog gate, a
-**Jira session dashboard widget**, a docs-drift nudge,
-compaction preservation, and the schema-validated `ws_ticket` /
-`ws_changelog` / `ws_adr` tools:
+**Jira session dashboard widget**, a docs-drift nudge, compaction
+preservation, and the schema-validated `ws_ticket` / `ws_changelog` /
+`ws_adr` tools:
 
 ```bash
 omp plugin install @wsagency/omp-ws@0.7.0

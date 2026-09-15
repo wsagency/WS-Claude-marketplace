@@ -338,7 +338,7 @@ version forever):
 | from→to | name | what it does |
 |---|---|---|
 | 1→2 | repo types + hub knowledge root (ADR 0006) | `role:`→`type:`/`purpose:` rename; scaffold hub `dev-docs/`; move product dev-docs out of the docs repo; move client materials into an input repo; refresh generated + harness files |
-| 2→3 | remove OpenWiki (ADR 0011) | delete the WS-installed OpenWiki integration: `.omp/hooks/post/openwiki-freshness.ts` and `.omp/rules/openwiki-freshness.md`. Remove the WS-authored OpenWiki prose: the hub `AGENTS.md`'s "Knowledge wiki (OpenWiki)" section and the `## Hub knowledge wiki` pointer that init appended to each sub-repo's `AGENTS.md`. Then refresh the generated + harness files so the hub matches the current templates. **Touch nothing OpenWiki owns**: the `openwiki/` directory and its pages, the `<!-- OPENWIKI:START/END -->` blocks in `AGENTS.md`/`CLAUDE.md` (tool-managed, owned by their tool), and the coverage-scope section inside `openwiki/INSTRUCTIONS.md` are all left exactly as they are. Report each of them with its path so the hub owner can retire the wiki and its markers through OpenWiki itself, and state plainly that WS no longer manages or refreshes any of it |
+| 2→3 | remove OpenWiki (ADR 0011) | delete the WS-installed OpenWiki integration: `.omp/hooks/post/openwiki-freshness.ts` and `.omp/rules/openwiki-freshness.md`. Remove the WS-authored OpenWiki prose: the hub `AGENTS.md`'s "Knowledge wiki (OpenWiki)" section and the `## Hub knowledge wiki` pointer that init appended to each sub-repo's `AGENTS.md`. Drop the generated-at-init wiki lines from the hub's `README.md` and its `project.yaml` comments. Then refresh the generated + harness files so the hub matches the current templates. **Touch nothing OpenWiki owns**: the `openwiki/` directory and its pages, the `<!-- OPENWIKI:START/END -->` blocks in `AGENTS.md`/`CLAUDE.md` (tool-managed, owned by their tool), and the coverage-scope section inside `openwiki/INSTRUCTIONS.md` are all left exactly as they are. Report each of them with its path so the hub owner can retire the wiki and its markers through OpenWiki itself, and state plainly that WS no longer manages or refreshes any of it |
 
 Latest conventions version: **3**.
 
@@ -635,15 +635,18 @@ this run's migration is suppressed this run and re-offered next run.
    step 1, delete the `## Hub knowledge wiki` section from its `AGENTS.md`,
    leaving its thin `CLAUDE.md` untouched. Nothing is committed in any
    sub-repo; report the edited paths so the user commits them per repo.
-5. **Remove the WS-authored scaffold snippets** — two generated-at-init lines
-   that no refresh in step 7 covers. In the hub's `README.md`, delete the
-   directory-tree line for `openwiki/` (the `├── openwiki/ # optional derived
-   wiki (only if initialized)` entry as init wrote it) and nothing else in that
-   tree. In `project.yaml`, in the commented `type` legend, drop `indexed by
-   OpenWiki` from the `working` description while keeping the rest of the
-   comment intact. Match the exact generated wording only: if either snippet was
-   customized by the user, leave it and report it instead of guessing. Both
-   edits are no-ops on re-run.
+5. **Remove the WS-authored scaffold snippets** — four generated-at-init lines
+   that no refresh in step 7 covers. Anchor on identifying tokens rather than
+   exact strings, because init wrote these column-padded and line-wrapped. In
+   the hub's `README.md`: delete the directory-tree line whose entry is
+   `openwiki/`, and drop the ` (+ wiki refresh offer)` parenthetical from the
+   `docs` verb bullet — that refresh no longer exists. In `project.yaml`: in the
+   commented `type` legend, drop the `indexed` / `by OpenWiki` fragment from the
+   `working —` description (it wraps across two comment lines), and in the
+   `repos:` block comment drop `The freshness hooks and ` so the sentence starts
+   `/ws-hub reads repo entries exclusively from here`. Change nothing else in
+   either file; if a line was customized away from the generated wording, leave
+   it and report it instead of guessing. All four edits are no-ops on re-run.
 6. **Report what WS no longer manages, and touch none of it** — the `openwiki/`
    directory and its pages, the `<!-- OPENWIKI:START/END -->` blocks in the
    hub's `AGENTS.md` and `CLAUDE.md`, and the WS-written "Coverage scope"
@@ -1276,5 +1279,6 @@ just run (ADR 0008):
   repo.
 - **`repos` / `add` / `describe` / `status` / `docs` / `explained`** → state
   what changed and where, then point at the natural follow-up for that verb
-  (`/ws-hub status` after `repos`/`add`; `/ws-hub doctor` after `describe`; the
-  ws-artefacts registration block after `explained`).
+  (`/ws-hub status` after `repos`/`add`; `/ws-hub doctor` after `describe`;
+  `/ws-hub explained` after `docs`; the ws-artefacts registration block after
+  `explained`).

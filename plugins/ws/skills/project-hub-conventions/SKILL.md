@@ -143,7 +143,7 @@ repos:
 
 Knowledge flow is one-directional: `input` → processed into hub `dev-docs/` →
 built in `working` repos → derived into `output` repos. Nothing consumes an
-output as a source; inputs are processed, never indexed.
+output as a source; inputs are processed, never analyzed as systems.
 
 Legacy mapping (pre-v2 hubs): `role: docs` ≡ `type: output, purpose: docs`;
 `role: explained` ≡ `type: output, purpose: explained`; no role ≡ `type:
@@ -314,6 +314,8 @@ Hubs used with omp carry a project `.omp/` preset written by `/ws-hub init`:
   and bash guard patterns default to off (commented deny/prompt examples);
   `/ws-hub init` asks about both, plus whether to fill the per-project
   `modelRoles` block. Earlier compaction is on by default.
+  Caveat: never park loose `.ts`/`.sh` files in `.claude/hooks/pre|post/`
+  directories — omp's Claude-compat provider scans them.
 - `.omp/rules/` — the per-hub WS rules pack, TTSR stream-interrupting rules:
   `ws-guard-git` (destructive git ops), `ws-commit-format` (Conventional
   Commits + ticket key + WS trailer, reminded per commit attempt),

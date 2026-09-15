@@ -38,11 +38,11 @@ Chosen option: "Remove entirely", because the derived wiki duplicated authored `
 ### Consequences
 
 - Good, because the product knowledge root is a single authored layer: the hub's `dev-docs/`, read directly, with no derived copy to keep in sync.
-- Good, because the generated omp surface shrinks by one rule and one hook event, and the three parity-coupled detectors disappear.
+- Good, because the generated omp surface loses the hub-only rule packaging mechanism and one hook event, and the three parity-coupled detectors disappear; the applied rule count is unchanged at 4, because the removed rule was never part of the applied surface.
 - Good, because hubs no longer need the `openwiki` npm tool, generated-CI-workflow deletion, or `openwiki/` coverage bookkeeping in init, add, and mark-as-output flows.
 - Bad, because nothing reminds agents that `dev-docs/` may have drifted; freshness becomes the author's discipline.
-- Neutral, because existing hubs may still contain an `openwiki/` directory and tool-managed `<!-- OPENWIKI:START/END -->` marker blocks; both are inert after removal and can be deleted at the hub owner's leisure.
-- A replacement staleness mechanism, if any, is a separate later effort — deliberately not designed here.
+- Neutral, because existing hubs may still contain an `openwiki/` directory and tool-managed `<!-- OPENWIKI:START/END -->` marker blocks; both are inert after removal, and the hub owner retires them through OpenWiki itself (or by deleting the directory by hand) — WS never strips a block another tool maintains.
+- Neutral, because a replacement staleness mechanism, if any, is a separate later effort — deliberately not designed here.
 
 ## Pros and Cons of the Options
 

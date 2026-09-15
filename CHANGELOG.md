@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+### Removed
 
 - **BREAKING:** Remove OpenWiki entirely (ADR 0011) — the Claude Stop hook (`openwiki-freshness.sh`), the omp per-project hook template, the hub-only always-apply `openwiki-freshness` rule, the `@wsagency/omp-ws` freshness check, the `/ws-hub init` `openwiki/` hub scaffold, and the `/ws-hub doctor` knowledge-freshness check are gone; a hub's own `dev-docs/` remains the product knowledge root, now without staleness detection. Existing hubs: run `/ws-hub update` after upgrading to apply the v2→v3 conventions migration, which deletes the hub-local `.omp/hooks/post/openwiki-freshness.ts`, `.omp/rules/openwiki-freshness.md`, the WS-authored hub and sub-repo pointers, and the generated scaffold snippets. Data OpenWiki owns is never touched: the `openwiki/` directory and its `<!-- OPENWIKI:START/END -->` marker blocks stay owner-managed and are only reported, so retire them through OpenWiki itself if you want them gone
 

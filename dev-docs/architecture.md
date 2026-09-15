@@ -95,7 +95,7 @@ description: What the skill knows and when to use it
 
 JSON-based hook configurations for PreToolUse and Stop callbacks. Enables plugins to intercept tool calls or session state changes.
 
-**Example:** `ws/hooks/hooks.json` wires `enforce-changelog.sh` (PreToolUse on Bash) and `enforce-stop.sh` (Stop) — opt-in enforcement that blocks commits and session stops when CHANGELOG.md is out of sync — plus the canonical-consumer `session-start-dashboard.mjs` (SessionStart Jira context). The watcher agents (arch-watcher, public-api-watcher) are not hooks; they are Task-dispatched by `/ws-docs audit`.
+**Example:** `ws/hooks/hooks.json` wires `enforce-changelog.sh` (PreToolUse on Bash) and `enforce-stop.sh` (Stop) — opt-in enforcement that blocks commits and session stops when CHANGELOG.md is out of sync — plus the canonical-consumer `session-start-dashboard.mjs` (SessionStart Jira context) and `session-discipline.sh` (SessionStart session discipline). The watcher agents (arch-watcher, public-api-watcher) are not hooks; they are Task-dispatched by `/ws-docs audit`.
 
 ### `templates/` (Optional)
 

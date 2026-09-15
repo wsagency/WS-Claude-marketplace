@@ -6,9 +6,9 @@ project:
                                  # /ws-hub update migrates older hubs
 
 repos:
-  # Repo registrations live ONLY in this block. The freshness hooks and
-  # /ws-hub read repo entries exclusively from here — keep every `- name:`
-  # entry inside `repos:`; a stray one elsewhere registers a phantom repo.
+  # Repo registrations live ONLY in this block. `/ws-hub` reads repo entries
+  # exclusively from here — keep every `- name:` entry inside `repos:`; a
+  # stray one elsewhere registers a phantom repo.
   #
   # Convention: each repo lives in its own subfolder of this hub.
   # The hub's .gitignore (managed block) keeps them out of the hub's git.
