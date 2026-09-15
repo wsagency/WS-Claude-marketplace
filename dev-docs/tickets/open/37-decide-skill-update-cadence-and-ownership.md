@@ -25,4 +25,10 @@ What recurring process keeps the vendored ws-matt skill set current, and who own
 
 **Installed releases: settled — nobody is pushed.** An older installed release keeps working; it does not need an immediate upgrade. The system tells the user a newer version exists and that is the end of it. Scope and mechanics of that notice are not part of this ticket and are captured separately in [Notify users of a newer WS release without forcing an upgrade](./41-notify-users-of-newer-release.md).
 
-Still open, and NOT to be inferred: whether the initiating moment runs only the bounded detection pass and defers a contentful delta, or mandates the full refresh in place; who is accountable; and whether the maintenance log plus the `UPSTREAM.md` pin are sufficient durable state.
+**Ownership: settled — the developer.** The developer driving the new release's development runs the detection pass. There is deliberately no standing owner between releases, because there is no standing process to own.
+
+**Durable state: settled — what the repository already tracks is enough.** A dated `dev-docs/maintenance-log.md` entry plus the pin in `plugins/ws/UPSTREAM.md` make the process resumable from the repository alone. No additional tracked upstream manifest is introduced, which also settles the map's former fog on that question.
+
+**Late adoption, one time only.** The release now in preparation already carries `[Unreleased]` implementation edits, so it cannot satisfy this rule's "detection before release edits begin" ordering retroactively. If the rule is adopted now, run the bounded pass before any FURTHER release work and record it in the maintenance log as a one-time late adoption; the ordering is enforced normally from the following release onward.
+
+Still open, and NOT to be inferred: whether the initiating moment runs only the bounded detection pass and defers a contentful delta to its own ticket, or mandates the full refresh in place. The answer "developer" was recorded as the owner above; it does not resolve this scope question.

@@ -3,6 +3,7 @@
 Label: maintenance
 Status: ready-for-agent
 Blocked by: None — can start immediately.
+Scheduled: next work set (user, 2026-09-14).
 
 **What to build:** The vendored `herdr` skill redistributes an Apache-2.0 licensed file while `plugins/ws/` carries only the MIT `LICENSE` of the ws-matt upstream, so the repository currently redistributes Apache-2.0 work without the licence text that Apache-2.0 section 4 requires. Close that gap and correct the upstream identity that moved out from under our references.
 

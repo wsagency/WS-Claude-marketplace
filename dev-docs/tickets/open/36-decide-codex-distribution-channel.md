@@ -17,3 +17,21 @@ How does the `ws` surface reach Codex? Three axes are independent and each needs
 Then settle which parts of the surface (commands, skills, agents, hooks, tools) deliberately do not travel — noting that slash prompts cannot ship from a repository at all, and that `AGENTS.md` declares no surface even though its instructions can trigger native subagent delegation.
 
 The release gate for that target is owned by [Decide the Codex release gate and absence verification](./39-decide-codex-release-gate-and-absence.md), which consumes the channel and asset facts this ticket settles; do not decide it here.
+
+## Comments
+
+### Grill note — 2026-09-14 (partial, ticket still open)
+
+**Axis 1 — artifact shape: settled.** The generator emits a **Codex-specific target** from `plugins/ws/`, rather than handing Codex a surface we already generate as-is. Single-source generation is preserved.
+
+**Axis 2 — distribution: settled in part, one sub-decision left.** The catalog is the marketplace manifest Codex already reads, and the target rides marketplace lockstep versioning (ADR 0002) rather than a separate lane. **Caveat that must be resolved before this axis closes:** reusing the same catalog FILE does not mean reusing the same catalog ENTRY. The present entry resolves `source: ./plugins/ws`, which cannot deliver a Codex-specific generated target unchanged — so the manifest needs a distinct entry (or source) pointing at the generated Codex output. Either add that entry, or axis 1 collapses back to "consume `plugins/ws/` as-is"; the two cannot both stand as written.
+
+**Axis 3 — carrier layer: settled.** Plugin-bundled assets are the primary carrier, and the design must ALSO let the plugin travel through git: a per-project override is available for everything, so a developer who clones the repository gets the plugin with it rather than having to install it separately. Consequence to carry into the design, not a reopening: the repository-committed project layer lives under `.codex/`, which Codex gates on per-project trust, and hooks require per-hash trust wherever they live — including plugin-bundled ones. So "shipped through git" means present-on-clone, not active-without-consent.
+
+Still open, and NOT to be inferred — the surface matrix, one ruling per surface (translate versus deliberately omit):
+
+- **Commands** — Codex cannot ship repository slash prompts at all. Convert the seven commands into skills, or omit them and let skills carry the behaviour?
+- **Skills** — travel natively; confirm all 30 travel, or name exclusions.
+- **Hooks** — each hook: travel as a plugin-bundled hook (per-hash trust), or omit?
+- **Native tools** (`ws_ticket`, `ws_changelog`, `ws_adr`) — omit, or replace with a bundled MCP server?
+- **Agents** — the 14 agents cannot be plugin-bundled; translate into skill-invoked instructions, have an installer write `agents/*.toml` at a user or trusted-project layer, or omit in the first step?
